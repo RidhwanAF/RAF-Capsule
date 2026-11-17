@@ -68,7 +68,11 @@ fun CapsuleSlider(
             steps + 1
         } else {
             val span = valueRange.endInclusive - valueRange.start
-            if (span >= 2f) span.roundToInt().coerceIn(8, 40) else 24
+            when {
+                span >= 100f -> 48
+                span >= 2f -> (span * 2f).roundToInt().coerceIn(24, 56)
+                else -> 32
+            }
         }
     }
 
@@ -78,7 +82,13 @@ fun CapsuleSlider(
         return (fraction * notchBuckets).roundToInt()
     }
 
-    var lastHapticBucket by remember { mutableIntStateOf(bucketFor(value)) }
+    var lastHapticBucket by remember(valueRange, notchBuckets) { mutableIntStateOf(bucketFor(value)) }
+
+    LaunchedEffect(value, isDragged) {
+        if (!isDragged) {
+            lastHapticBucket = bucketFor(value)
+        }
+    }
 
     Slider(
         state = sliderState,

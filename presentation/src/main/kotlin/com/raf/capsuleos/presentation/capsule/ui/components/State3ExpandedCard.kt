@@ -25,6 +25,7 @@ fun State3ExpandedCard(
     modifier: Modifier = Modifier,
     content: CapsuleContent,
     topClearanceDp: Float,
+    contentPaddingDp: Float = 18f,
     timeSeconds: Float,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
@@ -62,6 +63,7 @@ fun State3ExpandedCard(
                 is CapsuleContent.Media -> MediaExpandedContent(
                     media = active,
                     topClearanceDp = topClearanceDp,
+                    contentPaddingDp = contentPaddingDp,
                     timeSeconds = timeSeconds,
                     sharedTransitionScope = sharedTransitionScope,
                     animatedVisibilityScope = animatedVisibilityScope,
@@ -75,6 +77,7 @@ fun State3ExpandedCard(
                 is CapsuleContent.NotificationAlert -> NotificationExpandedContent(
                     notification = active,
                     topClearanceDp = topClearanceDp,
+                    contentPaddingDp = contentPaddingDp,
                     sharedTransitionScope = sharedTransitionScope,
                     animatedVisibilityScope = animatedVisibilityScope,
                     onUserInteraction = onUserInteraction,
@@ -88,6 +91,7 @@ fun State3ExpandedCard(
                 is CapsuleContent.Torch -> TorchExpandedContent(
                     torch = active,
                     topClearanceDp = topClearanceDp,
+                    contentPaddingDp = contentPaddingDp,
                     sharedTransitionScope = sharedTransitionScope,
                     animatedVisibilityScope = this@AnimatedContent,
                     onUserInteraction = onUserInteraction,
@@ -97,6 +101,7 @@ fun State3ExpandedCard(
                 is CapsuleContent.Volume -> VolumeExpandedContent(
                     volume = active,
                     topClearanceDp = topClearanceDp,
+                    contentPaddingDp = contentPaddingDp,
                     onUserInteraction = onUserInteraction,
                     onSetStreamVolume = onSetStreamVolume,
                     onSetRingerMode = onSetRingerMode,
@@ -104,17 +109,20 @@ fun State3ExpandedCard(
                 is CapsuleContent.Alarm -> AlarmExpandedContent(
                     alarm = active,
                     topClearanceDp = topClearanceDp,
+                    contentPaddingDp = contentPaddingDp,
                     onOpenClock = onOpenClock,
                 )
                 is CapsuleContent.Unlock -> UnlockExpandedContent(
                     unlock = active,
                     topClearanceDp = topClearanceDp,
+                    contentPaddingDp = contentPaddingDp,
                     sharedTransitionScope = sharedTransitionScope,
                     animatedVisibilityScope = animatedVisibilityScope,
                 )
                 is CapsuleContent.NowBrief -> QuickHubExpandedContent(
                     brief = active,
                     topClearanceDp = topClearanceDp,
+                    contentPaddingDp = contentPaddingDp,
                     sharedTransitionScope = sharedTransitionScope,
                     animatedVisibilityScope = this@AnimatedContent,
                     onUserInteraction = onUserInteraction,

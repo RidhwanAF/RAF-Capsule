@@ -1,8 +1,9 @@
-# ADR-0001: Adopt TYPE_APPLICATION_OVERLAY with Optional ADB Secure Settings over AccessibilityService
+# ADR-0001: Overlay Window Hosting Architecture (`TYPE_ACCESSIBILITY_OVERLAY` vs `TYPE_APPLICATION_OVERLAY`)
 
-- **Status**: Proposed
-- **Date**: 2026-11-15
-- **Author**: Antigravity Architect
+- **Status**: `Superseded` (Upgraded from `TYPE_APPLICATION_OVERLAY` to `TYPE_ACCESSIBILITY_OVERLAY` for Android 13–17 (`targetSdk = 37`) cutout Z-order, QS occlusion awareness, and `GLOBAL_ACTION_LOCK_SCREEN`)
+- **Date**: 2026-11-18
+- **Author**: RAF
+- **Package**: `com.raf.capsuleos`
 - **Technical Story**: CapsuleOS Core Overlay & Security Architecture
 
 ---

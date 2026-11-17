@@ -69,6 +69,7 @@ fun NotificationExpandedContent(
     modifier: Modifier = Modifier,
     notification: CapsuleContent.NotificationAlert,
     topClearanceDp: Float,
+    contentPaddingDp: Float = 18f,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
     onUserInteraction: () -> Unit,
@@ -121,7 +122,12 @@ fun NotificationExpandedContent(
             verticalArrangement = Arrangement.SpaceBetween,
             modifier = modifier
                 .fillMaxSize()
-                .padding(start = 18.dp, end = 18.dp, top = topClearanceDp.dp, bottom = 14.dp),
+                .padding(
+                    start = contentPaddingDp.dp,
+                    end = contentPaddingDp.dp,
+                    top = topClearanceDp.dp,
+                    bottom = (contentPaddingDp * 0.8f).coerceAtLeast(10f).dp,
+                ),
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,

@@ -3,11 +3,13 @@ package com.raf.capsuleos.domain.coordinator
 import app.cash.turbine.test
 import com.raf.capsuleos.domain.model.AudioStreamType
 import com.raf.capsuleos.domain.model.BrightnessInfo
+import com.raf.capsuleos.domain.model.CameraAnchorPosition
 import com.raf.capsuleos.domain.model.CapsuleContent
 import com.raf.capsuleos.domain.model.CapsuleEffect
 import com.raf.capsuleos.domain.model.CapsuleEvent
 import com.raf.capsuleos.domain.model.CapsulePreferences
 import com.raf.capsuleos.domain.model.CapsuleVisualState
+import com.raf.capsuleos.domain.model.CutoutGeometry
 import com.raf.capsuleos.domain.model.RingerModeState
 import com.raf.capsuleos.domain.model.StreamVolumeInfo
 import com.raf.capsuleos.domain.model.UnlockMethod
@@ -807,6 +809,50 @@ class IslandStateCoordinatorTest {
             advanceTimeBy(2600L)
             runCurrent()
             assertEquals(CapsuleVisualState.STATE1_CUTOUT_ANCHOR, coordinator.uiState.value.visualState)
+        }
+
+    @Test
+    fun `given camera position alignment and horizontal offset, resolves left center right bounds cleanly`() =
+        testScope.runTest {
+            val coordinator = createCoordinator()
+            coordinator.updateCutoutGeometry(
+                CutoutGeometry(
+                    holeWidthDp = 36f,
+                    holeHeightDp = 36f,
+                    screenWidthDp = 400f,
+                    holeCenterOffsetXDp = 0f,
+                ),
+            )
+            coordinator.updatePreferences(
+                CapsulePreferences(
+                    cameraPosition = CameraAnchorPosition.CENTER,
+                    paddingWidthDp = 12f,
+                    horizontalOffsetDp = 12.5f,
+                ),
+            )
+            runCurrent()
+            assertEquals(12.5f, coordinator.uiState.value.resolveAnchorCenterXOffsetDp(), 0.01f)
+
+            coordinator.updatePreferences(
+                CapsulePreferences(
+                    cameraPosition = CameraAnchorPosition.LEFT,
+                    paddingWidthDp = 12f,
+                    horizontalOffsetDp = 0f,
+                ),
+            )
+            runCurrent()
+            // Half width 200 - radius 24 - corner margin 16 = 160dp left offset
+            assertEquals(-160f, coordinator.uiState.value.resolveAnchorCenterXOffsetDp(), 0.01f)
+
+            coordinator.updatePreferences(
+                CapsulePreferences(
+                    cameraPosition = CameraAnchorPosition.RIGHT,
+                    paddingWidthDp = 12f,
+                    horizontalOffsetDp = 0f,
+                ),
+            )
+            runCurrent()
+            assertEquals(160f, coordinator.uiState.value.resolveAnchorCenterXOffsetDp(), 0.01f)
         }
 
     private fun sampleMedia(): CapsuleContent.Media =

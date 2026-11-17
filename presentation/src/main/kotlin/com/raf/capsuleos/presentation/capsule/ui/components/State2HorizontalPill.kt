@@ -66,34 +66,44 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.raf.capsuleos.domain.model.CameraAnchorPosition
 import com.raf.capsuleos.domain.model.CapsuleContent
 import com.raf.capsuleos.domain.model.CutoutGeometry
 import com.raf.capsuleos.presentation.R
 
 internal const val PILL_SLOT_DP = 52f
+private const val CORNER_ICON_WING_DP = 36f
 
 /**
- * Symmetric slot-based State 2 horizontal pill geometry locking the physical camera hole inside
- * [cutoutGapDp]. Left holds one clean icon slot ([PILL_SLOT_DP]); Right scales in discrete
- * multiples (`1x` for compact readouts/EQ, `2x` for long marquee text), keeping 1-vs-1 states
- * 100% symmetric around the camera cutout.
+ * Anchor-aware State 2 horizontal pill geometry locking the physical camera hole inside
+ * [cutoutGapDp] across Left, Center, or Right camera placements.
  */
 internal data class SidePillGeometry(
+    val anchorPosition: CameraAnchorPosition,
     val leftWingDp: Float,
     val cutoutGapDp: Float,
     val rightWingDp: Float,
+    val circleDiameterDp: Float,
     val isWideRight: Boolean,
 ) {
-    val totalWidthDp: Float get() = leftWingDp + cutoutGapDp + rightWingDp
-    val cutoutOffsetXDp: Float get() = (rightWingDp - leftWingDp) * 0.5f
+    val totalWidthDp: Float
+        get() = leftWingDp + cutoutGapDp + rightWingDp
+
+    val cutoutOffsetXDp: Float
+        get() = when (anchorPosition) {
+            CameraAnchorPosition.CENTER -> (rightWingDp - leftWingDp) * 0.5f
+            CameraAnchorPosition.LEFT -> (totalWidthDp - circleDiameterDp) * 0.5f
+            CameraAnchorPosition.RIGHT -> -(totalWidthDp - circleDiameterDp) * 0.5f
+        }
 }
 
-/** Computes consistent 1-icon pill wing dimensions across Controller and Compose UI. */
+/** Computes consistent 1-icon pill dimensions across Controller, Simulation, and Compose UI. */
 internal fun computeSidePillGeometry(
     content: CapsuleContent,
     cutout: CutoutGeometry,
+    anchorPosition: CameraAnchorPosition = CameraAnchorPosition.CENTER,
+    circleDiameterDp: Float = cutout.holeWidthDp + 12f,
 ): SidePillGeometry {
-    val cutoutGap = cutout.holeWidthDp + 8f
     val rightSlots = when (content) {
         is CapsuleContent.NotificationAlert -> 2
         is CapsuleContent.Unlock -> 2
@@ -101,35 +111,69 @@ internal fun computeSidePillGeometry(
         is CapsuleContent.Alarm -> if (!content.isSet) 2 else 1
         else -> 1
     }
-    val rawLeft = PILL_SLOT_DP
-    val rawRight = rightSlots * PILL_SLOT_DP
+    val cutoutGap = if (anchorPosition == CameraAnchorPosition.CENTER) {
+        cutout.holeWidthDp + 8f
+    } else {
+        circleDiameterDp
+    }
+    val rawIconWing = if (anchorPosition == CameraAnchorPosition.CENTER) PILL_SLOT_DP else CORNER_ICON_WING_DP
+    val rawInfoWing = rightSlots * PILL_SLOT_DP
     val maxTotal = (cutout.screenWidthDp - 24f).coerceAtLeast(160f)
-    val availableWings = (maxTotal - cutoutGap).coerceAtLeast(PILL_SLOT_DP * 2f)
-    val scale = (availableWings / (rawLeft + rawRight)).coerceAtMost(1f)
-    return SidePillGeometry(
-        leftWingDp = rawLeft * scale,
-        cutoutGapDp = cutoutGap,
-        rightWingDp = rawRight * scale,
-        isWideRight = rightSlots > 1,
-    )
+    val availableWings = (maxTotal - cutoutGap).coerceAtLeast(PILL_SLOT_DP * 1.5f)
+    val scale = (availableWings / (rawIconWing + rawInfoWing)).coerceAtMost(1f)
+    val scaledIcon = rawIconWing * scale
+    val scaledInfo = rawInfoWing * scale
+    return when (anchorPosition) {
+        CameraAnchorPosition.CENTER -> SidePillGeometry(
+            anchorPosition = anchorPosition,
+            leftWingDp = scaledIcon,
+            cutoutGapDp = cutoutGap,
+            rightWingDp = scaledInfo,
+            circleDiameterDp = circleDiameterDp,
+            isWideRight = rightSlots > 1,
+        )
+        CameraAnchorPosition.LEFT -> SidePillGeometry(
+            anchorPosition = anchorPosition,
+            leftWingDp = scaledIcon,
+            cutoutGapDp = cutoutGap,
+            rightWingDp = scaledInfo,
+            circleDiameterDp = circleDiameterDp,
+            isWideRight = rightSlots > 1,
+        )
+        CameraAnchorPosition.RIGHT -> SidePillGeometry(
+            anchorPosition = anchorPosition,
+            leftWingDp = scaledIcon,
+            cutoutGapDp = cutoutGap,
+            rightWingDp = scaledInfo,
+            circleDiameterDp = circleDiameterDp,
+            isWideRight = rightSlots > 1,
+        )
+    }
 }
 
 /**
  * State 2 single-icon horizontal camera pill supporting directional horizontal swipe switching.
- * Padding around the central physical cutout stays symmetric between Left icon & Right wing.
+ * Anchors cleanly around Center, Left, or Right camera holes without covering the physical lens.
  */
 @Composable
 fun State2HorizontalPill(
     modifier: Modifier = Modifier,
     content: CapsuleContent,
     cutout: CutoutGeometry,
+    anchorPosition: CameraAnchorPosition = CameraAnchorPosition.CENTER,
+    circleDiameterDp: Float = cutout.holeWidthDp + 12f,
     swipeDirection: Int,
     manualSwipeSeq: Int,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
 ) {
     val primaryColor = MaterialTheme.colorScheme.primary
-    val geom = computeSidePillGeometry(content, cutout)
+    val geom = computeSidePillGeometry(
+        content = content,
+        cutout = cutout,
+        anchorPosition = anchorPosition,
+        circleDiameterDp = circleDiameterDp,
+    )
     val snapshot = State2SwipeSnapshot(
         swipeSeq = manualSwipeSeq,
         content = content,
@@ -182,16 +226,23 @@ private fun SymmetricSingleIconPillRow(
     animatedVisibilityScope: AnimatedVisibilityScope,
 ) {
     with(sharedTransitionScope) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = modifier.fillMaxSize(),
-        ) {
+        val isLeftAnchor = geom.anchorPosition == CameraAnchorPosition.LEFT
+        val isRightAnchor = geom.anchorPosition == CameraAnchorPosition.RIGHT
+
+        val iconBox: @Composable () -> Unit = {
             Box(
-                contentAlignment = Alignment.CenterStart,
+                contentAlignment = when {
+                    isLeftAnchor -> Alignment.CenterStart
+                    isRightAnchor -> Alignment.CenterEnd
+                    else -> Alignment.CenterStart
+                },
                 modifier = Modifier
                     .width(geom.leftWingDp.dp)
                     .fillMaxHeight()
-                    .padding(start = 14.dp, end = 6.dp),
+                    .padding(
+                        start = if (isLeftAnchor) 2.dp else 14.dp,
+                        end = if (isRightAnchor) 2.dp else 6.dp,
+                    ),
             ) {
                 AnimatedContent(
                     targetState = content,
@@ -212,15 +263,21 @@ private fun SymmetricSingleIconPillRow(
                     )
                 }
             }
+        }
 
-            Spacer(modifier = Modifier.width(geom.cutoutGapDp.dp))
-
+        val infoBox: @Composable (Modifier) -> Unit = { boxMod ->
             Box(
-                contentAlignment = if (geom.isWideRight) Alignment.CenterStart else Alignment.CenterEnd,
-                modifier = Modifier
-                    .weight(1f)
+                contentAlignment = when {
+                    isRightAnchor -> Alignment.CenterStart
+                    geom.isWideRight -> Alignment.CenterStart
+                    else -> Alignment.CenterEnd
+                },
+                modifier = boxMod
                     .fillMaxHeight()
-                    .padding(start = 6.dp, end = 14.dp),
+                    .padding(
+                        start = if (isRightAnchor) 14.dp else 6.dp,
+                        end = if (isRightAnchor) 6.dp else 14.dp,
+                    ),
             ) {
                 AnimatedContent(
                     targetState = content,
@@ -239,6 +296,29 @@ private fun SymmetricSingleIconPillRow(
                         sharedTransitionScope = this@with,
                         animatedVisibilityScope = animatedVisibilityScope,
                     )
+                }
+            }
+        }
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = modifier.fillMaxSize(),
+        ) {
+            when (geom.anchorPosition) {
+                CameraAnchorPosition.LEFT -> {
+                    Spacer(modifier = Modifier.width(geom.cutoutGapDp.dp))
+                    iconBox()
+                    infoBox(Modifier.weight(1f))
+                }
+                CameraAnchorPosition.CENTER -> {
+                    iconBox()
+                    Spacer(modifier = Modifier.width(geom.cutoutGapDp.dp))
+                    infoBox(Modifier.weight(1f))
+                }
+                CameraAnchorPosition.RIGHT -> {
+                    infoBox(Modifier.weight(1f))
+                    iconBox()
+                    Spacer(modifier = Modifier.width(geom.cutoutGapDp.dp))
                 }
             }
         }

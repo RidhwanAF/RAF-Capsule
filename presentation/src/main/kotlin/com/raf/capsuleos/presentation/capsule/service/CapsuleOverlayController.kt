@@ -11,7 +11,6 @@ import android.graphics.Color
 import android.graphics.ColorFilter
 import android.graphics.Outline
 import android.graphics.PixelFormat
-import android.graphics.RectF
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.hardware.display.DisplayManager
@@ -22,11 +21,9 @@ import android.view.Choreographer
 import android.view.Display
 import android.view.Gravity
 import android.view.MotionEvent
-import android.view.RoundedCorner
 import android.view.Surface
 import android.view.View
 import android.view.Window
-import android.view.WindowInsets
 import android.view.WindowManager
 import android.widget.FrameLayout
 import androidx.compose.runtime.getValue
@@ -58,7 +55,7 @@ import com.raf.capsuleos.domain.repository.TorchRepository
 import com.raf.capsuleos.domain.repository.VolumeRepository
 import com.raf.capsuleos.presentation.capsule.ui.CapsuleScrubPresentation
 import com.raf.capsuleos.presentation.capsule.ui.IslandCapsule
-import com.raf.capsuleos.presentation.capsule.ui.components.computeSidePillGeometry
+import com.raf.capsuleos.presentation.capsule.ui.computeCapsuleLayoutDpSpec
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -68,6 +65,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.util.function.Consumer
 import javax.inject.Inject
@@ -205,6 +203,43 @@ class CapsuleOverlayController @Inject constructor(
         ContextCompat.registerReceiver(appContext, screenReceiver, screenFilter, ContextCompat.RECEIVER_EXPORTED)
         collectDomainStreams()
         collectEffects()
+        scope.launch { ensureInitialCameraDetected(appContext) }
+    }
+
+    /** Runs hardware cutout detection once on initial setup without overwriting subsequent manual edits. */
+    suspend fun ensureInitialCameraDetected(hostContext: Context = appContext) {
+        val currentPrefs = settingsRepository.observePreferences().first()
+        val measurement = CutoutGeometryResolver.detect(hostContext)
+        coordinator.updateCutoutGeometry(measurement.geometry)
+        if (!currentPrefs.hasAutoDetectedCamera) {
+            settingsRepository.updatePreferences { prefs ->
+                if (prefs.hasAutoDetectedCamera) {
+                    prefs
+                } else {
+                    prefs.copy(
+                        cameraPosition = measurement.detectedPosition,
+                        horizontalOffsetDp = 0f,
+                        topOffsetAdjustDp = 0f,
+                        hasAutoDetectedCamera = true,
+                    )
+                }
+            }
+        }
+    }
+
+    /** Explicitly auto-detects physical camera cutout alignment and resets fine-tune offsets. */
+    internal suspend fun autoDetectCameraPosition(hostContext: Context = appContext): DetectedCutoutMeasurement {
+        val measurement = CutoutGeometryResolver.detect(hostContext)
+        coordinator.updateCutoutGeometry(measurement.geometry)
+        settingsRepository.updatePreferences { prefs ->
+            prefs.copy(
+                cameraPosition = measurement.detectedPosition,
+                horizontalOffsetDp = 0f,
+                topOffsetAdjustDp = 0f,
+                hasAutoDetectedCamera = true,
+            )
+        }
+        return measurement
     }
 
     /** Attaches the capsule using `TYPE_ACCESSIBILITY_OVERLAY` directly over the camera & status bar. */
@@ -950,156 +985,27 @@ class CapsuleOverlayController @Inject constructor(
 
     private fun computeTargetWindowSpec(context: Context, state: CapsuleUiState): WindowSpec {
         val density = context.resources.displayMetrics.density.coerceAtLeast(1f)
-        val holdBonusDp = if (isHoldingCapsule && state.visualState != CapsuleVisualState.STATE3_FULL_EXPANDED) 4f else 0f
-        val circleDp = state.circleDiameterDp
-        val minCirclePx = circleDp * density
-        val prefsOffsetPx = state.preferences.horizontalOffsetDp * density
-        val cutoutCenterXOffsetPx = state.cutout.holeCenterOffsetXDp * density
-        val topYPx = state.anchorTopDp * density
-        val content = state.content
-
-        return when (state.visualState) {
-            CapsuleVisualState.HIDDEN_SYSTEM -> WindowSpec(
-                widthPx = 1f,
-                heightPx = 1f,
-                minWidthPx = 1f,
-                minHeightPx = 1f,
-                offsetXPx = cutoutCenterXOffsetPx + prefsOffsetPx,
-                topYPx = topYPx,
-                cornerDp = circleDp / 2f,
-                blurRadiusPx = 0f,
-            )
-            CapsuleVisualState.STATE1_CUTOUT_ANCHOR -> {
-                val sidePx = (circleDp + holdBonusDp) * density
-                WindowSpec(
-                    widthPx = sidePx,
-                    heightPx = sidePx,
-                    minWidthPx = minCirclePx,
-                    minHeightPx = minCirclePx,
-                    offsetXPx = cutoutCenterXOffsetPx + prefsOffsetPx,
-                    topYPx = topYPx,
-                    cornerDp = (circleDp + holdBonusDp) / 2f,
-                    blurRadiusPx = 0f,
-                )
-            }
-            CapsuleVisualState.STATE2_HORIZONTAL_PILL -> {
-                val geom = computeSidePillGeometry(content, state.cutout)
-                val hDp = circleDp + holdBonusDp
-                WindowSpec(
-                    widthPx = (geom.totalWidthDp + holdBonusDp) * density,
-                    heightPx = hDp * density,
-                    minWidthPx = minCirclePx,
-                    minHeightPx = minCirclePx,
-                    offsetXPx = cutoutCenterXOffsetPx + geom.cutoutOffsetXDp * density + prefsOffsetPx,
-                    topYPx = topYPx,
-                    cornerDp = hDp / 2f,
-                    blurRadiusPx = 0f,
-                )
-            }
-            CapsuleVisualState.STATE3_FULL_EXPANDED -> {
-                val (wDp, hDp, expandedCornerDp) = if (content is CapsuleContent.Torch) {
-                    val sq = if (content.maxStrengthLevel > 1) 208f else 184f
-                    val bounded = sq.coerceAtMost(state.cutout.screenWidthDp - 48f)
-                    val torchCorner = (state.cutout.screenTopCornerRadiusDp - 14f).coerceIn(26f, 36f)
-                    Triple(bounded, bounded, torchCorner)
-                } else {
-                    val sidePaddingDp = if (state.preferences.belowStatusBar) {
-                        14f
-                    } else {
-                        state.anchorTopDp.coerceIn(10f, 20f)
-                    }
-                    val w = (state.cutout.screenWidthDp - sidePaddingDp * 2f).coerceAtLeast(300f)
-                    val h = when (content) {
-                        is CapsuleContent.Media -> 240f
-                        is CapsuleContent.Volume -> 262f
-                        is CapsuleContent.NowBrief -> 288f
-                        is CapsuleContent.NotificationAlert -> 214f
-                        else -> 148f
-                    }
-                    val outsidePad = if (state.preferences.belowStatusBar) {
-                        sidePaddingDp
-                    } else {
-                        state.anchorTopDp.coerceAtLeast(sidePaddingDp)
-                    }
-                    val concentricCorner = (state.cutout.screenTopCornerRadiusDp - outsidePad).coerceIn(24f, 48f)
-                    Triple(w, h, concentricCorner)
-                }
-                WindowSpec(
-                    widthPx = wDp * density,
-                    heightPx = hDp * density,
-                    minWidthPx = minCirclePx,
-                    minHeightPx = minCirclePx,
-                    offsetXPx = prefsOffsetPx,
-                    topYPx = topYPx,
-                    cornerDp = expandedCornerDp,
-                    blurRadiusPx = if (_isBlurEnabled.value) 64f else 0f,
-                )
-            }
+        val dpSpec = computeCapsuleLayoutDpSpec(state = state, isHoldingCapsule = isHoldingCapsule)
+        val blurPx = if (state.visualState == CapsuleVisualState.STATE3_FULL_EXPANDED && _isBlurEnabled.value) {
+            64f
+        } else {
+            0f
         }
+        return WindowSpec(
+            widthPx = dpSpec.widthDp * density,
+            heightPx = dpSpec.heightDp * density,
+            minWidthPx = dpSpec.minWidthDp * density,
+            minHeightPx = dpSpec.minHeightDp * density,
+            offsetXPx = dpSpec.offsetXDp * density,
+            topYPx = dpSpec.topYDp * density,
+            cornerDp = dpSpec.cornerDp,
+            blurRadiusPx = blurPx,
+        )
     }
 
     private fun measureDeviceCutout(context: Context) {
-        val density = context.resources.displayMetrics.density.coerceAtLeast(1f)
-        val metrics = windowManager.currentWindowMetrics
-        val displayWidthPx = metrics.bounds.width().toFloat()
-        val screenWidthDp = (displayWidthPx / density).coerceAtLeast(320f)
-        val insets = metrics.windowInsets
-        val statusBarBottomPx = insets.getInsetsIgnoringVisibility(WindowInsets.Type.statusBars()).top
-        val statusBarBottomDp = (statusBarBottomPx / density).coerceAtLeast(24f)
-        val tlCornerPx = insets.getRoundedCorner(RoundedCorner.POSITION_TOP_LEFT)?.radius ?: 0
-        val trCornerPx = insets.getRoundedCorner(RoundedCorner.POSITION_TOP_RIGHT)?.radius ?: 0
-        val maxCornerPx = maxOf(tlCornerPx, trCornerPx)
-        val screenCornerDp = if (maxCornerPx > 0) (maxCornerPx.toFloat() / density) else 42f
-
-        val cutout = insets.displayCutout
-            ?: displayManager.getDisplay(Display.DEFAULT_DISPLAY)?.cutout
-
-        val path = cutout?.cutoutPath
-        if (path != null) {
-            val bounds = RectF()
-            path.computeBounds(bounds, true)
-            if (!bounds.isEmpty && bounds.width() > 0f && bounds.height() > 0f) {
-                val centerXOffsetDp = (bounds.centerX() - (displayWidthPx / 2f)) / density
-                coordinator.updateCutoutGeometry(
-                    CutoutGeometry(
-                        holeWidthDp = bounds.width() / density,
-                        holeHeightDp = bounds.height() / density,
-                        topOffsetDp = bounds.top / density,
-                        statusBarBottomDp = statusBarBottomDp,
-                        screenWidthDp = screenWidthDp,
-                        holeCenterOffsetXDp = centerXOffsetDp,
-                        screenTopCornerRadiusDp = screenCornerDp,
-                    ),
-                )
-                return
-            }
-        }
-        val topRect = cutout?.boundingRectTop
-        if (topRect != null && !topRect.isEmpty) {
-            val estimatedHoleSizeDp = (topRect.width().toFloat() / density).coerceIn(20f, 64f)
-            val bottomDp = topRect.bottom.toFloat() / density
-            val estimatedTopDp = ((bottomDp - estimatedHoleSizeDp) * 0.5f).coerceAtLeast(4f)
-            val centerXOffsetDp = (topRect.exactCenterX() - (displayWidthPx / 2f)) / density
-            coordinator.updateCutoutGeometry(
-                CutoutGeometry(
-                    holeWidthDp = estimatedHoleSizeDp,
-                    holeHeightDp = estimatedHoleSizeDp,
-                    topOffsetDp = estimatedTopDp,
-                    statusBarBottomDp = statusBarBottomDp,
-                    screenWidthDp = screenWidthDp,
-                    holeCenterOffsetXDp = centerXOffsetDp,
-                    screenTopCornerRadiusDp = screenCornerDp,
-                ),
-            )
-            return
-        }
-        coordinator.updateCutoutGeometry(
-            CutoutGeometry(
-                statusBarBottomDp = statusBarBottomDp,
-                screenWidthDp = screenWidthDp,
-                screenTopCornerRadiusDp = screenCornerDp,
-            ),
-        )
+        val detected = CutoutGeometryResolver.detect(context)
+        coordinator.updateCutoutGeometry(detected.geometry)
     }
 
     private fun dispatchEnvironmentVisibility(config: Configuration = appContext.resources.configuration) {

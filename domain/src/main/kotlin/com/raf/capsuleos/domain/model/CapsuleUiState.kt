@@ -1,6 +1,14 @@
 package com.raf.capsuleos.domain.model
 
+import kotlin.math.abs
 import kotlin.math.max
+
+/** Horizontal anchor slot for the physical camera cutout ring and State 2 pill expansion. */
+enum class CameraAnchorPosition {
+    LEFT,
+    CENTER,
+    RIGHT,
+}
 
 /**
  * Physical camera cutout and status bar dimensions measured in dp from system display insets.
@@ -31,20 +39,24 @@ data class CutoutGeometry(
  * Configurable capsule positioning and behavior preferences.
  *
  * @property belowStatusBar Places the capsule below the status bar when enabled.
+ * @property cameraPosition Horizontal anchor region (Left / Center / Right) around which the capsule originates.
  * @property paddingWidthDp Extra diameter padding around the camera hole in State 1 (dp).
- * @property paddingHeightDp Extra vertical padding in State 2 (dp).
  * @property topOffsetAdjustDp Fine-tune vertical adjustment in dp (-16..+16).
- * @property horizontalOffsetDp Fine-tune horizontal offset from center in dp.
+ * @property horizontalOffsetDp Fine-tune horizontal offset from the selected [cameraPosition] anchor in dp.
+ * @property expandedContentPaddingDp Inner content padding for expanded State 3 cards in dp.
+ * @property hasAutoDetectedCamera Tracks whether initial hardware cutout auto-detection already initialized positioning.
  * @property autoCollapseDelayMs Auto-collapse timeout for transient pills and State 3 card.
  * @property autoHideStatusBarIcons Whether State 3 expanded card hides status bar icons via `icon_blacklist`.
  * @property suppressSystemHeadsUp Suppresses floating system heads-up notification banners so controls remain in Quick Settings shade only (requires `WRITE_SECURE_SETTINGS`).
  */
 data class CapsulePreferences(
     val belowStatusBar: Boolean = false,
+    val cameraPosition: CameraAnchorPosition = CameraAnchorPosition.CENTER,
     val paddingWidthDp: Float = 12f,
-    val paddingHeightDp: Float = 8f,
     val topOffsetAdjustDp: Float = 0f,
     val horizontalOffsetDp: Float = 0f,
+    val expandedContentPaddingDp: Float = 18f,
+    val hasAutoDetectedCamera: Boolean = false,
     val autoCollapseDelayMs: Long = 4000L,
     val autoHideStatusBarIcons: Boolean = true,
     val suppressSystemHeadsUp: Boolean = true,
@@ -91,6 +103,36 @@ data class CapsuleUiState(
     /** Computed State 1 height in dp (1:1 circle). */
     val anchorHeightDp: Float
         get() = circleDiameterDp
+
+    /**
+     * Horizontal offset from display center (dp) combining [CapsulePreferences.cameraPosition],
+     * measured [CutoutGeometry.holeCenterOffsetXDp], and [CapsulePreferences.horizontalOffsetDp].
+     */
+    fun resolveAnchorCenterXOffsetDp(): Float {
+        val cornerMarginDp = 16f
+        val cornerMag = ((cutout.screenWidthDp * 0.5f) - (circleDiameterDp * 0.5f) - cornerMarginDp)
+            .coerceAtLeast(0f)
+        val edgeThreshold = cutout.screenWidthDp * 0.12f
+        val baseX = when (preferences.cameraPosition) {
+            CameraAnchorPosition.LEFT -> if (cutout.holeCenterOffsetXDp < -edgeThreshold) {
+                cutout.holeCenterOffsetXDp
+            } else {
+                -cornerMag
+            }
+            CameraAnchorPosition.CENTER -> if (abs(cutout.holeCenterOffsetXDp) <= edgeThreshold) {
+                cutout.holeCenterOffsetXDp
+            } else {
+                0f
+            }
+            CameraAnchorPosition.RIGHT -> if (cutout.holeCenterOffsetXDp > edgeThreshold) {
+                cutout.holeCenterOffsetXDp
+            } else {
+                cornerMag
+            }
+        }
+        val maxReach = ((cutout.screenWidthDp * 0.5f) - (circleDiameterDp * 0.5f)).coerceAtLeast(0f)
+        return (baseX + preferences.horizontalOffsetDp).coerceIn(-maxReach, maxReach)
+    }
 
     /**
      * Top Y coordinate in dp so the 1:1 State 1 circle and State 2 pill are centered

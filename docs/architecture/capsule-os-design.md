@@ -1,28 +1,26 @@
-# CapsuleOS — System Architecture & Design Specification
+# CapsuleOS (Raf Capsule) — System Architecture & Design Specification
 
-- **Target Platform**: Android (`minSdk = 33` / Android 13+, `targetSdk = 35/36`)
-- **Language & UI**: Kotlin 2.x+, Jetpack Compose, AGSL (`RuntimeShader`), Clean Architecture (MVVM + MVI State Coordinator)
-- **External Dependencies**: Zero third-party runtime dependencies (100% Android SDK & Jetpack)
+- **Package / Application ID**: `com.raf.capsuleos`
+- **Target Platform**: Android (`minSdk = 33` / Android 13+, `compileSdk = 37`, `targetSdk = 37` / **Android 17**)
+- **Language & UI**: Kotlin 2.4+, Jetpack Compose + Navigation 3, Material 3 Expressive, AGSL (`RuntimeShader`), Clean Architecture (`:domain`, `:data`, `:presentation`, `:app`)
 - **Project Location**: `/Users/raf/Coding/AndroidStudioProjects/CapsuleOS`
 
 ---
 
 ## 1. Core Design Goals
 
-1. **Full User Control & Security Compatibility**:
-   - No `AccessibilityService` required — compatible with Android **Advanced Protection Mode** enabled.
-   - Uses `TYPE_APPLICATION_OVERLAY` (`SYSTEM_ALERT_WINDOW`), `NotificationListenerService` (for `MediaSessionManager`), and optional one-time ADB `WRITE_SECURE_SETTINGS` grant for status bar icon hiding (`icon_blacklist`).
+1. **System-Level Cutout Z-Order & Controls**:
+   - Uses `CapsuleAccessibilityService` (`TYPE_ACCESSIBILITY_OVERLAY`) + `CapsuleOverlayController` to render seamlessly above the status bar & camera cutout across apps and invoke `GLOBAL_ACTION_LOCK_SCREEN`, paired with `NotificationListenerService` (for `MediaSessionManager` and notification bridges) and optional one-time ADB `WRITE_SECURE_SETTINGS` for `icon_blacklist` / heads-up popup suppression.
 2. **Three-State Dynamic Capsule**:
-   - **State 1 (Cutout Anchor)**: Minimal `#000000` wrap around the front camera `DisplayCutout` with subtle ambient indicator.
-   - **State 2 (Horizontal Pill)**: Expands horizontally along the top bar when live data or system events fire; hides status bar system icons via `icon_blacklist` (when permitted) and auto-collapses transient events back to State 1.
-   - **State 3 (Full Expanded Card)**: Expands downward on tap or long-press with rich interactive controls (Media player, Torch brightness slider, Volume mixer, Alarm/Unlock info).
-3. **120fps Butter-Smooth Physics & Native GPU Effects**:
-   - Zero `WindowManager.updateViewLayout()` calls during frame animation; morphing runs entirely inside Compose `spring()` + `graphicsLayer`.
-   - **AGSL `RuntimeShader`** (`minSdk = 33`) for Gemini-style neural dot/border animations and bottom-rising music wave visuals.
-   - **Native Blur**: `RenderEffect.createBlurEffect` for internal frosted ambient glow + `WindowManager.LayoutParams.FLAG_BLUR_BEHIND` (gated by `isCrossWindowBlurEnabled`) for State 3 depth.
-4. **Contextual Auto-Hide**:
-   - Automatically hides in **Landscape** (`Configuration.ORIENTATION_LANDSCAPE` + `DisplayListener`).
-   - Quick Settings / Notification Shade naturally draws **above** `TYPE_APPLICATION_OVERLAY` in SystemUI Z-order, while `FLAG_WATCH_OUTSIDE_TOUCH` collapses expanded State 3 on outside touch.
+   - **State 1 (Cutout Anchor)**: Minimal `#000000` 1:1 ring wrapping the auto-detected Left/Center/Right `DisplayCutout` with clockwise AGSL battery ring accent.
+   - **State 2 (Horizontal Pill)**: Matte-black asymmetric horizontal pill expanding from the calibrated Left, Center, or Right camera anchor with directional swipe carousel and tap/double-tap/hold/scrub gestures.
+   - **State 3 (Full Expanded Card)**: Vertical top-black to bottom-translucent frosted blur card with configurable inner content padding, interactive Media / Notification (quick reply + actions) / Torch / Sound Mixer (with Ring / Vibrate / Silent buttons) / Now Brief / Alarm / Unlock cards.
+3. **Butter-Smooth Spring Physics & Native GPU Shaders**:
+   - VSYNC-synchronized Compose / Window spring kinematics paired with SharedElement + `SeekableTransitionState` 1:1 finger-tracked vertical scrub morphing.
+   - **AGSL `RuntimeShader`** (`minSdk = 33`) for Gemini-style neural dot/border animations and continuous bottom-rising music wave visuals.
+   - **Native Blur**: `RenderEffect.createBlurEffect` for album artwork backdrop + `WindowManager.LayoutParams.setBackgroundBlurRadius` for State 3 card depth.
+4. **In-App Calibration & Sandbox Simulation (Navigation 3)**:
+   - Categorized Setup dashboard (`Setup`, `Camera Position`, `Behavior & Layout`, `Live Overlay Quick Test`) with animated permission dismissal, initial hardware `DisplayCutout` auto-detection + manual Left/Center/Right and precision `-`/`+` sliders, and an isolated in-app **Navigation 3** Simulation screen.
 
 ---
 
@@ -53,13 +51,19 @@ stateDiagram-v2
 
 ```mermaid
 classDiagram
-    class CapsuleOverlayService {
-        -WindowManager windowManager
-        -ComposeView composeView
-        -IslandStateCoordinator coordinator
-        +onCreate()
+    class CapsuleAccessibilityService {
+        +onServiceConnected()
+        +onAccessibilityEvent(AccessibilityEvent)
         +onConfigurationChanged(Configuration)
         +onDestroy()
+    }
+
+    class CapsuleOverlayController {
+        -WindowManager windowManager
+        -Dialog activeDialog
+        -IslandStateCoordinator coordinator
+        +attachAccessibilityHost()
+        +dispatchTestAction(CapsuleTestAction)
     }
 
     class IslandStateCoordinator {
@@ -102,8 +106,9 @@ classDiagram
         +onReceive(Context, Intent)
     }
 
-    CapsuleOverlayService --> IslandStateCoordinator : observes
-    CapsuleOverlayService --> StatusBarIconController : toggles on State 2/3
+    CapsuleAccessibilityService --> CapsuleOverlayController : hosts overlay & lock action
+    CapsuleOverlayController --> IslandStateCoordinator : observes
+    CapsuleOverlayController --> StatusBarIconController : toggles on State 2/3
     IslandStateCoordinator --> MediaSessionRepository : collects
     IslandStateCoordinator --> TorchRepository : collects
     IslandStateCoordinator --> VolumeRepository : collects
@@ -176,26 +181,38 @@ sequenceDiagram
 
 ---
 
-## 6. Package Structure & Implementation Roadmap
+## 6. Multi-Module Package Structure (`com.raf.capsuleos`)
 
 ```text
-app/src/main/java/com/capsule/os/
-├── domain/
-│   ├── model/          # CapsuleUiState, CapsuleContent, NeuralEffectConfig
-│   └── coordinator/    # IslandStateCoordinator (priority queue, timers, orientation gate)
-├── data/
-│   ├── media/          # CapsuleNotificationListener, MediaSessionRepository, BitmapColorExtractor
-│   ├── hardware/       # TorchRepository, VolumeRepository
-│   ├── system/         # SystemEventReceiver (USER_PRESENT, NEXT_ALARM_CLOCK_CHANGED)
-│   └── statusbar/      # StatusBarIconController (WRITE_SECURE_SETTINGS icon_blacklist)
-└── presentation/
-    ├── service/        # CapsuleOverlayService (LifecycleOwner + SavedStateRegistryOwner + ComposeView)
-    ├── shader/         # NeuralBorderShader.kt (AGSL), MusicWaveShader.kt (AGSL)
-    └── ui/             # IslandCapsule.kt, State1Cutout.kt, State2HorizontalPill.kt, State3ExpandedCard.kt
+CapsuleOS/
+├── app/src/main/kotlin/com/raf/capsuleos/
+│   ├── CapsuleApplication.kt
+│   └── MainActivity.kt               # Edge-to-edge host rendering CapsuleNavHost (Navigation 3)
+├── domain/src/main/kotlin/com/raf/capsuleos/domain/
+│   ├── model/                        # CapsuleUiState, CapsulePreferences, CapsuleContent, CapsuleEvent
+│   ├── repository/                   # Pure Kotlin repository interfaces (Torch, Volume, Brightness, Media, Notif, Settings)
+│   └── coordinator/                  # IslandStateCoordinator (priority stack, timers, scrub targets, carousel)
+├── data/src/main/kotlin/com/raf/capsuleos/data/
+│   ├── di/                           # DataModule (Hilt bindings)
+│   ├── media/                        # CapsuleNotificationListenerService, MediaSessionRepositoryImpl, BitmapColorExtractor
+│   ├── hardware/                     # BrightnessRepositoryImpl (API 37 percentage), TorchRepositoryImpl, VolumeRepositoryImpl
+│   ├── notification/                 # NotificationRepositoryImpl
+│   ├── settings/                     # CapsuleSettingsRepositoryImpl (DataStore Preferences)
+│   ├── statusbar/                    # StatusBarIconControllerImpl (WRITE_SECURE_SETTINGS icon_blacklist & heads-up)
+│   └── system/                       # SystemEventsRepositoryImpl (Battery, Screen/Unlock, Alarm, Weather)
+└── presentation/src/main/kotlin/com/raf/capsuleos/presentation/
+    ├── navigation/                   # CapsuleRoute, CapsuleNavHost (Navigation 3)
+    ├── capsule/
+    │   ├── service/                  # CapsuleAccessibilityService, CapsuleOverlayController, CutoutGeometryResolver
+    │   ├── shader/                   # NeuralBorderShader.kt (AGSL), MusicWaveShader.kt (AGSL)
+    │   └── ui/                       # IslandCapsule.kt, State2HorizontalPill.kt, State3ExpandedCard.kt + expanded cards
+    ├── setup/                        # SetupScreen, SetupContent, SetupViewModel, categorized setup/tuning cards
+    ├── simulation/                   # SimulationScreen, SimulationContent, SimulationViewModel (sandbox IslandStateCoordinator)
+    └── common/                       # CapsuleSlider (SegmentFrequentTick haptics), CapsuleExpressive, CapsuleHaptics
 ```
 
-### Delivery Phases
-- **Phase 1**: Gradle scaffold (`minSdk = 33`), `CapsuleOverlayService` lifecycle host, cutout coordinate detection, landscape auto-hide, and setup/permissions onboarding Activity.
-- **Phase 2**: `IslandStateCoordinator` + 3-state `spring()` morphing capsule + AGSL Gemini-style neural dot/border shader.
-- **Phase 3**: `NotificationListenerService` + `MediaSessionManager` + State 3 Media Card (bottom AGSL wave + `RenderEffect` blur + seek/transport).
-- **Phase 4**: Hardware & System Event triggers (Torch strength slider, Volume multi-stream mixer, Unlock greeting, Alarm indicator) + `StatusBarIconController`.
+### Delivery Phases (`compileSdk = 37`, `targetSdk = 37` / Android 17)
+- **Phase 1**: Multi-module Hilt + Clean Architecture (`minSdk = 33`, `targetSdk = 37`), `CapsuleAccessibilityService` overlay host, auto-detected Left/Center/Right cutout geometry, and Setup dashboard.
+- **Phase 2**: `IslandStateCoordinator` + 3-state `spring()` morphing capsule + AGSL Gemini-style neural dot/border shader + 1:1 vertical scrub.
+- **Phase 3**: `NotificationListenerService` + `MediaSessionManager` + State 3 Media (`Cookie7Sided` play/pause + AGSL wave), Notifications (inline actions & priority), and Quick Hub (`Now Brief`).
+- **Phase 4**: Hardware & System controls (Flashlight %, Sound Mixer + Ring/Vibrate/Silent buttons, API 37 Brightness sync, Alarm/Unlock) + Navigation 3 Interactive Sandbox Simulation screen.

@@ -9,7 +9,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.ui.platform.LocalContext
-import com.raf.capsuleos.presentation.setup.SetupScreen
+import com.raf.capsuleos.presentation.navigation.CapsuleNavHost
 import dagger.hilt.android.AndroidEntryPoint
 
 /**
@@ -31,7 +31,7 @@ class MainActivity : ComponentActivity() {
             }
 
             MaterialTheme(colorScheme = colorScheme) {
-                SetupScreen()
+                CapsuleNavHost()
             }
         }
     }

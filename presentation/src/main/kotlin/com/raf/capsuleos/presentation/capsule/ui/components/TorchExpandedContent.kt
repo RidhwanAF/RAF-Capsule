@@ -66,6 +66,7 @@ fun TorchExpandedContent(
     modifier: Modifier = Modifier,
     torch: CapsuleContent.Torch,
     topClearanceDp: Float,
+    contentPaddingDp: Float = 18f,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
     onUserInteraction: () -> Unit,
@@ -111,12 +112,18 @@ fun TorchExpandedContent(
     )
 
     with(sharedTransitionScope) {
+        val sidePadDp = (contentPaddingDp - 2f).coerceAtLeast(8f)
         Column(
             verticalArrangement = Arrangement.SpaceBetween,
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = modifier
                 .fillMaxSize()
-                .padding(start = 16.dp, end = 16.dp, top = topClearanceDp.dp, bottom = 14.dp),
+                .padding(
+                    start = sidePadDp.dp,
+                    end = sidePadDp.dp,
+                    top = topClearanceDp.dp,
+                    bottom = (contentPaddingDp * 0.8f).coerceAtLeast(10f).dp,
+                ),
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,

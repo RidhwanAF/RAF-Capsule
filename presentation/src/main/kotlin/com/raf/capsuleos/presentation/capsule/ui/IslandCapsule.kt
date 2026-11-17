@@ -264,12 +264,13 @@ fun IslandCapsule(
         val cornerPx = with(density) { cornerRadiusDp.dp.toPx() }
         val strokePx = with(density) { (2.2f + 0.4f * effectiveRingMix).dp.toPx() }
 
+        val contentPaddingDp = prefs.expandedContentPaddingDp.coerceIn(8f, 32f)
         val topClearanceDp = if (prefs.belowStatusBar) {
-            16f
+            contentPaddingDp
         } else {
             val anchorYDp = uiState.anchorTopDp
             val holeBottomInWindowDp = (uiState.cutout.topOffsetDp + uiState.cutout.holeHeightDp) - anchorYDp
-            (holeBottomInWindowDp + 10f).coerceAtLeast(40f)
+            (holeBottomInWindowDp + 10f).coerceAtLeast(40f) + (contentPaddingDp - 18f).coerceAtLeast(-6f)
         }
 
         val bgProgress = scrubFractionClamped ?: if (isExpandedCard) 1f else 0f
@@ -573,7 +574,12 @@ fun IslandCapsule(
                                 } else {
                                     uiState.content
                                 }
-                                val pillGeom = computeSidePillGeometry(pillContent, uiState.cutout)
+                                val pillGeom = computeSidePillGeometry(
+                                    content = pillContent,
+                                    cutout = uiState.cutout,
+                                    anchorPosition = prefs.cameraPosition,
+                                    circleDiameterDp = uiState.circleDiameterDp,
+                                )
                                 val pillModifier = if (scrubPresentation != null) {
                                     Modifier.scrubContainer(
                                         targetW = pillGeom.totalWidthDp,
@@ -594,6 +600,8 @@ fun IslandCapsule(
                                     State2HorizontalPill(
                                         content = pillContent,
                                         cutout = uiState.cutout,
+                                        anchorPosition = prefs.cameraPosition,
+                                        circleDiameterDp = uiState.circleDiameterDp,
                                         swipeDirection = uiState.swipeDirection,
                                         manualSwipeSeq = uiState.manualSwipeSeq,
                                         sharedTransitionScope = this@SharedTransitionLayout,
@@ -617,6 +625,7 @@ fun IslandCapsule(
                                     State3ExpandedCard(
                                         content = uiState.content,
                                         topClearanceDp = topClearanceDp,
+                                        contentPaddingDp = contentPaddingDp,
                                         timeSeconds = shaderTime,
                                         sharedTransitionScope = this@SharedTransitionLayout,
                                         animatedVisibilityScope = this@AnimatedContent,
@@ -653,7 +662,12 @@ fun IslandCapsule(
                     scrubPresentation.compactVisualState == CapsuleVisualState.STATE2_HORIZONTAL_PILL &&
                     compactAlpha > 0.01f
                 ) {
-                    val pillGeom = computeSidePillGeometry(scrubPresentation.compactContent, uiState.cutout)
+                    val pillGeom = computeSidePillGeometry(
+                        content = scrubPresentation.compactContent,
+                        cutout = uiState.cutout,
+                        anchorPosition = prefs.cameraPosition,
+                        circleDiameterDp = uiState.circleDiameterDp,
+                    )
                     Box(
                         modifier = Modifier.scrubContainer(
                             targetW = pillGeom.totalWidthDp,
@@ -667,6 +681,8 @@ fun IslandCapsule(
                                 State2HorizontalPill(
                                     content = scrubPresentation.compactContent,
                                     cutout = uiState.cutout,
+                                    anchorPosition = prefs.cameraPosition,
+                                    circleDiameterDp = uiState.circleDiameterDp,
                                     swipeDirection = uiState.swipeDirection,
                                     manualSwipeSeq = uiState.manualSwipeSeq,
                                     sharedTransitionScope = this@SharedTransitionLayout,
@@ -693,6 +709,7 @@ fun IslandCapsule(
                                 State3ExpandedCard(
                                     content = scrubPresentation.expandedContent,
                                     topClearanceDp = topClearanceDp,
+                                    contentPaddingDp = contentPaddingDp,
                                     timeSeconds = shaderTime,
                                     sharedTransitionScope = this@SharedTransitionLayout,
                                     animatedVisibilityScope = this@AnimatedVisibility,

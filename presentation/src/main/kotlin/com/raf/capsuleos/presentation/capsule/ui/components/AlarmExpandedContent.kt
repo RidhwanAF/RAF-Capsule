@@ -51,6 +51,7 @@ fun AlarmExpandedContent(
     modifier: Modifier = Modifier,
     alarm: CapsuleContent.Alarm,
     topClearanceDp: Float,
+    contentPaddingDp: Float = 18f,
     onOpenClock: () -> Unit,
 ) {
     val haptics = rememberCapsuleHaptics()
@@ -61,7 +62,12 @@ fun AlarmExpandedContent(
         horizontalArrangement = Arrangement.SpaceBetween,
         modifier = modifier
             .fillMaxSize()
-            .padding(start = 18.dp, end = 18.dp, top = topClearanceDp.dp, bottom = 16.dp),
+            .padding(
+                start = contentPaddingDp.dp,
+                end = contentPaddingDp.dp,
+                top = topClearanceDp.dp,
+                bottom = (contentPaddingDp * 0.9f).coerceAtLeast(10f).dp,
+            ),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
@@ -151,6 +157,7 @@ fun UnlockExpandedContent(
     modifier: Modifier = Modifier,
     unlock: CapsuleContent.Unlock,
     topClearanceDp: Float,
+    contentPaddingDp: Float = 18f,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
 ) {
@@ -176,7 +183,12 @@ fun UnlockExpandedContent(
             horizontalArrangement = Arrangement.SpaceBetween,
             modifier = modifier
                 .fillMaxSize()
-                .padding(start = 18.dp, end = 18.dp, top = topClearanceDp.dp, bottom = 16.dp),
+                .padding(
+                    start = contentPaddingDp.dp,
+                    end = contentPaddingDp.dp,
+                    top = topClearanceDp.dp,
+                    bottom = (contentPaddingDp * 0.9f).coerceAtLeast(10f).dp,
+                ),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(

@@ -61,6 +61,7 @@ fun VolumeExpandedContent(
     modifier: Modifier = Modifier,
     volume: CapsuleContent.Volume,
     topClearanceDp: Float,
+    contentPaddingDp: Float = 18f,
     onUserInteraction: () -> Unit,
     onSetStreamVolume: (AudioStreamType, Int) -> Unit,
     onSetRingerMode: (RingerModeState) -> Unit,
@@ -71,7 +72,12 @@ fun VolumeExpandedContent(
         verticalArrangement = Arrangement.spacedBy(8.dp),
         modifier = modifier
             .fillMaxSize()
-            .padding(start = 18.dp, end = 18.dp, top = topClearanceDp.dp, bottom = 14.dp),
+            .padding(
+                start = contentPaddingDp.dp,
+                end = contentPaddingDp.dp,
+                top = topClearanceDp.dp,
+                bottom = (contentPaddingDp * 0.8f).coerceAtLeast(10f).dp,
+            ),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
