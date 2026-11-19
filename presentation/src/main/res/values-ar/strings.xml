@@ -66,8 +66,8 @@
     <string name="msg_accessibility_desc">يستضيف RAF Capsule OS حلقة تفاعلية لثقب الكاميرا وكبسولة حالة أعلى الشاشة.</string>
     <string name="label_media_permission">جسر الإشعارات والأنشطة المباشرة</string>
     <string name="msg_media_permission_desc">يقرأ عناصر تحكم الوسائط النشطة والإشعارات غير الصامتة والمؤقتات والأنشطة المباشرة الجارية.</string>
-    <string name="label_secure_settings">إخفاء أيقونات شريط الحالة (ADB)</string>
-    <string name="msg_secure_settings_desc">إذن ADB اختياري لمرة واحدة لإخفاء أيقونات شريط الحالة أثناء فتح البطاقة الموسّعة.</string>
+    <string name="label_secure_settings">إخفاء إشعارات النظام المنبثقة (ADB)</string>
+    <string name="msg_secure_settings_desc">إذن ADB اختياري لمرة واحدة لإيقاف الإشعارات العائمة المكررة أثناء ظهور الإشعارات في الكبسولة.</string>
     <string name="action_grant">منح</string>
     <string name="action_open">فتح</string>
     <string name="label_granted">ممنوح</string>

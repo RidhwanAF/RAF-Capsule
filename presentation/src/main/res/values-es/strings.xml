@@ -66,8 +66,8 @@
     <string name="msg_accessibility_desc">RAF Capsule OS muestra un anillo interactivo de cámara y cápsula de estado en la parte superior.</string>
     <string name="label_media_permission">Puente de notificaciones y actividades en vivo</string>
     <string name="msg_media_permission_desc">Lee controles multimedia activos, notificaciones y temporizadores/actividades en curso.</string>
-    <string name="label_secure_settings">Ocultar iconos de barra de estado (ADB)</string>
-    <string name="msg_secure_settings_desc">Permiso ADB opcional de una vez para ocultar iconos mientras la tarjeta está abierta.</string>
+    <string name="label_secure_settings">Ocultar notificaciones emergentes (ADB)</string>
+    <string name="msg_secure_settings_desc">Permiso ADB opcional de una vez para suprimir los banners flotantes duplicados mientras las notificaciones aparecen en la cápsula.</string>
     <string name="action_grant">Conceder</string>
     <string name="action_open">Abrir</string>
     <string name="label_granted">Concedido</string>

@@ -66,8 +66,8 @@
     <string name="msg_accessibility_desc">RAF Capsule OS 在屏幕顶部显示交互式摄像头挖孔圆环与状态胶囊。</string>
     <string name="label_media_permission">通知与实时活动桥接</string>
     <string name="msg_media_permission_desc">读取活动媒体播放控制、非静音通知及正在进行的计时器/实时活动。</string>
-    <string name="label_secure_settings">隐藏状态栏图标（ADB）</string>
-    <string name="msg_secure_settings_desc">可选的一次性 ADB 授权，在展开卡片打开时隐藏状态栏图标。</string>
+    <string name="label_secure_settings">隐藏系统悬浮通知（ADB）</string>
+    <string name="msg_secure_settings_desc">可选的一次性 ADB 授权，用于在胶囊显示通知时屏蔽重复的系统悬浮横幅通知。</string>
     <string name="action_grant">授予</string>
     <string name="action_open">打开</string>
     <string name="label_granted">已授予</string>

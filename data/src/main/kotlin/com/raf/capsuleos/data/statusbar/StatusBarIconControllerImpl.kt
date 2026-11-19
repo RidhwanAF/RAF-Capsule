@@ -13,8 +13,9 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Hides and restores ALL Pixel/AOSP system status bar icon slots via `Settings.Secure.icon_blacklist`
- * strictly while the State 3 card is expanded, with persistent crash-recovery state.
+ * Suppresses and restores floating Android system heads-up banners via
+ * `Settings.Global.heads_up_notifications_enabled` using `WRITE_SECURE_SETTINGS`, with
+ * persistent crash-recovery for both heads-up state and legacy `icon_blacklist` snapshots.
  */
 @Singleton
 class StatusBarIconControllerImpl @Inject constructor(

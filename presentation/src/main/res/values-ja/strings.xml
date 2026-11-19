@@ -66,8 +66,8 @@
     <string name="msg_accessibility_desc">RAF Capsule OS は画面上部にインタラクティブなカメラリングとステータスカプセルを表示します。</string>
     <string name="label_media_permission">通知 &amp; ライブアクティビティ連携</string>
     <string name="msg_media_permission_desc">再生中のメディア操作、優先通知、進行中のタイマーなどを読み取ります。</string>
-    <string name="label_secure_settings">ステータスバー アイコン非表示 (ADB)</string>
-    <string name="msg_secure_settings_desc">カード展開中にステータスバーのアイコンを隠すための任意 ADB 権限です。</string>
+    <string name="label_secure_settings">システム ポップアップ通知を非表示 (ADB)</string>
+    <string name="msg_secure_settings_desc">カプセルに通知が表示されている間、重複するフローティング通知バナーを非表示にするための任意 ADB 権限です。</string>
     <string name="action_grant">許可</string>
     <string name="action_open">開く</string>
     <string name="label_granted">許可済み</string>

@@ -66,8 +66,8 @@
     <string name="msg_accessibility_desc">RAF Capsule OS affiche un anneau de caméra interactif et une capsule d\'état en haut de l\'écran.</string>
     <string name="label_media_permission">Passerelle notifications et activités en direct</string>
     <string name="msg_media_permission_desc">Lit les commandes média actives, les notifications et les minuteurs/activités en cours.</string>
-    <string name="label_secure_settings">Masquer les icônes de barre d\'état (ADB)</string>
-    <string name="msg_secure_settings_desc">Autorisation ADB unique facultative pour masquer les icônes lorsque la carte est ouverte.</string>
+    <string name="label_secure_settings">Masquer les bannières système (ADB)</string>
+    <string name="msg_secure_settings_desc">Autorisation ADB unique facultative pour supprimer les bannières flottantes en double lorsque les notifications s\'affichent dans la capsule.</string>
     <string name="action_grant">Autoriser</string>
     <string name="action_open">Ouvrir</string>
     <string name="label_granted">Autorisé</string>

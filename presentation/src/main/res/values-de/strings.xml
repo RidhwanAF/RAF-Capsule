@@ -66,8 +66,8 @@
     <string name="msg_accessibility_desc">RAF Capsule OS zeigt einen interaktiven Kameraring und eine Statuskapsel am oberen Bildschirmrand.</string>
     <string name="label_media_permission">Benachrichtigungs- &amp; Live-Aktivitäten-Brücke</string>
     <string name="msg_media_permission_desc">Liest aktive Mediensteuerung, Benachrichtigungen und laufende Timer/Live-Aktivitäten.</string>
-    <string name="label_secure_settings">Statusleisten-Symbole ausblenden (ADB)</string>
-    <string name="msg_secure_settings_desc">Optionale einmalige ADB-Freigabe zum Ausblenden von Symbolen bei geöffneter Karte.</string>
+    <string name="label_secure_settings">System-Popup-Benachrichtigungen ausblenden (ADB)</string>
+    <string name="msg_secure_settings_desc">Optionale einmalige ADB-Freigabe, um doppelte schwebende Benachrichtigungsbanner zu unterdrücken, während die Kapsel aktiv ist.</string>
     <string name="action_grant">Erteilen</string>
     <string name="action_open">Öffnen</string>
     <string name="label_granted">Erteilt</string>

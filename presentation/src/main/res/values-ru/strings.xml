@@ -66,8 +66,8 @@
     <string name="msg_accessibility_desc">RAF Capsule OS отображает интерактивное кольцо камеры и капсулу состояния вверху экрана.</string>
     <string name="label_media_permission">Доступ к уведомлениям и событиям</string>
     <string name="msg_media_permission_desc">Читает управление медиа, активные уведомления и текущие таймеры/события.</string>
-    <string name="label_secure_settings">Скрытие значков строки состояния (ADB)</string>
-    <string name="msg_secure_settings_desc">Необязательное разовое разрешение ADB для скрытия значков при открытой карточке.</string>
+    <string name="label_secure_settings">Скрыть всплывающие уведомления (ADB)</string>
+    <string name="msg_secure_settings_desc">Необязательное разовое разрешение ADB для отключения дублирующихся всплывающих баннеров, пока уведомления показываются в капсуле.</string>
     <string name="action_grant">Выдать</string>
     <string name="action_open">Открыть</string>
     <string name="label_granted">Выдано</string>

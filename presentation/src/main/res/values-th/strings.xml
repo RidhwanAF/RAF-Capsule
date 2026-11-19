@@ -66,8 +66,8 @@
     <string name="msg_accessibility_desc">RAF Capsule OS แสดงวงแหวนรอบกล้องและแคปซูลสถานะแบบโต้ตอบที่ด้านบนของหน้าจอ</string>
     <string name="label_media_permission">การเข้าถึงการแจ้งเตือนและกิจกรรมสด</string>
     <string name="msg_media_permission_desc">อ่านการควบคุมมีเดีย การแจ้งเตือนปกติ และตัวจับเวลาหรือกิจกรรมสดที่กำลังทำงาน</string>
-    <string name="label_secure_settings">ซ่อนไอคอนแถบสถานะ (ADB)</string>
-    <string name="msg_secure_settings_desc">สิทธิ์ ADB ครั้งเดียว (ไม่บังคับ) เพื่อซ่อนไอคอนแถบสถานะขณะเปิดการ์ดขยาย</string>
+    <string name="label_secure_settings">ซ่อนการแจ้งเตือนป๊อปอัประบบ (ADB)</string>
+    <string name="msg_secure_settings_desc">สิทธิ์ ADB ครั้งเดียว (ไม่บังคับ) เพื่อซ่อนแบนเนอร์แจ้งเตือนแบบลอยซ้ำซ้อนขณะแสดงการแจ้งเตือนในแคปซูล</string>
     <string name="action_grant">อนุญาต</string>
     <string name="action_open">เปิด</string>
     <string name="label_granted">อนุญาตแล้ว</string>

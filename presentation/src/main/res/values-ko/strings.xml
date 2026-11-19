@@ -66,8 +66,8 @@
     <string name="msg_accessibility_desc">RAF Capsule OS는 화면 상단에 인터랙티브 카메라 컷아웃 링과 상태 캡슐을 표시합니다.</string>
     <string name="label_media_permission">알림 및 실시간 활동 브리지</string>
     <string name="msg_media_permission_desc">활성 미디어 재생 제어, 무음이 아닌 알림 및 진행 중인 타이머·실시간 활동을 읽습니다.</string>
-    <string name="label_secure_settings">상태 표시줄 아이콘 숨기기 (ADB)</string>
-    <string name="msg_secure_settings_desc">확장 카드가 열려 있을 때 상태 표시줄 아이콘을 숨기기 위한 선택적 1회 ADB 권한입니다.</string>
+    <string name="label_secure_settings">시스템 팝업 알림 숨기기 (ADB)</string>
+    <string name="msg_secure_settings_desc">캡슐에 알림이 표시되는 동안 중복되는 플로팅 헤드업 배너를 숨기기 위한 선택적 1회 ADB 권한입니다.</string>
     <string name="action_grant">허용</string>
     <string name="action_open">열기</string>
     <string name="label_granted">허용됨</string>

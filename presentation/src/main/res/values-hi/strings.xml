@@ -66,8 +66,8 @@
     <string name="msg_accessibility_desc">RAF Capsule OS स्क्रीन के शीर्ष पर इंटरैक्टिव कैमरा कटआउट रिंग और स्टेटस कैप्सूल दिखाता है।</string>
     <string name="label_media_permission">नोटिफिकेशन और लाइव एक्टिविटी ब्रिज</string>
     <string name="msg_media_permission_desc">सक्रिय मीडिया नियंत्रण, गैर-साइलेंट नोटिफिकेशन और चल रहे टाइमर/लाइव एक्टिविटी पढ़ता है।</string>
-    <string name="label_secure_settings">स्टेटस बार आइकन छिपाएँ (ADB)</string>
-    <string name="msg_secure_settings_desc">विस्तारित कार्ड खुले होने पर स्टेटस बार आइकन छिपाने हेतु वैकल्पिक एक-बार ADB अनुमति।</string>
+    <string name="label_secure_settings">सिस्टम पॉप-अप सूचनाएँ छिपाएँ (ADB)</string>
+    <string name="msg_secure_settings_desc">कैप्सूल में सूचनाएँ दिखते समय डुप्लिकेट फ़्लोटिंग बैनर छिपाने हेतु वैकल्पिक एक-बार ADB अनुमति।</string>
     <string name="action_grant">अनुमति दें</string>
     <string name="action_open">खोलें</string>
     <string name="label_granted">अनुमति प्राप्त</string>

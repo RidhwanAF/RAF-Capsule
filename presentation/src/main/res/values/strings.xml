@@ -94,8 +94,8 @@
     <string name="msg_accessibility_desc">RAF Capsule OS hosts an interactive camera cutout ring and status capsule at the top of the screen.</string>
     <string name="label_media_permission">Notification &amp; Live Activity Bridge</string>
     <string name="msg_media_permission_desc">Reads active MediaSession controls, non-silent notifications, and ongoing timer/live activities.</string>
-    <string name="label_secure_settings">Status Bar Icon Hide (ADB)</string>
-    <string name="msg_secure_settings_desc">Optional one-time ADB grant to hide all status bar icons while the expanded card is open.</string>
+    <string name="label_secure_settings">Hide System Popup Notifications (ADB)</string>
+    <string name="msg_secure_settings_desc">Optional one-time ADB grant to suppress duplicate floating heads-up banners while notifications appear in the capsule.</string>
     <string name="action_grant">Grant</string>
     <string name="action_open">Open</string>
     <string name="label_granted">Granted</string>

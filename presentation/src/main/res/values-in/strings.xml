@@ -66,8 +66,8 @@
     <string name="msg_accessibility_desc">RAF Capsule OS menampilkan cincin kamera interaktif dan kapsul status di bagian atas layar.</string>
     <string name="label_media_permission">Jembatan Notifikasi &amp; Aktivitas Langsung</string>
     <string name="msg_media_permission_desc">Membaca kontrol MediaSession aktif, notifikasi prioritas, serta pengatur waktu langsung.</string>
-    <string name="label_secure_settings">Sembunyikan Ikon Bilah Status (ADB)</string>
-    <string name="msg_secure_settings_desc">Izin ADB opsional satu kali untuk menyembunyikan ikon bilah status saat kartu diperluas.</string>
+    <string name="label_secure_settings">Sembunyikan Popup Notifikasi Sistem (ADB)</string>
+    <string name="msg_secure_settings_desc">Izin ADB opsional satu kali untuk menyembunyikan banner notifikasi melayang duplikat saat notifikasi tampil di kapsul.</string>
     <string name="action_grant">Izinkan</string>
     <string name="action_open">Buka</string>
     <string name="label_granted">Diizinkan</string>

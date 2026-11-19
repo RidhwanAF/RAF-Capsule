@@ -66,8 +66,8 @@
     <string name="msg_accessibility_desc">RAF Capsule OS hiển thị vòng lỗ camera tương tác và viên thuốc trạng thái ở đầu màn hình.</string>
     <string name="label_media_permission">Cầu nối Thông báo &amp; Hoạt động trực tiếp</string>
     <string name="msg_media_permission_desc">Đọc trình điều khiển media, thông báo thường và bộ hẹn giờ/hoạt động trực tiếp.</string>
-    <string name="label_secure_settings">Ẩn biểu tượng thanh trạng thái (ADB)</string>
-    <string name="msg_secure_settings_desc">Quyền ADB tùy chọn một lần để ẩn biểu tượng thanh trạng thái khi mở thẻ lớn.</string>
+    <string name="label_secure_settings">Ẩn thông báo nổi hệ thống (ADB)</string>
+    <string name="msg_secure_settings_desc">Quyền ADB tùy chọn một lần để tắt biểu ngữ thông báo nổi trùng lặp khi thông báo hiển thị trên viên nang.</string>
     <string name="action_grant">Cấp quyền</string>
     <string name="action_open">Mở</string>
     <string name="label_granted">Đã cấp</string>
