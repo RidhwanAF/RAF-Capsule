@@ -6,6 +6,7 @@
 </p>
 
 <p align="center">
+  <img src="https://img.shields.io/badge/Version-v1.1.0-1976D2" alt="Version v1.1.0" />
   <img src="https://img.shields.io/badge/Min%20SDK-33%20(Android%2013)-3DDC84?logo=android&logoColor=white" alt="Min SDK 33" />
   <img src="https://img.shields.io/badge/Target%20SDK-37%20(Android%2017)-0078D7?logo=android&logoColor=white" alt="Target SDK 37" />
   <img src="https://img.shields.io/badge/UI-Jetpack%20Compose%20M3%20Expressive-4285F4?logo=jetpackcompose&logoColor=white" alt="Jetpack Compose" />
@@ -17,10 +18,11 @@
   <a href="#core-features">Core Features</a> •
   <a href="#installation">Installation</a> •
   <a href="#step-3--grant-permissions">Permissions &amp; ADB</a> •
+  <a href="https://github.com/RidhwanAF/RAF-Capsule/releases/latest">Download APK</a> •
   <a href="#architecture">Architecture</a>
 </p>
 
-**RAF Capsule OS** transforms your phone's front camera cutout into a fluid, 1:1 hardware-aligned interactive capsule powered by VSYNC-coupled spring physics, real-time AGSL neuron glow shaders, and a pure-Kotlin state coordinator. It includes an isolated **Interactive Simulation** sandbox so you can preview every gesture, glow effect, and notification layout without touching system settings.
+**RAF Capsule OS** transforms your phone's front camera cutout into a fluid, 1:1 hardware-aligned interactive capsule powered by VSYNC-coupled spring physics, real-time AGSL neuron glow shaders, and a pure-Kotlin state coordinator. It includes an isolated **Interactive Simulation** sandbox powered by the exact same pixel-level VSYNC spring solver (`CapsuleSpringAxis` + deferred layout pass) so every gesture, scrub-to-coast velocity handoff, glow effect, and notification layout runs identically to the live overlay without touching system settings.
 
 ---
 
@@ -120,15 +122,19 @@
 
 ---
 
-### Step 1 — Clone & Build the APK
+### Step 1 — Get the APK (Download Pre-built or Build from Source)
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/RidhwanAF/RAF-Capsule.git
-   cd RAF-Capsule
-   ```
+- **Fastest: Download Pre-built Signed Release APK**
+  Grab the latest `app-release.apk` directly from [GitHub Releases](https://github.com/RidhwanAF/RAF-Capsule/releases/latest) and jump straight to [Step 2](#step-2--install-the-apk-on-your-device).
 
-2. Choose **Debug** (no keystore needed) or **Release** (requires your own signing keystore):
+- **Or Build from Source**:
+  1. Clone the repository:
+     ```bash
+     git clone https://github.com/RidhwanAF/RAF-Capsule.git
+     cd RAF-Capsule
+     ```
+
+  2. Choose **Debug** (no keystore needed) or **Release** (requires your own signing keystore):
 
    - **Option A: Debug Build (Recommended for testing — no keystore required)**
      Android Gradle automatically signs debug builds using your local `~/.android/debug.keystore`:

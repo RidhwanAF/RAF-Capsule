@@ -165,9 +165,9 @@ fun SimulationContent(
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val isLandscapeSplit = maxWidth >= 640.dp
             val mockupHeight = if (isLandscapeSplit) {
-                (maxHeight - topPad - bottomPad).coerceIn(220.dp, 360.dp)
+                (maxHeight - topPad - bottomPad).coerceIn(220.dp, 368.dp)
             } else {
-                344.dp
+                364.dp
             }
 
             if (isLandscapeSplit) {

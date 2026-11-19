@@ -64,9 +64,20 @@ import com.raf.capsuleos.domain.repository.StatusBarIconController
 import com.raf.capsuleos.domain.repository.SystemEventsRepository
 import com.raf.capsuleos.domain.repository.TorchRepository
 import com.raf.capsuleos.domain.repository.VolumeRepository
+import com.raf.capsuleos.presentation.capsule.ui.CAPSULE_BLUR_SPRING_DAMPING
+import com.raf.capsuleos.presentation.capsule.ui.CAPSULE_BLUR_SPRING_STIFFNESS
+import com.raf.capsuleos.presentation.capsule.ui.CAPSULE_JIGGLE_DAMPING
+import com.raf.capsuleos.presentation.capsule.ui.CAPSULE_JIGGLE_DURATION_MS
+import com.raf.capsuleos.presentation.capsule.ui.CAPSULE_JIGGLE_STIFFNESS
+import com.raf.capsuleos.presentation.capsule.ui.CAPSULE_JIGGLE_VELOCITY_DP_PER_SEC
+import com.raf.capsuleos.presentation.capsule.ui.CAPSULE_SCRUB_MAX_COAST_VELOCITY_PX
+import com.raf.capsuleos.presentation.capsule.ui.CAPSULE_SPRING_DAMPING
+import com.raf.capsuleos.presentation.capsule.ui.CAPSULE_SPRING_STIFFNESS
 import com.raf.capsuleos.presentation.capsule.ui.CapsuleScrubPresentation
+import com.raf.capsuleos.presentation.capsule.ui.CapsuleSpringAxis
 import com.raf.capsuleos.presentation.capsule.ui.IslandCapsule
 import com.raf.capsuleos.presentation.capsule.ui.computeCapsuleLayoutDpSpec
+import com.raf.capsuleos.presentation.capsule.ui.lerpCapsuleFloat
 import com.raf.capsuleos.presentation.shader.OuterScreenExpansionAura
 import com.raf.capsuleos.presentation.shader.resolveOuterExpansionAuraColors
 import com.raf.capsuleos.presentation.shader.shouldShowOuterExpansionAura
@@ -88,7 +99,6 @@ import javax.inject.Singleton
 import kotlin.math.abs
 import kotlin.math.min
 import kotlin.math.roundToInt
-import kotlin.math.sqrt
 
 /** Supported quick-test actions triggered from the setup calibration dashboard. */
 enum class CapsuleTestAction {
@@ -158,12 +168,12 @@ class CapsuleOverlayController @Inject constructor(
     private var minClampHPx = 100f
     private val animatedCornerDpState = mutableFloatStateOf(25f)
 
-    private val widthSpring = SpringAxis()
-    private val heightSpring = SpringAxis()
-    private val offsetXSpring = SpringAxis()
-    private val topYSpring = SpringAxis()
-    private val cornerDpSpring = SpringAxis()
-    private val blurRadiusSpring = SpringAxis()
+    private val widthSpring = CapsuleSpringAxis()
+    private val heightSpring = CapsuleSpringAxis()
+    private val offsetXSpring = CapsuleSpringAxis()
+    private val topYSpring = CapsuleSpringAxis()
+    private val cornerDpSpring = CapsuleSpringAxis()
+    private val blurRadiusSpring = CapsuleSpringAxis()
     private var lastFrameNanos = 0L
     private var isSpringLoopRunning = false
     private val isHoldingCapsuleState = mutableStateOf(false)
@@ -1054,8 +1064,8 @@ class CapsuleOverlayController @Inject constructor(
                     lastSwipeJiggleSeq = state.swipeJiggleSeq
                     val density = host.resources.displayMetrics.density.coerceAtLeast(1f)
                     val dir = if (state.swipeDirection < 0) -1f else 1f
-                    jiggleUntilMs = SystemClock.uptimeMillis() + 340L
-                    offsetXSpring.velocity = dir * 240f * density
+                    jiggleUntilMs = SystemClock.uptimeMillis() + CAPSULE_JIGGLE_DURATION_MS
+                    offsetXSpring.velocity = dir * CAPSULE_JIGGLE_VELOCITY_DP_PER_SEC * density
                     ensureSpringLoopRunning()
                 }
 
@@ -1137,16 +1147,16 @@ class CapsuleOverlayController @Inject constructor(
         // Sub-step twice per frame with matched geometric spring constants so camera cutout stays 1:1 anchored
         val halfDt = dtSec * 0.5f
         val isJiggling = SystemClock.uptimeMillis() < jiggleUntilMs
-        val xStiffness = if (isJiggling) 520f else 410f
-        val xDamping = if (isJiggling) 0.40f else 0.82f
+        val xStiffness = if (isJiggling) CAPSULE_JIGGLE_STIFFNESS else CAPSULE_SPRING_STIFFNESS
+        val xDamping = if (isJiggling) CAPSULE_JIGGLE_DAMPING else CAPSULE_SPRING_DAMPING
         var active = false
         repeat(2) {
-            val wMoving = widthSpring.step(halfDt, stiffness = 410f, dampingRatio = 0.82f)
-            val hMoving = heightSpring.step(halfDt, stiffness = 410f, dampingRatio = 0.82f)
+            val wMoving = widthSpring.step(halfDt, stiffness = CAPSULE_SPRING_STIFFNESS, dampingRatio = CAPSULE_SPRING_DAMPING)
+            val hMoving = heightSpring.step(halfDt, stiffness = CAPSULE_SPRING_STIFFNESS, dampingRatio = CAPSULE_SPRING_DAMPING)
             val xMoving = offsetXSpring.step(halfDt, stiffness = xStiffness, dampingRatio = xDamping)
-            val yMoving = topYSpring.step(halfDt, stiffness = 410f, dampingRatio = 0.82f)
-            val cMoving = cornerDpSpring.step(halfDt, stiffness = 410f, dampingRatio = 0.82f)
-            val bMoving = blurRadiusSpring.step(halfDt, stiffness = 460f, dampingRatio = 0.96f)
+            val yMoving = topYSpring.step(halfDt, stiffness = CAPSULE_SPRING_STIFFNESS, dampingRatio = CAPSULE_SPRING_DAMPING)
+            val cMoving = cornerDpSpring.step(halfDt, stiffness = CAPSULE_SPRING_STIFFNESS, dampingRatio = CAPSULE_SPRING_DAMPING)
+            val bMoving = blurRadiusSpring.step(halfDt, stiffness = CAPSULE_BLUR_SPRING_STIFFNESS, dampingRatio = CAPSULE_BLUR_SPRING_DAMPING)
             active = wMoving || hMoving || xMoving || yMoving || cMoving || bMoving
         }
 
@@ -1296,7 +1306,10 @@ class CapsuleOverlayController @Inject constructor(
         cornerDpSpring.target = targetSpec.cornerDp
         blurRadiusSpring.target = targetSpec.blurRadiusPx
 
-        heightSpring.velocity = velocityYPxPerSec.coerceIn(-4800f, 4800f)
+        heightSpring.velocity = velocityYPxPerSec.coerceIn(
+            -CAPSULE_SCRUB_MAX_COAST_VELOCITY_PX,
+            CAPSULE_SCRUB_MAX_COAST_VELOCITY_PX,
+        )
         ensureSpringLoopRunning()
     }
 
@@ -1320,19 +1333,19 @@ class CapsuleOverlayController @Inject constructor(
 
         val extraLeadW = session.compactSpec.widthPx - session.compactBaseSpec.widthPx
         val extraLeadX = session.compactSpec.offsetXPx - session.compactBaseSpec.offsetXPx
-        val mainW = lerp(session.compactBaseSpec.widthPx, session.expandedSpec.widthPx, widthT) + overFraction * 24f
+        val mainW = lerpCapsuleFloat(session.compactBaseSpec.widthPx, session.expandedSpec.widthPx, widthT) + overFraction * 24f
         val baseW = mainW + satLeadT * extraLeadW
-        val baseH = lerp(session.compactBaseSpec.heightPx, session.expandedSpec.heightPx, t) + overFraction * 140f
-        val targetX = lerp(session.compactBaseSpec.offsetXPx, session.expandedSpec.offsetXPx, widthT) + satLeadT * extraLeadX
-        val targetY = lerp(session.compactBaseSpec.topYPx, session.expandedSpec.topYPx, t)
+        val baseH = lerpCapsuleFloat(session.compactBaseSpec.heightPx, session.expandedSpec.heightPx, t) + overFraction * 140f
+        val targetX = lerpCapsuleFloat(session.compactBaseSpec.offsetXPx, session.expandedSpec.offsetXPx, widthT) + satLeadT * extraLeadX
+        val targetY = lerpCapsuleFloat(session.compactBaseSpec.topYPx, session.expandedSpec.topYPx, t)
         val circleCornerNowDp = (min(mainW, baseH) / density) * 0.5f
         val compactCornerTarget = if (session.compactUiState.visualState == CapsuleVisualState.STATE1_CUTOUT_ANCHOR) {
             circleCornerNowDp
         } else {
             session.compactBaseSpec.cornerDp
         }
-        val cornerDp = lerp(compactCornerTarget, session.expandedSpec.cornerDp, t)
-        val blurPx = lerp(session.compactBaseSpec.blurRadiusPx, session.expandedSpec.blurRadiusPx, blurT)
+        val cornerDp = lerpCapsuleFloat(compactCornerTarget, session.expandedSpec.cornerDp, t)
+        val blurPx = lerpCapsuleFloat(session.compactBaseSpec.blurRadiusPx, session.expandedSpec.blurRadiusPx, blurT)
 
         widthSpring.snapTo(baseW.coerceAtLeast(minClampWPx))
         heightSpring.snapTo(baseH.coerceAtLeast(minClampHPx))
@@ -1380,9 +1393,6 @@ class CapsuleOverlayController @Inject constructor(
             }
         }
     }
-
-    private fun lerp(start: Float, end: Float, fraction: Float): Float =
-        start + (end - start) * fraction
 
     private data class ScrubSession(
         val compactUiState: CapsuleUiState,
@@ -1499,32 +1509,6 @@ class CapsuleOverlayController @Inject constructor(
         coordinator.onEvent(CapsuleEvent.OrientationChanged(isConfigLandscape || isRotatedLandscape))
         coordinator.onEvent(CapsuleEvent.ScreenInactiveChanged(isScreenOffOrAod))
         coordinator.onEvent(CapsuleEvent.KeyguardLockedChanged(keyguardManager.isKeyguardLocked))
-    }
-
-    private class SpringAxis {
-        var value = 0f
-        var velocity = 0f
-        var target = 0f
-
-        fun snapTo(v: Float) {
-            value = v
-            velocity = 0f
-            target = v
-        }
-
-        fun step(dtSec: Float, stiffness: Float, dampingRatio: Float): Boolean {
-            val displacement = value - target
-            if (abs(displacement) < 0.35f && abs(velocity) < 1.5f) {
-                value = target
-                velocity = 0f
-                return false
-            }
-            val damping = 2f * dampingRatio * sqrt(stiffness)
-            val force = -stiffness * displacement - damping * velocity
-            velocity += force * dtSec
-            value += velocity * dtSec
-            return true
-        }
     }
 
     private class CapsuleBlurDrawable : Drawable() {

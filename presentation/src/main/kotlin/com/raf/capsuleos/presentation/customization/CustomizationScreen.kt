@@ -86,8 +86,8 @@ fun CustomizationScreen(
     val isExpandedPreview =
         simUiState.capsuleUiState.visualState == CapsuleVisualState.STATE3_FULL_EXPANDED
     val previewHeight by animateDpAsState(
-        targetValue = if (isExpandedPreview) 326.dp else 184.dp,
-        animationSpec = spring(dampingRatio = 0.82f, stiffness = 360f),
+        targetValue = if (isExpandedPreview) 340.dp else 184.dp,
+        animationSpec = spring(dampingRatio = 0.82f, stiffness = 410f),
         label = "customizationPreviewHeight",
     )
 
