@@ -201,7 +201,7 @@ RAF Capsule OS relies on official Android system APIs (`AccessibilityService` ov
 |---|---|---|---|
 | **Accessibility Overlay** (`CapsuleAccessibilityService`) | Renders the `TYPE_ACCESSIBILITY_OVERLAY` capsule above the status bar & lock screen with full gesture support | **Required** | In-app Setup or ADB |
 | **Notification & Media Listener** (`CapsuleNotificationListenerService`) | Reads active `MediaSession` tracks, notifications, inline attachments, and live activities | **Required** | In-app Setup or ADB |
-| **`WRITE_SECURE_SETTINGS`** | Hides system status bar icons while expanded & suppresses duplicate floating heads-up banners | Optional (Recommended) | **ADB only** |
+| **`WRITE_SECURE_SETTINGS`** | Enables **Hide System Popup Notifications (QS Only)** (`Settings.Global.heads_up_notifications_enabled`) to suppress duplicate stock floating heads-up banners while notifications appear in the capsule | Optional (Recommended) | **ADB only** |
 | **`WRITE_SETTINGS`** | Enables the Brightness slider and Adaptive Brightness toggle in Now Brief | Optional | In-app Setup or ADB |
 | **Do Not Disturb Policy** (`ACCESS_NOTIFICATION_POLICY`) | Allows cycling into full Silent mode from Now Brief | Optional | In-app Setup or ADB |
 | **`BLUETOOTH_CONNECT`** | Detects connected Bluetooth headphones/accessories and reads peripheral battery level | Optional | In-app Setup or ADB |
@@ -209,7 +209,7 @@ RAF Capsule OS relies on official Android system APIs (`AccessibilityService` ov
 #### Method A: Grant via In-App Setup Dashboard
 1. Open **RAF Capsule OS** on your phone.
 2. Under the **Setup** card, tap **Grant** for **Top Camera Cutout Overlay (Accessibility)**, **Notification & Media Listener**, and any optional permissions you want.
-3. For **Status Bar Icon Hide (ADB)** (`WRITE_SECURE_SETTINGS`), tap **Copy ADB Command** and run it from your computer:
+3. For **Hide System Popup Notifications (ADB)** (`WRITE_SECURE_SETTINGS`), tap **Copy ADB Command** in Setup and run it from your computer:
    ```bash
    adb shell pm grant com.raf.capsuleos android.permission.WRITE_SECURE_SETTINGS
    ```
@@ -255,7 +255,7 @@ CapsuleOS/
 │   ├── hardware/     # Torch, Volume, Brightness, Bluetooth repositories
 │   ├── media/        # CapsuleNotificationListenerService & MediaSessionRepositoryImpl
 │   ├── settings/     # DataStore Preferences persistence
-│   ├── statusbar/    # StatusBarIconControllerImpl (WRITE_SECURE_SETTINGS)
+│   ├── statusbar/    # StatusBarIconControllerImpl (system heads-up suppression via WRITE_SECURE_SETTINGS)
 │   └── system/       # SystemEventsRepositoryImpl (Battery, Calls, Hotspot, System toggles)
 └── presentation/   # Jetpack Compose UI, Navigation 3, AGSL Shaders & Accessibility Overlay host
     ├── capsule/      # CapsuleAccessibilityService, CapsuleOverlayController, IslandCapsule & cards
