@@ -12,6 +12,14 @@
   <img src="https://img.shields.io/badge/Languages-14%20Locales-9C27B0" alt="14 Languages" />
 </p>
 
+<p align="center">
+  <a href="#visual-showcase">Visual Showcase</a> •
+  <a href="#core-features">Core Features</a> •
+  <a href="#installation">Installation</a> •
+  <a href="#step-3--grant-permissions">Permissions &amp; ADB</a> •
+  <a href="#architecture">Architecture</a>
+</p>
+
 **RAF Capsule OS** transforms your phone's front camera cutout into a fluid, 1:1 hardware-aligned interactive capsule powered by VSYNC-coupled spring physics, real-time AGSL neuron glow shaders, and a pure-Kotlin state coordinator. It includes an isolated **Interactive Simulation** sandbox so you can preview every gesture, glow effect, and notification layout without touching system settings.
 
 ---
@@ -108,40 +116,80 @@
 
 ### Prerequisites
 - **Android 13+ (API 33–37)** device (tested on Pixel 9 Pro / Android 17).
-- **JDK 21** and **Android SDK Platform-Tools (`adb`)**.
-- USB Debugging enabled on the target device (`Settings → Developer options → USB debugging`).
-
-### 1. Build & Install from Source
-
-```bash
-# Clone the repository
-git clone https://github.com/RidhwanAF/RAF-Capsule.git
-cd RAF-Capsule
-
-# Run unit tests, Android Lint, and build the release APK
-./gradlew :domain:test lintDebug assembleRelease
-
-# Install onto a connected device via ADB
-adb install -r app/build/outputs/apk/release/app-release.apk
-```
-
-*(For a debug build, run `./gradlew assembleDebug` and install `app/build/outputs/apk/debug/app-debug.apk`.)*
+- **JDK 21** and **Android SDK Platform-Tools (`adb`)** (required for building from source and ADB installation/permissions).
 
 ---
 
-## Permissions & ADB Setup Guide
+### Step 1 — Clone & Build the APK
 
-RAF Capsule OS uses Android's official system APIs (`AccessibilityService` overlay, `NotificationListenerService`, and optional settings bridges). You can grant permissions either inside the **Setup** card in-app or directly via **ADB**.
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/RidhwanAF/RAF-Capsule.git
+   cd RAF-Capsule
+   ```
 
-### Android 13+ Sideloaded APK Note (Restricted Settings)
-If you install the APK directly via file manager instead of `adb install`, Android 13+ restricts **Accessibility** and **Notification Access** until you enable them:
-1. Open **Settings → Apps → RAF Capsule OS**.
-2. Tap the **⋮** menu in the top-right corner → **Allow restricted settings**.
-3. Authenticate with biometrics/PIN, then enable Accessibility & Notification Listener.
+2. Choose **Debug** (no keystore needed) or **Release** (requires your own signing keystore):
 
-*(Installing with `adb install` or granting permissions via `adb shell` below bypasses this manual step.)*
+   - **Option A: Debug Build (Recommended for testing — no keystore required)**
+     Android Gradle automatically signs debug builds using your local `~/.android/debug.keystore`:
+     ```bash
+     ./gradlew assembleDebug
+     # Output: app/build/outputs/apk/debug/app-debug.apk
+     ```
 
-### Required & Optional Permissions Overview
+   - **Option B: Release Build (Minified R8 APK — requires your own `.jks` keystore)**
+     For security, `local.properties` and `*.jks` / `*.keystore` files are excluded from Git. Without signing credentials, `./gradlew assembleRelease` produces an **unsigned** APK (`app-release-unsigned.apk`) that Android will refuse to install.
+
+     To build a signed release APK:
+     1. Generate a keystore if you do not have one:
+        ```bash
+        keytool -genkeypair -v -keystore capsule-release.jks -alias capsule -keyalg RSA -keysize 2048 -validity 10000
+        ```
+     2. Add your keystore path and credentials to `local.properties` in the project root:
+        ```properties
+        RELEASE_STORE_FILE=/absolute/path/to/capsule-release.jks
+        RELEASE_STORE_PASSWORD=your_store_password
+        RELEASE_KEY_ALIAS=capsule
+        RELEASE_KEY_PASSWORD=your_key_password
+        ```
+     3. Build the signed release APK:
+        ```bash
+        ./gradlew :domain:test lintDebug assembleRelease
+        # Output: app/build/outputs/apk/release/app-release.apk
+        ```
+
+---
+
+### Step 2 — Install the APK on Your Device
+
+Choose either **Method A (ADB)** or **Method B (File Manager)**:
+
+#### Method A: Install via ADB (Recommended)
+1. Enable **USB Debugging** on your phone (`Settings → Developer options → USB debugging`) and connect via USB.
+2. Install the built APK:
+   ```bash
+   # If you built Debug:
+   adb install -r app/build/outputs/apk/debug/app-debug.apk
+
+   # Or if you built a signed Release:
+   adb install -r app/build/outputs/apk/release/app-release.apk
+   ```
+   *(Installing via `adb install` automatically bypasses Android 13+ Restricted Settings blocks for Accessibility & Notification Access.)*
+
+#### Method B: Install via Phone File Manager (Sideload APK)
+1. Copy the `.apk` file to your phone and tap it in **Files** (allow **Install unknown apps** if prompted).
+2. Because Android 13+ marks sideloaded APKs as restricted, unlock restricted permissions before opening Accessibility/Notification settings:
+   1. Open **Settings → Apps → RAF Capsule OS**.
+   2. Tap the **⋮** menu in the top-right corner → **Allow restricted settings**.
+   3. Confirm with your fingerprint or PIN.
+
+---
+
+### Step 3 — Grant Permissions
+
+RAF Capsule OS relies on official Android system APIs (`AccessibilityService` overlay and `NotificationListenerService`), plus optional system integrations.
+
+#### Permissions Reference
 
 | Permission / Service | Purpose | Required? | Grant Method |
 |---|---|---|---|
@@ -152,49 +200,37 @@ If you install the APK directly via file manager instead of `adb install`, Andro
 | **Do Not Disturb Policy** (`ACCESS_NOTIFICATION_POLICY`) | Allows cycling into full Silent mode from Now Brief | Optional | In-app Setup or ADB |
 | **`BLUETOOTH_CONNECT`** | Detects connected Bluetooth headphones/accessories and reads peripheral battery level | Optional | In-app Setup or ADB |
 
-### Individual ADB Commands
+#### Method A: Grant via In-App Setup Dashboard
+1. Open **RAF Capsule OS** on your phone.
+2. Under the **Setup** card, tap **Grant** for **Top Camera Cutout Overlay (Accessibility)**, **Notification & Media Listener**, and any optional permissions you want.
+3. For **Status Bar Icon Hide (ADB)** (`WRITE_SECURE_SETTINGS`), tap **Copy ADB Command** and run it from your computer:
+   ```bash
+   adb shell pm grant com.raf.capsuleos android.permission.WRITE_SECURE_SETTINGS
+   ```
+4. Tap **Start Capsule** to activate the overlay.
 
-```bash
-# 1. Grant WRITE_SECURE_SETTINGS (Status Bar icon hiding + Heads-up suppression)
-adb shell pm grant com.raf.capsuleos android.permission.WRITE_SECURE_SETTINGS
-
-# 2. Grant BLUETOOTH_CONNECT (Bluetooth connected alerts & battery level)
-adb shell pm grant com.raf.capsuleos android.permission.BLUETOOTH_CONNECT
-
-# 3. Allow WRITE_SETTINGS (Now Brief Brightness & Adaptive Brightness)
-adb shell appops set com.raf.capsuleos WRITE_SETTINGS allow
-
-# 4. Allow Do Not Disturb Policy Access (Silent ringer toggle)
-adb shell cmd notification allow_dnd com.raf.capsuleos
-
-# 5. Enable Notification & Media Listener Service
-adb shell cmd notification allow_listener \
-  com.raf.capsuleos/com.raf.capsuleos.data.media.CapsuleNotificationListenerService
-
-# 6. Enable Accessibility Overlay Service (safely preserves existing enabled services)
-EXISTING=$(adb shell settings get secure enabled_accessibility_services | tr -d '\r')
-SERVICE="com.raf.capsuleos/com.raf.capsuleos.presentation.capsule.service.CapsuleAccessibilityService"
-if [ -z "$EXISTING" ] || [ "$EXISTING" = "null" ]; then
-  adb shell settings put secure enabled_accessibility_services "$SERVICE"
-elif ! echo "$EXISTING" | grep -q "$SERVICE"; then
-  adb shell settings put secure enabled_accessibility_services "$EXISTING:$SERVICE"
-fi
-adb shell settings put secure accessibility_enabled 1
-```
-
-### One-Shot ADB Permission Setup Script
-
-Run this right after `adb install -r ...` to configure all permissions and launch the app in one command:
-
-```bash
-adb shell pm grant com.raf.capsuleos android.permission.WRITE_SECURE_SETTINGS && \
-adb shell pm grant com.raf.capsuleos android.permission.BLUETOOTH_CONNECT && \
-adb shell appops set com.raf.capsuleos WRITE_SETTINGS allow && \
-adb shell cmd notification allow_dnd com.raf.capsuleos && \
-adb shell cmd notification allow_listener \
-  com.raf.capsuleos/com.raf.capsuleos.data.media.CapsuleNotificationListenerService && \
-adb shell am start -n com.raf.capsuleos/.MainActivity
-```
+#### Method B: Grant Everything in One Shot via ADB
+1. Run this command after installing the APK to grant permissions, enable the Notification Listener, and launch the app:
+   ```bash
+   adb shell pm grant com.raf.capsuleos android.permission.WRITE_SECURE_SETTINGS && \
+   adb shell pm grant com.raf.capsuleos android.permission.BLUETOOTH_CONNECT && \
+   adb shell appops set com.raf.capsuleos WRITE_SETTINGS allow && \
+   adb shell cmd notification allow_dnd com.raf.capsuleos && \
+   adb shell cmd notification allow_listener \
+     com.raf.capsuleos/com.raf.capsuleos.data.media.CapsuleNotificationListenerService && \
+   adb shell am start -n com.raf.capsuleos/.MainActivity
+   ```
+2. *(Optional)* Also enable the Accessibility Overlay service via ADB (safely preserves your existing enabled accessibility services):
+   ```bash
+   EXISTING=$(adb shell settings get secure enabled_accessibility_services | tr -d '\r')
+   SERVICE="com.raf.capsuleos/com.raf.capsuleos.presentation.capsule.service.CapsuleAccessibilityService"
+   if [ -z "$EXISTING" ] || [ "$EXISTING" = "null" ]; then
+     adb shell settings put secure enabled_accessibility_services "$SERVICE"
+   elif ! echo "$EXISTING" | grep -q "$SERVICE"; then
+     adb shell settings put secure enabled_accessibility_services "$EXISTING:$SERVICE"
+   fi
+   adb shell settings put secure accessibility_enabled 1
+   ```
 
 ---
 
