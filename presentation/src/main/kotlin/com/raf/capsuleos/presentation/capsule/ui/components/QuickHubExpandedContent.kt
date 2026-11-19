@@ -14,6 +14,7 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,6 +33,14 @@ import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.AcUnit
 import androidx.compose.material.icons.rounded.Alarm
+import androidx.compose.material.icons.rounded.Battery0Bar
+import androidx.compose.material.icons.rounded.Battery1Bar
+import androidx.compose.material.icons.rounded.Battery2Bar
+import androidx.compose.material.icons.rounded.Battery3Bar
+import androidx.compose.material.icons.rounded.Battery4Bar
+import androidx.compose.material.icons.rounded.Battery5Bar
+import androidx.compose.material.icons.rounded.Battery6Bar
+import androidx.compose.material.icons.rounded.BatteryFull
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.BrightnessAuto
 import androidx.compose.material.icons.rounded.BrightnessHigh
@@ -45,7 +54,6 @@ import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.NotificationsOff
 import androidx.compose.material.icons.rounded.Thunderstorm
-import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material.icons.rounded.Vibration
 import androidx.compose.material.icons.rounded.WaterDrop
 import androidx.compose.material.icons.rounded.WbSunny
@@ -91,6 +99,7 @@ fun QuickHubExpandedContent(
     brief: CapsuleContent.NowBrief,
     topClearanceDp: Float,
     contentPaddingDp: Float = 18f,
+    interactionsEnabled: Boolean = true,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
     onUserInteraction: () -> Unit,
@@ -100,15 +109,11 @@ fun QuickHubExpandedContent(
     onSetBrightnessPercent: (Int) -> Unit,
     onToggleAutoBrightness: () -> Unit,
     onLockScreen: () -> Unit,
+    onOpenNotificationShade: () -> Unit = {},
     onOpenClock: () -> Unit,
 ) {
     val localHapticFeedback = LocalHapticFeedback.current
     val primary = MaterialTheme.colorScheme.primary
-    val badgeAccent = capsuleBatteryAccentColor(
-        batteryPercent = brief.batteryPercent,
-        isCharging = brief.isCharging,
-        primaryColor = primary,
-    )
     val activeStream = brief.volume.streams.firstOrNull { it.streamType == brief.volume.activeStream }
         ?: brief.volume.streams.firstOrNull { it.streamType == AudioStreamType.MEDIA }
         ?: brief.volume.streams.firstOrNull()
@@ -141,6 +146,11 @@ fun QuickHubExpandedContent(
                 AtAGlanceSummaryRow(
                     brief = brief,
                     primary = primary,
+                    interactionsEnabled = interactionsEnabled,
+                    onOpenNotificationShade = {
+                        localHapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
+                        onOpenNotificationShade()
+                    },
                 )
             }
 
@@ -149,6 +159,7 @@ fun QuickHubExpandedContent(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 CapsuleExpressiveSurface(
+                    enabled = interactionsEnabled,
                     onClick = {
                         localHapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                         onOpenClock()
@@ -176,28 +187,6 @@ fun QuickHubExpandedContent(
                             maxLines = 1,
                         )
                     }
-                }
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(badgeAccent.copy(alpha = 0.16f))
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
-                ) {
-                    Icon(
-                        imageVector = if (brief.liveActivity != null) Icons.Rounded.Timer else Icons.Rounded.Bolt,
-                        contentDescription = null,
-                        tint = badgeAccent,
-                        modifier = Modifier.size(15.dp),
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = brief.liveActivity?.statusText ?: "${brief.batteryPercent}%",
-                        color = badgeAccent,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                    )
                 }
             }
         }
@@ -288,6 +277,7 @@ fun QuickHubExpandedContent(
             }
 
             CapsuleExpressiveSurface(
+                enabled = interactionsEnabled,
                 onClick = {
                     localHapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                     onLockScreen()
@@ -367,6 +357,7 @@ fun QuickHubExpandedContent(
                         }
                     },
                     valueRange = 0f..max.toFloat(),
+                    enabled = interactionsEnabled,
                     onInteraction = onUserInteraction,
                     colors = SliderDefaults.colors(
                         thumbColor = primary,
@@ -379,6 +370,7 @@ fun QuickHubExpandedContent(
                 )
                 Spacer(modifier = Modifier.width(10.dp))
                 CapsuleExpressiveSurface(
+                    enabled = interactionsEnabled,
                     onClick = {
                         localHapticFeedback.performHapticFeedback(HapticFeedbackType.SegmentTick)
                         onUserInteraction()
@@ -454,6 +446,7 @@ fun QuickHubExpandedContent(
                     }
                 },
                 valueRange = 0f..100f,
+                enabled = interactionsEnabled,
                 onInteraction = onUserInteraction,
                 colors = SliderDefaults.colors(
                     thumbColor = primary,
@@ -466,6 +459,7 @@ fun QuickHubExpandedContent(
             )
             Spacer(modifier = Modifier.width(10.dp))
             CapsuleExpressiveSurface(
+                enabled = interactionsEnabled,
                 onClick = {
                     localHapticFeedback.performHapticFeedback(
                         if (autoActive) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn,
@@ -499,7 +493,14 @@ private fun AtAGlanceSummaryRow(
     modifier: Modifier = Modifier,
     brief: CapsuleContent.NowBrief,
     primary: Color,
+    interactionsEnabled: Boolean = true,
+    onOpenNotificationShade: () -> Unit = {},
 ) {
+    val batteryColor = capsuleBatteryAccentColor(
+        batteryPercent = brief.batteryPercent,
+        isCharging = brief.isCharging,
+        primaryColor = primary,
+    )
     val baseStatus = buildString {
         append("${brief.batteryPercent}%")
         if (brief.isCharging) {
@@ -517,12 +518,32 @@ private fun AtAGlanceSummaryRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         modifier = modifier.basicMarquee(iterations = Int.MAX_VALUE),
     ) {
-        Text(
-            text = baseStatus,
-            color = Color.White.copy(alpha = 0.78f),
-            fontSize = 12.sp,
-            maxLines = 1,
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            Icon(
+                imageVector = segmentedBatteryIconForLevel(brief.batteryPercent),
+                contentDescription = stringResource(R.string.desc_battery_icon),
+                tint = batteryColor,
+                modifier = Modifier.size(15.dp),
+            )
+            if (brief.isCharging) {
+                Icon(
+                    imageVector = Icons.Rounded.Bolt,
+                    contentDescription = stringResource(R.string.label_charging),
+                    tint = batteryColor,
+                    modifier = Modifier.size(13.dp),
+                )
+            }
+            Text(
+                text = baseStatus,
+                color = if (brief.isCharging) batteryColor else Color.White.copy(alpha = 0.84f),
+                fontSize = 12.sp,
+                fontWeight = if (brief.isCharging) FontWeight.SemiBold else FontWeight.Medium,
+                maxLines = 1,
+            )
+        }
 
         brief.weather?.let { weather ->
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -548,7 +569,8 @@ private fun AtAGlanceSummaryRow(
                 modifier = Modifier
                     .clip(RoundedCornerShape(10.dp))
                     .background(primary.copy(alpha = 0.18f))
-                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                    .clickable(enabled = interactionsEnabled, onClick = onOpenNotificationShade)
+                    .padding(horizontal = 7.dp, vertical = 3.dp),
             ) {
                 Icon(
                     imageVector = Icons.Rounded.Notifications,
@@ -567,6 +589,17 @@ private fun AtAGlanceSummaryRow(
             }
         }
     }
+}
+
+private fun segmentedBatteryIconForLevel(percent: Int): ImageVector = when {
+    percent >= 92 -> Icons.Rounded.BatteryFull
+    percent >= 78 -> Icons.Rounded.Battery6Bar
+    percent >= 64 -> Icons.Rounded.Battery5Bar
+    percent >= 50 -> Icons.Rounded.Battery4Bar
+    percent >= 36 -> Icons.Rounded.Battery3Bar
+    percent >= 22 -> Icons.Rounded.Battery2Bar
+    percent >= 10 -> Icons.Rounded.Battery1Bar
+    else -> Icons.Rounded.Battery0Bar
 }
 
 private fun ringerIconForMode(mode: RingerModeState): ImageVector = when (mode) {

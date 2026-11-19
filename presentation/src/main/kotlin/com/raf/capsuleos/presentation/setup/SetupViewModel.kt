@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.raf.capsuleos.domain.model.CameraAnchorPosition
 import com.raf.capsuleos.domain.model.CapsulePreferences
+import com.raf.capsuleos.domain.repository.BluetoothRepository
 import com.raf.capsuleos.domain.repository.BrightnessRepository
 import com.raf.capsuleos.domain.repository.CapsuleSettingsRepository
 import com.raf.capsuleos.domain.repository.StatusBarIconController
@@ -49,6 +50,7 @@ class SetupViewModel @Inject constructor(
     private val statusBarIconController: StatusBarIconController,
     private val brightnessRepository: BrightnessRepository,
     private val volumeRepository: VolumeRepository,
+    private val bluetoothRepository: BluetoothRepository,
     private val overlayController: CapsuleOverlayController,
 ) : ViewModel() {
 
@@ -86,6 +88,7 @@ class SetupViewModel @Inject constructor(
             hasWriteSecureSettings = statusBarIconController.hasSecureSettingsPermission(),
             hasWriteSettings = brightnessRepository.currentSnapshot().canWrite,
             hasDndPolicyAccess = volumeRepository.canChangeSilentMode(),
+            hasBluetoothPermission = bluetoothRepository.hasBluetoothPermission(),
             isUserPaused = paused,
             cutoutGeometry = effectiveCutout,
             detectedPosition = initialDetect.detectedPosition,

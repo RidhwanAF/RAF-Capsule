@@ -67,6 +67,7 @@ fun TorchExpandedContent(
     torch: CapsuleContent.Torch,
     topClearanceDp: Float,
     contentPaddingDp: Float = 18f,
+    interactionsEnabled: Boolean = true,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
     onUserInteraction: () -> Unit,
@@ -206,6 +207,7 @@ fun TorchExpandedContent(
                     },
                     valueRange = 1f..torch.maxStrengthLevel.toFloat(),
                     steps = 0,
+                    enabled = interactionsEnabled,
                     onInteraction = onUserInteraction,
                     colors = SliderDefaults.colors(
                         thumbColor = sliderThumbColor,
@@ -219,6 +221,7 @@ fun TorchExpandedContent(
             }
 
             CapsuleExpressiveSurface(
+                enabled = interactionsEnabled,
                 onClick = {
                     localHapticFeedback.performHapticFeedback(
                         if (torch.isEnabled) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn,

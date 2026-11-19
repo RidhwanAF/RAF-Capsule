@@ -29,14 +29,34 @@ class NotificationRepositoryImpl @Inject constructor(
         val liveFlow = CapsuleNotificationListenerService.activeLiveActivity.map { live ->
             CapsuleEvent.LiveActivityUpdated(live)
         }
+        val callFlow = CapsuleNotificationListenerService.activeCall.map { call ->
+            CapsuleEvent.CallUpdated(call)
+        }
         val countFlow = CapsuleNotificationListenerService.activeNotificationCount.map { count ->
             CapsuleEvent.ActiveNotificationCountUpdated(count)
         }
-        return merge(liveFlow, countFlow, CapsuleNotificationListenerService.notificationEvents)
+        return merge(liveFlow, callFlow, countFlow, CapsuleNotificationListenerService.notificationEvents)
     }
 
     override fun currentLiveActivity(): CapsuleContent.LiveActivity? =
         CapsuleNotificationListenerService.activeLiveActivity.value
+
+    override fun currentActiveCall(): CapsuleContent.CallAlert? =
+        CapsuleNotificationListenerService.activeCall.value
+
+    override fun answerCall(key: String): Boolean =
+        CapsuleNotificationListenerService.triggerCallAnswer(
+            context = context,
+            key = key,
+            optionsBundle = buildBackgroundLaunchOptions(),
+        )
+
+    override fun declineCall(key: String): Boolean =
+        CapsuleNotificationListenerService.triggerCallDecline(
+            context = context,
+            key = key,
+            optionsBundle = buildBackgroundLaunchOptions(),
+        )
 
     override fun observeActiveNotificationCount(): Flow<Int> =
         CapsuleNotificationListenerService.activeNotificationCount

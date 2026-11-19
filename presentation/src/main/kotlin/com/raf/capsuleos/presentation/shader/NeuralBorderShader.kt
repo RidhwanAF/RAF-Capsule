@@ -53,34 +53,36 @@ object NeuralBorderShader {
             float2 normP = p / max(halfSize, float2(1.0));
             float angle = atan(normP.y, normP.x);
 
-            // Unified circular battery progress arc starting at 12 o'clock top with optional 1s bloom glow
+            // Unified circular battery progress arc starting at 12 o'clock top with optional animated orbital glow
             float topAngle01 = fract((angle + 1.5707963) / 6.2831853);
             float arcMask = uRingProgress >= 0.995
                 ? 1.0
                 : smoothstep(uRingProgress + 0.016, uRingProgress - 0.012, topAngle01);
             float ringStroke = exp(-abs(dist) * 0.76);
-            float glowHalo = exp(-abs(dist) * 0.24) * 0.68 * uRingGlow;
+            float ringFlowWave = 0.5 + 0.5 * sin(angle * 2.0 - uTime * 3.1 + 0.45 * cos(angle * 3.0 + uTime * 1.4));
+            float glowHalo = exp(-abs(dist) * 0.22) * (0.46 + 0.48 * ringFlowWave) * uRingGlow;
             float arcWeight = 0.24 + 0.76 * arcMask;
-            float ringLum = min(ringStroke * arcWeight * (1.0 + 0.32 * uRingGlow) + glowHalo * (0.45 + 0.55 * arcMask), 1.0);
-            float3 ringBloomRgb = mix(uColorA.rgb, float3(1.0), 0.28 * uRingGlow);
-            float3 ringRgb = mix(uColorA.rgb, ringBloomRgb, smoothstep(0.0, 1.0, glowHalo * 1.4));
+            float ringLum = min(ringStroke * arcWeight * (1.0 + 0.40 * uRingGlow * ringFlowWave) + glowHalo, 1.0);
+            float3 flowingRingAccent = mix(uColorA.rgb, uColorB.rgb, ringFlowWave);
+            float3 ringBloomRgb = mix(flowingRingAccent, float3(1.0), 0.24 * uRingGlow * ringFlowWave);
+            float3 ringRgb = mix(uColorA.rgb, ringBloomRgb, clamp(uRingGlow * 0.92 + glowHalo * 1.1, 0.0, 1.0));
 
             // State 2: Calm compact border aura only (no neural dots)
             float compactMix = 0.5 + 0.5 * sin(angle * 2.0 + uTime * 0.65);
             float3 compactRgb = mix(uColorA.rgb, uColorB.rgb, compactMix);
             float state2Border = exp(-abs(dist) * 0.72) * 0.56;
 
-            // State 3: Organic Gemini border wave undulating around perimeter while keeping interior crystal clear
+            // State 3 & Media Pill: Organic Gemini border wave undulating around perimeter
             float inwardDist = max(-dist, 0.0);
-            float borderCrest = exp(-abs(dist) * 0.18);
+            float borderCrest = exp(-abs(dist) * 0.16);
             float waveModA = 0.5 + 0.5 * sin(angle * 2.0 - uTime * 2.45);
             float waveModB = 0.5 + 0.5 * cos(angle * 3.0 + uTime * 1.75);
-            float waveReachPx = 18.0 + 22.0 * waveModA + 14.0 * waveModB;
-            float inwardDecay = exp(-pow(inwardDist / max(waveReachPx, 1.0), 1.55) * 2.15)
-                * smoothstep(68.0, 14.0, inwardDist);
-            float travelSurge = 0.28 + 0.72 * (0.5 + 0.5 * sin(angle - uTime * 2.25 + 0.65 * sin(angle * 2.0 + uTime * 1.15)));
-            float innerMask = step(dist, 1.2);
-            float waveBody = (innerMask * inwardDecay * 0.74 + borderCrest * 0.28) * travelSurge;
+            float waveReachPx = 20.0 + 24.0 * waveModA + 14.0 * waveModB;
+            float inwardDecay = exp(-pow(inwardDist / max(waveReachPx, 1.0), 1.45) * 2.0)
+                * smoothstep(72.0, 12.0, inwardDist);
+            float travelSurge = 0.34 + 0.66 * (0.5 + 0.5 * sin(angle - uTime * 2.45 + 0.65 * sin(angle * 2.0 + uTime * 1.25)));
+            float innerMask = step(dist, 1.4);
+            float waveBody = (innerMask * inwardDecay * 0.78 + borderCrest * 0.34) * travelSurge;
             float3 geminiGrad = sampleGeminiGlow(
                 (angle / 6.2831853) - uTime * 0.32 + waveModA * 0.12,
                 uColorA.rgb,

@@ -1,17 +1,26 @@
 package com.raf.capsuleos.domain.coordinator
 
 import app.cash.turbine.test
+import com.raf.capsuleos.domain.model.AppThemeMode
 import com.raf.capsuleos.domain.model.AudioStreamType
+import com.raf.capsuleos.domain.model.BluetoothDeviceCategory
 import com.raf.capsuleos.domain.model.BrightnessInfo
 import com.raf.capsuleos.domain.model.CameraAnchorPosition
 import com.raf.capsuleos.domain.model.CapsuleContent
 import com.raf.capsuleos.domain.model.CapsuleEffect
 import com.raf.capsuleos.domain.model.CapsuleEvent
+import com.raf.capsuleos.domain.model.CapsuleGestureAction
 import com.raf.capsuleos.domain.model.CapsulePreferences
 import com.raf.capsuleos.domain.model.CapsuleVisualState
+import com.raf.capsuleos.domain.model.CardGestureConfig
 import com.raf.capsuleos.domain.model.CutoutGeometry
+import com.raf.capsuleos.domain.model.GestureActionBinding
+import com.raf.capsuleos.domain.model.GestureCardTarget
 import com.raf.capsuleos.domain.model.RingerModeState
+import com.raf.capsuleos.domain.model.SatellitePosition
+import com.raf.capsuleos.domain.model.SatelliteSource
 import com.raf.capsuleos.domain.model.StreamVolumeInfo
+import com.raf.capsuleos.domain.model.SystemStatusKind
 import com.raf.capsuleos.domain.model.UnlockMethod
 import com.raf.capsuleos.domain.model.WeatherConditionKind
 import com.raf.capsuleos.domain.model.WeatherSummary
@@ -23,6 +32,8 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -39,90 +50,110 @@ class IslandStateCoordinatorTest {
         )
 
     @Test
-    fun `given idle 1_1 circle, when media plays, then stays in state2 without hiding status bar until state3`() =
+    fun `given hideOnQsOpen enabled and expanded media with satellite, when QS opens, then collapses to battery ring only, disables gestures, and restores on close`() =
         testScope.runTest {
             val coordinator = createCoordinator()
             coordinator.updatePreferences(
                 CapsulePreferences(
-                    belowStatusBar = false,
-                    autoHideStatusBarIcons = true,
+                    hideOnQsOpen = true,
+                    enableLeftSatelliteBubble = true,
+                    showTorchInSatellite = true,
                 ),
             )
 
             val media = sampleMedia()
+            coordinator.onEvent(CapsuleEvent.MediaUpdated(media))
+            coordinator.onEvent(
+                CapsuleEvent.TorchUpdated(
+                    CapsuleContent.Torch(isEnabled = true, strengthLevel = 2, maxStrengthLevel = 5),
+                ),
+            )
+            coordinator.onEvent(CapsuleEvent.ExpandToFull)
+            runCurrent()
 
-            coordinator.uiState.test {
-                val initial = awaitItem()
-                assertEquals(CapsuleVisualState.STATE1_CUTOUT_ANCHOR, initial.visualState)
-                assertEquals(initial.anchorWidthDp, initial.anchorHeightDp, 0.01f)
-                assertFalse(initial.shouldHideStatusBarIcons)
+            assertEquals(CapsuleVisualState.STATE3_FULL_EXPANDED, coordinator.uiState.value.visualState)
+            assertFalse(coordinator.uiState.value.isQsRingOnlyActive)
 
-                coordinator.onEvent(CapsuleEvent.MediaUpdated(media))
-                runCurrent()
+            // Opening Quick Settings smoothly reduces capsule to Battery Indicator Camera Ring only
+            coordinator.onEvent(CapsuleEvent.QuickSettingsChanged(isQsOpen = true))
+            runCurrent()
 
-                val sidePill = expectMostRecentItem()
-                assertEquals(CapsuleVisualState.STATE2_HORIZONTAL_PILL, sidePill.visualState)
-                assertEquals(media, sidePill.content)
-                // State 2 must NOT hide status bar icons (item #5)
-                assertFalse(sidePill.shouldHideStatusBarIcons)
+            val qsOpenState = coordinator.uiState.value
+            assertTrue(qsOpenState.isQsRingOnlyActive)
+            assertEquals(CapsuleVisualState.STATE1_CUTOUT_ANCHOR, qsOpenState.visualState)
+            assertEquals(CapsuleContent.Idle, qsOpenState.content)
+            assertNull(qsOpenState.leftSatellite)
 
-                coordinator.onEvent(CapsuleEvent.TapCapsule)
-                runCurrent()
+            // Gestures remain disabled while QS is open
+            coordinator.onEvent(CapsuleEvent.TapCapsule)
+            coordinator.onEvent(CapsuleEvent.ExpandToFull)
+            coordinator.onEvent(CapsuleEvent.DoubleTapCapsule)
+            coordinator.onEvent(CapsuleEvent.LongHoldCapsule)
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE1_CUTOUT_ANCHOR, coordinator.uiState.value.visualState)
+            assertEquals(CapsuleContent.Idle, coordinator.uiState.value.content)
 
-                val cardExpanded = expectMostRecentItem()
-                assertEquals(CapsuleVisualState.STATE3_FULL_EXPANDED, cardExpanded.visualState)
-                assertTrue(cardExpanded.shouldHideStatusBarIcons)
-
-                coordinator.onEvent(CapsuleEvent.MediaUpdated(null))
-                runCurrent()
-
-                val collapsed = expectMostRecentItem()
-                assertEquals(CapsuleVisualState.STATE1_CUTOUT_ANCHOR, collapsed.visualState)
-                assertFalse(collapsed.shouldHideStatusBarIcons)
-                cancelAndIgnoreRemainingEvents()
-            }
+            // Closing Quick Settings restores playing media & left satellite smoothly
+            coordinator.onEvent(CapsuleEvent.QuickSettingsChanged(isQsOpen = false))
+            runCurrent()
+            assertFalse(coordinator.uiState.value.isQsRingOnlyActive)
+            assertEquals(CapsuleVisualState.STATE2_HORIZONTAL_PILL, coordinator.uiState.value.visualState)
+            assertEquals(media, coordinator.uiState.value.content)
+            assertNotNull(coordinator.uiState.value.leftSatellite)
         }
 
     @Test
-    fun `given state2 stack with 2s dwell lock, when rapid events arrive, then holds current icon for at least 2s before switching`() =
+    fun `given playing media, when newer transient event arrives, then surfaces latest change immediately and returns to media priority after timeout`() =
         testScope.runTest {
             val coordinator = createCoordinator()
-            coordinator.updatePreferences(CapsulePreferences(autoCollapseDelayMs = 4000L))
+            coordinator.updatePreferences(
+                CapsulePreferences(
+                    horizontalAutoCollapseDelayMs = 4000L,
+                    autoCollapseDelayMs = 4000L,
+                ),
+            )
 
             val media = sampleMedia()
-            val alarm = CapsuleContent.Alarm(
-                triggerTimeMillis = 123_456L,
-                formattedTime = "07:00",
-                isSet = true,
+            val volume = CapsuleContent.Volume(
+                activeStream = AudioStreamType.MEDIA,
+                streams = listOf(StreamVolumeInfo(AudioStreamType.MEDIA, 10, 15)),
             )
 
             coordinator.onEvent(CapsuleEvent.MediaUpdated(media))
             runCurrent()
             assertEquals(media, coordinator.uiState.value.content)
 
+            // Media position tick at 500ms keeps playback active without suppressing newer events
             advanceTimeBy(500L)
             runCurrent()
-
-            coordinator.onEvent(CapsuleEvent.AlarmUpdated(alarm))
+            coordinator.onEvent(CapsuleEvent.MediaUpdated(media.copy(positionMs = 500L)))
+            coordinator.onEvent(CapsuleEvent.VolumeChanged(volume))
             runCurrent()
-            // Still holds media because < 2000ms has elapsed since media started showing
-            assertEquals(media, coordinator.uiState.value.content)
+            assertEquals(volume, coordinator.uiState.value.content)
 
-            advanceTimeBy(1499L)
+            // Even while Media ticks continue every 500ms, Volume stays on top during its burst
+            advanceTimeBy(500L)
             runCurrent()
-            assertEquals(media, coordinator.uiState.value.content)
+            coordinator.onEvent(CapsuleEvent.MediaUpdated(media.copy(positionMs = 1000L)))
+            runCurrent()
+            assertEquals(volume, coordinator.uiState.value.content)
 
-            advanceTimeBy(2L)
+            // Once Volume auto-collapse timeout elapses (4000 / 2 = 2000ms), returns to canonical Media priority
+            advanceTimeBy(2000L)
             runCurrent()
-            // Once >= 2000ms elapses, stack switches smoothly to queued alarm
-            assertEquals(alarm, coordinator.uiState.value.content)
+            assertEquals(media.title, (coordinator.uiState.value.content as CapsuleContent.Media).title)
         }
 
     @Test
     fun `given notification alert with actions, when tapped in state2 expands card and tap inside card keeps actions interactive`() =
         testScope.runTest {
             val coordinator = createCoordinator()
-            coordinator.updatePreferences(CapsulePreferences(autoCollapseDelayMs = 4000L))
+            coordinator.updatePreferences(
+                CapsulePreferences(
+                    horizontalAutoCollapseDelayMs = 4000L,
+                    autoCollapseDelayMs = 4000L,
+                ),
+            )
             val actions = listOf(
                 CapsuleContent.NotificationActionItem(actionId = 0, label = "Reply", supportsInlineReply = true, replyHint = "Reply..."),
                 CapsuleContent.NotificationActionItem(actionId = 1, label = "Mark read", supportsInlineReply = false),
@@ -165,13 +196,15 @@ class IslandStateCoordinatorTest {
         }
 
     @Test
-    fun `given live activity without big card, when tapped in state2, then opens app directly`() =
+    fun `given live activity with satellite disabled, when tapped in state2, then expands live activity content card and launches app on tap`() =
         testScope.runTest {
             val coordinator = createCoordinator()
+            coordinator.updatePreferences(CapsulePreferences(enableLeftSatelliteBubble = false))
             val timer = CapsuleContent.LiveActivity(
                 key = "0|com.google.android.deskclock|10",
                 title = "Timer",
                 statusText = "03:15",
+                subtitle = "Kitchen timer",
                 packageName = "com.google.android.deskclock",
             )
 
@@ -179,6 +212,11 @@ class IslandStateCoordinatorTest {
                 coordinator.onEvent(CapsuleEvent.LiveActivityUpdated(timer))
                 runCurrent()
                 assertEquals(CapsuleVisualState.STATE2_HORIZONTAL_PILL, coordinator.uiState.value.visualState)
+
+                coordinator.onEvent(CapsuleEvent.TapCapsule)
+                runCurrent()
+                assertEquals(CapsuleVisualState.STATE3_FULL_EXPANDED, coordinator.uiState.value.visualState)
+                assertEquals(timer, coordinator.uiState.value.content)
 
                 coordinator.onEvent(CapsuleEvent.TapCapsule)
                 runCurrent()
@@ -267,7 +305,12 @@ class IslandStateCoordinatorTest {
     fun `given expanded state3 card, when redundant non-changing orientation or display events arrive, then stays expanded`() =
         testScope.runTest {
             val coordinator = createCoordinator()
-            coordinator.updatePreferences(CapsulePreferences(autoCollapseDelayMs = 4000L))
+            coordinator.updatePreferences(
+                CapsulePreferences(
+                    horizontalAutoCollapseDelayMs = 4000L,
+                    autoCollapseDelayMs = 4000L,
+                ),
+            )
 
             coordinator.onEvent(CapsuleEvent.ExpandToFull)
             runCurrent()
@@ -339,7 +382,12 @@ class IslandStateCoordinatorTest {
     fun `given device unlock event, when tapped expands card and auto collapses after delay`() =
         testScope.runTest {
             val coordinator = createCoordinator()
-            coordinator.updatePreferences(CapsulePreferences(autoCollapseDelayMs = 4000L))
+            coordinator.updatePreferences(
+                CapsulePreferences(
+                    horizontalAutoCollapseDelayMs = 4000L,
+                    autoCollapseDelayMs = 4000L,
+                ),
+            )
             val unlock = CapsuleContent.Unlock(
                 unlockMethod = UnlockMethod.FINGERPRINT,
                 nextAlarmLabel = "07:00",
@@ -358,6 +406,30 @@ class IslandStateCoordinatorTest {
             advanceTimeBy(4001L)
             runCurrent()
             assertEquals(CapsuleVisualState.STATE1_CUTOUT_ANCHOR, coordinator.uiState.value.visualState)
+        }
+
+    @Test
+    fun `given device unlock event on horizontal expand, then disappears after 1 second only`() =
+        testScope.runTest {
+            val coordinator = createCoordinator()
+            coordinator.updatePreferences(
+                CapsulePreferences(horizontalAutoCollapseDelayMs = 6000L),
+            )
+            val unlock = CapsuleContent.Unlock(unlockMethod = UnlockMethod.GENERIC)
+
+            coordinator.onEvent(CapsuleEvent.DeviceUnlocked(unlock))
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE2_HORIZONTAL_PILL, coordinator.uiState.value.visualState)
+            assertEquals(unlock, coordinator.uiState.value.content)
+
+            advanceTimeBy(999L)
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE2_HORIZONTAL_PILL, coordinator.uiState.value.visualState)
+
+            advanceTimeBy(2L)
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE1_CUTOUT_ANCHOR, coordinator.uiState.value.visualState)
+            assertEquals(CapsuleContent.Idle, coordinator.uiState.value.content)
         }
 
     @Test
@@ -380,10 +452,15 @@ class IslandStateCoordinatorTest {
         }
 
     @Test
-    fun `given notification alert untouched with long autoCollapseDelayMs, then auto dismisses within 5 seconds max`() =
+    fun `given standalone notification alert on horizontal expand, then stays at least 6 seconds and respects custom horizontalAutoCollapseDelayMs`() =
         testScope.runTest {
             val coordinator = createCoordinator()
-            coordinator.updatePreferences(CapsulePreferences(autoCollapseDelayMs = 10_000L))
+            coordinator.updatePreferences(
+                CapsulePreferences(
+                    horizontalAutoCollapseDelayMs = 3_000L,
+                    autoCollapseDelayMs = 10_000L,
+                ),
+            )
             val notif = CapsuleContent.NotificationAlert(
                 key = "0|com.whatsapp|99",
                 packageName = "com.whatsapp",
@@ -398,8 +475,8 @@ class IslandStateCoordinatorTest {
             runCurrent()
             assertEquals(CapsuleVisualState.STATE2_HORIZONTAL_PILL, coordinator.uiState.value.visualState)
 
-            // Re-posting identical notification signature must not extend timeout
-            advanceTimeBy(3_000L)
+            // Re-posting identical notification signature must not extend timeout; standalone minimum is 6000ms
+            advanceTimeBy(4_500L)
             runCurrent()
             coordinator.onEvent(CapsuleEvent.NotificationPosted(notif))
             runCurrent()
@@ -440,7 +517,12 @@ class IslandStateCoordinatorTest {
     fun `given torch card expanded, when turned off, then delays collapse per autoCollapseDelayMs and resets on interaction`() =
         testScope.runTest {
             val coordinator = createCoordinator()
-            coordinator.updatePreferences(CapsulePreferences(autoCollapseDelayMs = 4000L))
+            coordinator.updatePreferences(
+                CapsulePreferences(
+                    horizontalAutoCollapseDelayMs = 4000L,
+                    autoCollapseDelayMs = 4000L,
+                ),
+            )
 
             coordinator.onEvent(CapsuleEvent.ExpandToFull)
             runCurrent()
@@ -472,10 +554,15 @@ class IslandStateCoordinatorTest {
         }
 
     @Test
-    fun `given multiple active items, when idle after swipe, returns to canonical priority notifications then media then live activity then other`() =
+    fun `given multiple active items with satellite disabled, when idle after swipe, returns to canonical priority notifications then media then live activity then other`() =
         testScope.runTest {
             val coordinator = createCoordinator()
-            coordinator.updatePreferences(CapsulePreferences(autoCollapseDelayMs = 4000L))
+            coordinator.updatePreferences(
+                CapsulePreferences(
+                    autoCollapseDelayMs = 4000L,
+                    enableLeftSatelliteBubble = false,
+                ),
+            )
             val media = sampleMedia()
             val timer = CapsuleContent.LiveActivity(
                 key = "0|com.google.android.deskclock|11",
@@ -501,8 +588,8 @@ class IslandStateCoordinatorTest {
             // Notification is top priority even while Media and LiveActivity are active
             assertEquals(notif, coordinator.uiState.value.content)
 
-            // After transient notification auto-dismisses at 4.5s, resting top priority is Media
-            advanceTimeBy(4_501L)
+            // After transient notification auto-dismisses at configured horizontal timeout (4000ms), resting top priority is Media
+            advanceTimeBy(6_001L)
             runCurrent()
             assertEquals(media, coordinator.uiState.value.content)
 
@@ -576,7 +663,8 @@ class IslandStateCoordinatorTest {
             coordinator.onEvent(CapsuleEvent.ActiveNotificationCountUpdated(2))
             runCurrent()
 
-            assertEquals(CapsuleVisualState.STATE1_CUTOUT_ANCHOR, coordinator.uiState.value.visualState)
+            assertEquals(CapsuleVisualState.STATE2_HORIZONTAL_PILL, coordinator.uiState.value.visualState)
+            assertEquals(CapsuleContent.NotificationSummary(count = 2), coordinator.uiState.value.content)
 
             coordinator.onEvent(CapsuleEvent.ExpandToFull)
             runCurrent()
@@ -705,7 +793,12 @@ class IslandStateCoordinatorTest {
     fun `given playing media, when notifications arrive, then notification takes immediate top priority and updates unless interacted`() =
         testScope.runTest {
             val coordinator = createCoordinator()
-            coordinator.updatePreferences(CapsulePreferences(autoCollapseDelayMs = 4000L))
+            coordinator.updatePreferences(
+                CapsulePreferences(
+                    horizontalAutoCollapseDelayMs = 4000L,
+                    autoCollapseDelayMs = 4000L,
+                ),
+            )
             val media = sampleMedia()
             val firstNotif = CapsuleContent.NotificationAlert(
                 key = "0|com.whatsapp|1",
@@ -853,6 +946,697 @@ class IslandStateCoordinatorTest {
             )
             runCurrent()
             assertEquals(160f, coordinator.uiState.value.resolveAnchorCenterXOffsetDp(), 0.01f)
+        }
+
+    @Test
+    fun `given torch hotspot and live activity, then left satellite prioritizes torch then hotspot then live activity and expands smoothly`() =
+        testScope.runTest {
+            val coordinator = createCoordinator()
+            val live = CapsuleContent.LiveActivity(
+                key = "0|com.google.android.deskclock|12",
+                title = "Timer",
+                statusText = "02:30",
+                packageName = "com.google.android.deskclock",
+            )
+            val hotspot = CapsuleContent.Hotspot(isEnabled = true, connectedClients = 1)
+            val torch = CapsuleContent.Torch(isEnabled = true, strengthLevel = 2, maxStrengthLevel = 5)
+
+            coordinator.onEvent(CapsuleEvent.LiveActivityUpdated(live))
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE1_CUTOUT_ANCHOR, coordinator.uiState.value.visualState)
+            assertEquals(SatelliteSource.LIVE_ACTIVITY, coordinator.uiState.value.leftSatellite?.source)
+
+            coordinator.onEvent(CapsuleEvent.HotspotUpdated(hotspot))
+            runCurrent()
+            assertEquals(SatelliteSource.HOTSPOT, coordinator.uiState.value.leftSatellite?.source)
+
+            coordinator.onEvent(CapsuleEvent.TorchUpdated(torch))
+            runCurrent()
+            assertEquals(SatelliteSource.TORCH, coordinator.uiState.value.leftSatellite?.source)
+
+            coordinator.onEvent(CapsuleEvent.ExpandLeftSatellite)
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE3_FULL_EXPANDED, coordinator.uiState.value.visualState)
+            assertEquals(torch, coordinator.uiState.value.content)
+
+            coordinator.onEvent(CapsuleEvent.CollapseCapsule)
+            coordinator.onEvent(CapsuleEvent.TorchUpdated(torch.copy(isEnabled = false)))
+            runCurrent()
+            assertEquals(SatelliteSource.HOTSPOT, coordinator.uiState.value.leftSatellite?.source)
+
+            coordinator.onEvent(CapsuleEvent.HotspotUpdated(hotspot.copy(isEnabled = false)))
+            runCurrent()
+            assertEquals(SatelliteSource.LIVE_ACTIVITY, coordinator.uiState.value.leftSatellite?.source)
+
+            coordinator.onEvent(CapsuleEvent.LiveActivityUpdated(null))
+            runCurrent()
+            assertNull(coordinator.uiState.value.leftSatellite)
+        }
+
+    @Test
+    fun `given incoming call notification with auto expand enabled, then opens call card automatically and keeps open until ended`() =
+        testScope.runTest {
+            val coordinator = createCoordinator()
+            coordinator.updatePreferences(CapsulePreferences(autoCollapseDelayMs = 2000L, enableCallAutoExpand = true))
+            val call = CapsuleContent.CallAlert(
+                key = "0|com.google.android.dialer|77",
+                callerName = "Jordan",
+                callStatus = "Incoming call",
+                packageName = "com.google.android.dialer",
+                appName = "Phone",
+                isIncoming = true,
+                hasAnswerAction = true,
+                hasDeclineAction = true,
+            )
+
+            coordinator.onEvent(CapsuleEvent.CallUpdated(call))
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE3_FULL_EXPANDED, coordinator.uiState.value.visualState)
+            assertEquals(call, coordinator.uiState.value.content)
+
+            // Active Call card must NOT auto-collapse on inactivity timeout while ringing/ongoing
+            advanceTimeBy(10_000L)
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE3_FULL_EXPANDED, coordinator.uiState.value.visualState)
+
+            coordinator.onEvent(CapsuleEvent.CallUpdated(null))
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE1_CUTOUT_ANCHOR, coordinator.uiState.value.visualState)
+        }
+
+    @Test
+    fun `given bluetooth device and multiple media sessions, then shows bt alert and switches active media session cleanly`() =
+        testScope.runTest {
+            val coordinator = createCoordinator()
+            val pausedSession = sampleMedia().copy(
+                packageName = "com.google.android.youtube",
+                title = "Second Track",
+                isPlaying = false,
+                sessionTokenKey = "yt:2",
+            )
+            val playingSession = sampleMedia().copy(
+                title = "Playing Track",
+                isPlaying = true,
+                sessionTokenKey = "sp:1",
+            )
+
+            coordinator.effects.test {
+                coordinator.onEvent(CapsuleEvent.MediaSessionsUpdated(listOf(pausedSession, playingSession)))
+                runCurrent()
+                assertEquals(2, coordinator.uiState.value.mediaSessions.size)
+                assertEquals(1, coordinator.uiState.value.selectedMediaIndex)
+
+                coordinator.onEvent(CapsuleEvent.SelectMediaSession(0))
+                runCurrent()
+                assertEquals(CapsuleEffect.SwitchMediaSession("yt:2"), awaitItem())
+                assertEquals(0, coordinator.uiState.value.selectedMediaIndex)
+
+                val buds = CapsuleContent.BluetoothDevice(
+                    name = "Pixel Buds Pro",
+                    address = "AA:BB:CC:DD:EE:FF",
+                    batteryPercent = 88,
+                    category = BluetoothDeviceCategory.HEADPHONES,
+                    isConnected = true,
+                )
+                coordinator.onEvent(CapsuleEvent.BluetoothDeviceUpdated(buds))
+                runCurrent()
+                assertEquals(buds, coordinator.uiState.value.content)
+                assertNotNull(coordinator.uiState.value.content as? CapsuleContent.BluetoothDevice)
+                cancelAndIgnoreRemainingEvents()
+            }
+        }
+
+    @Test
+    fun `given custom global and per-card double-tap and hold bindings, then resolves per-card override before global`() =
+        testScope.runTest {
+            val coordinator = createCoordinator()
+            coordinator.updatePreferences(
+                CapsulePreferences(
+                    globalDoubleTapAction = CapsuleGestureAction.LOCK_SCREEN,
+                    globalLongHoldAction = CapsuleGestureAction.EXPAND_CARD,
+                    cardGestures = mapOf(
+                        GestureCardTarget.MEDIA to CardGestureConfig(
+                            doubleTap = GestureActionBinding(action = CapsuleGestureAction.TOGGLE_MEDIA_PLAY_PAUSE),
+                            longHold = GestureActionBinding(
+                                action = CapsuleGestureAction.LAUNCH_CUSTOM_APP,
+                                customAppPackage = "com.spotify.music",
+                            ),
+                        ),
+                    ),
+                ),
+            )
+            runCurrent()
+
+            coordinator.effects.test {
+                // On Idle ring -> uses Global Double-Tap (LockScreen)
+                coordinator.onEvent(CapsuleEvent.DoubleTapCapsule)
+                runCurrent()
+                assertEquals(CapsuleEffect.LockScreen, awaitItem())
+
+                // When Media is active -> uses Per-Card Media Double-Tap & Long-Hold overrides
+                coordinator.onEvent(CapsuleEvent.MediaUpdated(sampleMedia()))
+                runCurrent()
+                coordinator.onEvent(CapsuleEvent.DoubleTapCapsule)
+                runCurrent()
+                assertEquals(CapsuleEffect.ToggleMediaPlayPause, awaitItem())
+
+                coordinator.onEvent(CapsuleEvent.LongHoldCapsule)
+                runCurrent()
+                assertEquals(CapsuleEffect.LaunchApp("com.spotify.music"), awaitItem())
+                cancelAndIgnoreRemainingEvents()
+            }
+        }
+
+    @Test
+    fun `given multiple active left satellite indicators, when CycleLeftSatellite dispatched, then switches indicator smoothly`() =
+        testScope.runTest {
+            val coordinator = createCoordinator()
+            coordinator.onEvent(
+                CapsuleEvent.TorchUpdated(
+                    CapsuleContent.Torch(isEnabled = true, strengthLevel = 2, maxStrengthLevel = 5),
+                ),
+            )
+            coordinator.onEvent(
+                CapsuleEvent.HotspotUpdated(
+                    CapsuleContent.Hotspot(isEnabled = true, connectedClients = 2),
+                ),
+            )
+            coordinator.onEvent(
+                CapsuleEvent.LiveActivityUpdated(
+                    CapsuleContent.LiveActivity(
+                        key = "timer_1",
+                        title = "Timer",
+                        statusText = "02:30",
+                        packageName = "com.android.deskclock",
+                    ),
+                ),
+            )
+            runCurrent()
+
+            assertEquals(SatelliteSource.TORCH, coordinator.uiState.value.leftSatellite?.source)
+            assertEquals(0, coordinator.uiState.value.leftSatellite?.activeIndex)
+            assertEquals(3, coordinator.uiState.value.leftSatellite?.totalCount)
+
+            coordinator.onEvent(CapsuleEvent.CycleLeftSatellite(direction = 1))
+            runCurrent()
+            assertEquals(SatelliteSource.HOTSPOT, coordinator.uiState.value.leftSatellite?.source)
+            assertEquals(1, coordinator.uiState.value.leftSatellite?.activeIndex)
+            assertEquals(3, coordinator.uiState.value.leftSatellite?.totalCount)
+            assertEquals(1, coordinator.uiState.value.satelliteSwipeSeq)
+            assertEquals(1, coordinator.uiState.value.satelliteSwipeDirection)
+
+            coordinator.onEvent(CapsuleEvent.CycleLeftSatellite(direction = 1))
+            runCurrent()
+            assertEquals(SatelliteSource.LIVE_ACTIVITY, coordinator.uiState.value.leftSatellite?.source)
+            assertEquals(2, coordinator.uiState.value.leftSatellite?.activeIndex)
+            assertEquals(3, coordinator.uiState.value.leftSatellite?.totalCount)
+            assertEquals(2, coordinator.uiState.value.satelliteSwipeSeq)
+
+            coordinator.onEvent(CapsuleEvent.CycleLeftSatellite(direction = -1))
+            runCurrent()
+            assertEquals(SatelliteSource.HOTSPOT, coordinator.uiState.value.leftSatellite?.source)
+            assertEquals(-1, coordinator.uiState.value.satelliteSwipeDirection)
+        }
+
+    @Test
+    fun `given only one active left satellite indicator, when CycleLeftSatellite dispatched, then triggers jiggle without changing source`() =
+        testScope.runTest {
+            val coordinator = createCoordinator()
+            coordinator.onEvent(
+                CapsuleEvent.TorchUpdated(
+                    CapsuleContent.Torch(isEnabled = true, strengthLevel = 1, maxStrengthLevel = 5),
+                ),
+            )
+            runCurrent()
+
+            assertEquals(SatelliteSource.TORCH, coordinator.uiState.value.leftSatellite?.source)
+            val beforeJiggle = coordinator.uiState.value.satelliteJiggleSeq
+            val beforeSwipe = coordinator.uiState.value.satelliteSwipeSeq
+
+            coordinator.onEvent(CapsuleEvent.CycleLeftSatellite(direction = 1))
+            runCurrent()
+
+            assertEquals(SatelliteSource.TORCH, coordinator.uiState.value.leftSatellite?.source)
+            assertEquals(beforeJiggle + 1, coordinator.uiState.value.satelliteJiggleSeq)
+            assertEquals(beforeSwipe, coordinator.uiState.value.satelliteSwipeSeq)
+        }
+
+    @Test
+    fun `given default preferences, then theme defaults to SYSTEM, dynamic color enabled, hideOnQsOpen enabled, and keepExpandedMediaGlowAlways enabled`() {
+        val prefs = CapsulePreferences()
+        assertEquals(AppThemeMode.SYSTEM, prefs.appThemeMode)
+        assertTrue(prefs.useDynamicColor)
+        assertTrue(prefs.hideOnQsOpen)
+        assertTrue(prefs.keepExpandedMediaGlowAlways)
+    }
+
+    @Test
+    fun `given expanded notification with ReplyFocusChanged true, then pauses auto-collapse and blocks incoming notification replacement until reply ends`() =
+        testScope.runTest {
+            val coordinator = createCoordinator()
+            coordinator.updatePreferences(CapsulePreferences(autoCollapseDelayMs = 2_000L))
+            val firstAlert = CapsuleContent.NotificationAlert(
+                key = "0|com.whatsapp|1",
+                packageName = "com.whatsapp",
+                appName = "WhatsApp",
+                title = "Alex",
+                text = "Hey, free tonight?",
+                iconBytes = null,
+                timestampMs = 1_000L,
+            )
+            val incomingAlert = CapsuleContent.NotificationAlert(
+                key = "0|com.telegram|2",
+                packageName = "com.telegram",
+                appName = "Telegram",
+                title = "Sam",
+                text = "Ping",
+                iconBytes = null,
+                timestampMs = 2_000L,
+            )
+
+            coordinator.onEvent(CapsuleEvent.NotificationPosted(firstAlert))
+            runCurrent()
+            coordinator.onEvent(CapsuleEvent.ExpandToFull)
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE3_FULL_EXPANDED, coordinator.uiState.value.visualState)
+
+            // User starts typing a reply -> auto-collapse cancelled, incoming alerts must not replace card
+            coordinator.onEvent(CapsuleEvent.ReplyFocusChanged(isReplying = true))
+            runCurrent()
+
+            advanceTimeBy(15_000L)
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE3_FULL_EXPANDED, coordinator.uiState.value.visualState)
+            assertEquals(firstAlert, coordinator.uiState.value.content)
+
+            coordinator.onEvent(CapsuleEvent.NotificationPosted(incomingAlert))
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE3_FULL_EXPANDED, coordinator.uiState.value.visualState)
+            assertEquals(firstAlert, coordinator.uiState.value.content)
+
+            // User finishes typing -> normal auto-collapse timeout resumes
+            coordinator.onEvent(CapsuleEvent.ReplyFocusChanged(isReplying = false))
+            runCurrent()
+            advanceTimeBy(1_000L)
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE3_FULL_EXPANDED, coordinator.uiState.value.visualState)
+
+            advanceTimeBy(1_500L)
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE2_HORIZONTAL_PILL, coordinator.uiState.value.visualState)
+            assertEquals(incomingAlert, coordinator.uiState.value.content)
+
+            advanceTimeBy(4_000L)
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE1_CUTOUT_ANCHOR, coordinator.uiState.value.visualState)
+        }
+
+    @Test
+    fun `given left satellite expanded and collapsed, then marks satellite origin and pulses satellite glow on open and close`() =
+        testScope.runTest {
+            val coordinator = createCoordinator()
+            coordinator.onEvent(
+                CapsuleEvent.HotspotUpdated(
+                    CapsuleContent.Hotspot(isEnabled = true, connectedClients = 1),
+                ),
+            )
+            runCurrent()
+            assertEquals(SatelliteSource.HOTSPOT, coordinator.uiState.value.leftSatellite?.source)
+
+            coordinator.onEvent(CapsuleEvent.ExpandLeftSatellite)
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE3_FULL_EXPANDED, coordinator.uiState.value.visualState)
+            assertTrue(coordinator.uiState.value.isExpandedFromSatellite)
+            assertTrue(coordinator.uiState.value.isSatelliteGlowActive)
+
+            advanceTimeBy(900L)
+            runCurrent()
+            assertFalse(coordinator.uiState.value.isSatelliteGlowActive)
+
+            coordinator.onEvent(CapsuleEvent.CollapseCapsule)
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE1_CUTOUT_ANCHOR, coordinator.uiState.value.visualState)
+            assertFalse(coordinator.uiState.value.isExpandedFromSatellite)
+            assertTrue(coordinator.uiState.value.isSatelliteGlowActive)
+
+            advanceTimeBy(900L)
+            runCurrent()
+            assertFalse(coordinator.uiState.value.isSatelliteGlowActive)
+        }
+
+    @Test
+    fun `given charging active, then keeps horizontal expand persistently until unplugged`() =
+        testScope.runTest {
+            val coordinator = createCoordinator()
+            coordinator.onEvent(CapsuleEvent.BatteryUpdated(percent = 68, isCharging = true))
+            runCurrent()
+
+            assertEquals(CapsuleVisualState.STATE2_HORIZONTAL_PILL, coordinator.uiState.value.visualState)
+            assertEquals(CapsuleContent.Charging(68), coordinator.uiState.value.content)
+
+            // Even after 20 seconds, charging stays in horizontal expand while plugged in
+            advanceTimeBy(20_000L)
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE2_HORIZONTAL_PILL, coordinator.uiState.value.visualState)
+            assertEquals(CapsuleContent.Charging(68), coordinator.uiState.value.content)
+
+            // When unplugged, collapses back to State 1 ring
+            coordinator.onEvent(CapsuleEvent.BatteryUpdated(percent = 69, isCharging = false))
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE1_CUTOUT_ANCHOR, coordinator.uiState.value.visualState)
+        }
+
+    @Test
+    fun `given expanded multi-media on paused page, when playing session position ticks, then keeps paused page content and colors without blinking`() =
+        testScope.runTest {
+            val coordinator = createCoordinator()
+            val playingSpotify = sampleMedia().copy(
+                sessionTokenKey = "spotify_1",
+                isPlaying = true,
+                primaryColorArgb = 0xFF1DB954.toInt(),
+                secondaryColorArgb = 0xFF191414.toInt(),
+            )
+            val pausedYoutube = sampleMedia().copy(
+                packageName = "com.google.android.youtube",
+                sessionTokenKey = "youtube_2",
+                title = "Tech Review",
+                artist = "Creator",
+                isPlaying = false,
+                primaryColorArgb = 0xFFFF0000.toInt(),
+                secondaryColorArgb = 0xFF282828.toInt(),
+            )
+
+            coordinator.onEvent(CapsuleEvent.MediaSessionsUpdated(listOf(playingSpotify, pausedYoutube)))
+            coordinator.onEvent(CapsuleEvent.MediaUpdated(playingSpotify))
+            coordinator.onEvent(CapsuleEvent.ExpandToFull)
+            runCurrent()
+
+            // User swipes to the paused YouTube page (index 1)
+            coordinator.onEvent(CapsuleEvent.SelectMediaSession(1))
+            runCurrent()
+            assertEquals(1, coordinator.uiState.value.selectedMediaIndex)
+            assertEquals(
+                0xFFFF0000.toInt(),
+                (coordinator.uiState.value.content as CapsuleContent.Media).primaryColorArgb,
+            )
+
+            // Playing Spotify session emits a background 500ms position tick
+            coordinator.onEvent(
+                CapsuleEvent.MediaUpdated(playingSpotify.copy(positionMs = 15_500L)),
+            )
+            runCurrent()
+
+            // Active expanded content must remain pinned to the paused YouTube page's colors (no blinking!)
+            assertEquals(1, coordinator.uiState.value.selectedMediaIndex)
+            val activeContent = coordinator.uiState.value.content as CapsuleContent.Media
+            assertEquals("youtube_2", activeContent.sessionTokenKey)
+            assertEquals(0xFFFF0000.toInt(), activeContent.primaryColorArgb)
+        }
+
+    @Test
+    fun `given playing media that ducks or updates track, when notification arrives, then notification stays for full horizontalAutoCollapseDelayMs`() =
+        testScope.runTest {
+            val coordinator = createCoordinator()
+            coordinator.updatePreferences(
+                CapsulePreferences(
+                    horizontalAutoCollapseDelayMs = 7_500L,
+                    autoCollapseDelayMs = 4_000L,
+                ),
+            )
+            val media = sampleMedia()
+            val notif = CapsuleContent.NotificationAlert(
+                key = "0|com.whatsapp|301",
+                packageName = "com.whatsapp",
+                appName = "WhatsApp",
+                title = "Alex",
+                text = "Testing notification while media plays",
+                iconBytes = null,
+                timestampMs = 500L,
+            )
+
+            coordinator.onEvent(CapsuleEvent.MediaUpdated(media))
+            runCurrent()
+            assertEquals(media, coordinator.uiState.value.content)
+
+            advanceTimeBy(300L)
+            runCurrent()
+            coordinator.onEvent(CapsuleEvent.NotificationPosted(notif))
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE2_HORIZONTAL_PILL, coordinator.uiState.value.visualState)
+            assertEquals(notif, coordinator.uiState.value.content)
+
+            // Simulate notification chime briefly ducking/pausing media and resuming 400ms later
+            advanceTimeBy(200L)
+            runCurrent()
+            coordinator.onEvent(CapsuleEvent.MediaUpdated(media.copy(isPlaying = false, positionMs = 500L)))
+            advanceTimeBy(200L)
+            runCurrent()
+            coordinator.onEvent(CapsuleEvent.MediaUpdated(media.copy(isPlaying = true, title = "Next Track", positionMs = 0L)))
+            runCurrent()
+
+            // Notification must still be displayed for the full 7,500ms horizontal setting
+            assertEquals(notif, coordinator.uiState.value.content)
+
+            advanceTimeBy(7_000L)
+            runCurrent()
+            assertEquals(notif, coordinator.uiState.value.content)
+
+            // After 7,500ms total elapses since notification arrived, returns cleanly to playing media
+            advanceTimeBy(150L)
+            runCurrent()
+            assertEquals("Next Track", (coordinator.uiState.value.content as CapsuleContent.Media).title)
+        }
+
+    @Test
+    fun `given active media in horizontal pill or expanded card, when ExpandNowBrief dispatched, then opens NowBrief card`() =
+        testScope.runTest {
+            val coordinator = createCoordinator()
+            val media = sampleMedia()
+            coordinator.onEvent(CapsuleEvent.MediaUpdated(media))
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE2_HORIZONTAL_PILL, coordinator.uiState.value.visualState)
+            assertEquals(media, coordinator.uiState.value.content)
+
+            coordinator.onEvent(CapsuleEvent.ExpandNowBrief)
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE3_FULL_EXPANDED, coordinator.uiState.value.visualState)
+            assertTrue(coordinator.uiState.value.content is CapsuleContent.NowBrief)
+        }
+
+    @Test
+    fun `given live activity in left satellite, when ExpandLeftSatellite dispatched, then opens LiveActivity content instead of NowBrief`() =
+        testScope.runTest {
+            val coordinator = createCoordinator()
+            val live = CapsuleContent.LiveActivity(
+                key = "0|com.google.android.deskclock|44",
+                title = "Workout Timer",
+                statusText = "12:05",
+                subtitle = "HIIT Interval",
+                packageName = "com.google.android.deskclock",
+            )
+            coordinator.onEvent(CapsuleEvent.LiveActivityUpdated(live))
+            runCurrent()
+            assertEquals(SatelliteSource.LIVE_ACTIVITY, coordinator.uiState.value.leftSatellite?.source)
+
+            coordinator.onEvent(CapsuleEvent.ExpandLeftSatellite)
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE3_FULL_EXPANDED, coordinator.uiState.value.visualState)
+            assertEquals(live, coordinator.uiState.value.content)
+        }
+
+    @Test
+    fun `given expanded media player, when mediaFollowGlobalAutoCollapse disabled, then uses independent 10s-60s timeout instead of global timeout`() =
+        testScope.runTest {
+            val coordinator = createCoordinator()
+            coordinator.updatePreferences(
+                CapsulePreferences(
+                    autoCollapseDelayMs = 3_000L,
+                    mediaFollowGlobalAutoCollapse = false,
+                    mediaAutoCollapseDelayMs = 22_000L,
+                ),
+            )
+            val media = sampleMedia()
+            coordinator.onEvent(CapsuleEvent.MediaUpdated(media))
+            runCurrent()
+            coordinator.onEvent(CapsuleEvent.ExpandToFull)
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE3_FULL_EXPANDED, coordinator.uiState.value.visualState)
+
+            // Past global 3s timeout -> must stay expanded because custom media timeout is 22s
+            advanceTimeBy(15_000L)
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE3_FULL_EXPANDED, coordinator.uiState.value.visualState)
+
+            // Past 22s custom media timeout -> collapses cleanly back to horizontal pill
+            advanceTimeBy(7_500L)
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE2_HORIZONTAL_PILL, coordinator.uiState.value.visualState)
+
+            // Re-enable Follow Global -> now uses global 3s timeout
+            coordinator.updatePreferences(
+                CapsulePreferences(
+                    autoCollapseDelayMs = 3_000L,
+                    mediaFollowGlobalAutoCollapse = true,
+                    mediaAutoCollapseDelayMs = 22_000L,
+                ),
+            )
+            coordinator.onEvent(CapsuleEvent.ExpandToFull)
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE3_FULL_EXPANDED, coordinator.uiState.value.visualState)
+            advanceTimeBy(3_500L)
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE2_HORIZONTAL_PILL, coordinator.uiState.value.visualState)
+        }
+
+    @Test
+    fun `given live activity with chronometer, then formats real-time count-up and countdown durations accurately`() {
+        val screenRecorder = CapsuleContent.LiveActivity(
+            key = "0|com.android.systemui|rec",
+            title = "Recording screen",
+            statusText = "00:00",
+            showChronometer = true,
+            chronometerBaseEpochMs = 10_000L,
+            isCountdown = false,
+        )
+        assertEquals("00:00", screenRecorder.resolveDisplayStatus(nowEpochMs = 10_000L))
+        assertEquals("00:07", screenRecorder.resolveDisplayStatus(nowEpochMs = 17_400L))
+        assertEquals("01:05", screenRecorder.resolveDisplayStatus(nowEpochMs = 75_000L))
+        assertEquals("1:00:02", screenRecorder.resolveDisplayStatus(nowEpochMs = 3_612_000L))
+
+        val timer = CapsuleContent.LiveActivity(
+            key = "0|com.google.android.deskclock|timer",
+            title = "Timer",
+            statusText = "01:00",
+            showChronometer = true,
+            chronometerBaseEpochMs = 70_000L,
+            isCountdown = true,
+        )
+        assertEquals("01:00", timer.resolveDisplayStatus(nowEpochMs = 10_000L))
+        assertEquals("00:01", timer.resolveDisplayStatus(nowEpochMs = 69_200L))
+        assertEquals("00:00", timer.resolveDisplayStatus(nowEpochMs = 75_000L))
+
+        val staticLive = CapsuleContent.LiveActivity(
+            key = "0|com.example|static",
+            title = "Delivery",
+            statusText = "Arriving",
+            showChronometer = false,
+        )
+        assertEquals("Arriving", staticLive.resolveDisplayStatus(nowEpochMs = 99_000L))
+    }
+
+    @Test
+    fun `given multiple active system statuses (airplane, dnd, vpn), then left satellite cycles through all and expands SystemStatus card`() =
+        testScope.runTest {
+            val coordinator = createCoordinator()
+            val airplane = CapsuleContent.SystemStatus(kind = SystemStatusKind.AIRPLANE_MODE, isActive = true)
+            val dnd = CapsuleContent.SystemStatus(kind = SystemStatusKind.DO_NOT_DISTURB, isActive = true)
+            val vpn = CapsuleContent.SystemStatus(kind = SystemStatusKind.VPN, isActive = true)
+
+            coordinator.onEvent(CapsuleEvent.SystemStatusUpdated(airplane))
+            coordinator.onEvent(CapsuleEvent.SystemStatusUpdated(dnd))
+            coordinator.onEvent(CapsuleEvent.SystemStatusUpdated(vpn))
+            runCurrent()
+
+            val firstSat = coordinator.uiState.value.leftSatellite
+            assertEquals(SatelliteSource.AIRPLANE_MODE, firstSat?.source)
+            assertEquals(3, firstSat?.totalCount)
+            assertEquals(0, firstSat?.activeIndex)
+
+            coordinator.onEvent(CapsuleEvent.CycleLeftSatellite(direction = 1))
+            runCurrent()
+            assertEquals(SatelliteSource.DO_NOT_DISTURB, coordinator.uiState.value.leftSatellite?.source)
+
+            coordinator.onEvent(CapsuleEvent.ExpandLeftSatellite)
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE3_FULL_EXPANDED, coordinator.uiState.value.visualState)
+            assertEquals(dnd, coordinator.uiState.value.content)
+
+            // Turning DND off while its expanded card is open collapses cleanly and removes it from satellite
+            coordinator.onEvent(CapsuleEvent.SystemStatusUpdated(dnd.copy(isActive = false)))
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE1_CUTOUT_ANCHOR, coordinator.uiState.value.visualState)
+            assertEquals(2, coordinator.uiState.value.leftSatellite?.totalCount)
+        }
+
+    @Test
+    fun `given idle or paused media with active notifications, then shows NotificationSummary periodically, auto-collapses, and tap opens shade`() =
+        testScope.runTest {
+            val coordinator = createCoordinator()
+            coordinator.updatePreferences(CapsulePreferences(horizontalAutoCollapseDelayMs = 4_000L))
+            coordinator.onEvent(CapsuleEvent.MediaUpdated(sampleMedia().copy(isPlaying = false)))
+            coordinator.onEvent(CapsuleEvent.ActiveNotificationCountUpdated(3))
+            runCurrent()
+
+            assertEquals(CapsuleVisualState.STATE2_HORIZONTAL_PILL, coordinator.uiState.value.visualState)
+            assertEquals(CapsuleContent.NotificationSummary(count = 3), coordinator.uiState.value.content)
+
+            coordinator.effects.test {
+                coordinator.onEvent(CapsuleEvent.TapCapsule)
+                runCurrent()
+                assertEquals(CapsuleEffect.OpenNotificationShade, awaitItem())
+                cancelAndIgnoreRemainingEvents()
+            }
+
+            // Auto-collapses after configured horizontal auto-collapse timeout (4000ms)
+            advanceTimeBy(4_100L)
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE1_CUTOUT_ANCHOR, coordinator.uiState.value.visualState)
+
+            // Reappears after 30s idle rolling interval while notifications remain active
+            advanceTimeBy(30_000L)
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE2_HORIZONTAL_PILL, coordinator.uiState.value.visualState)
+            assertEquals(CapsuleContent.NotificationSummary(count = 3), coordinator.uiState.value.content)
+
+            // Auto-collapses again after 4000ms
+            advanceTimeBy(4_100L)
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE1_CUTOUT_ANCHOR, coordinator.uiState.value.visualState)
+
+            // Clearing notifications cancels periodic reappearance
+            coordinator.onEvent(CapsuleEvent.ActiveNotificationCountUpdated(0))
+            runCurrent()
+            advanceTimeBy(35_000L)
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE1_CUTOUT_ANCHOR, coordinator.uiState.value.visualState)
+        }
+
+    @Test
+    fun `given showOnLockScreen preference, when keyguard locks, then behaves like QS ring only when disabled and skips unlock bounce`() =
+        testScope.runTest {
+            val coordinator = createCoordinator()
+            assertTrue(coordinator.uiState.value.preferences.showOnLockScreen)
+            assertEquals(SatellitePosition.LEFT, coordinator.uiState.value.preferences.satellitePosition)
+
+            coordinator.onEvent(CapsuleEvent.MediaUpdated(sampleMedia()))
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE2_HORIZONTAL_PILL, coordinator.uiState.value.visualState)
+
+            // Default showOnLockScreen = true keeps active pill visible on lock screen
+            coordinator.onEvent(CapsuleEvent.KeyguardLockedChanged(isLocked = true))
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE2_HORIZONTAL_PILL, coordinator.uiState.value.visualState)
+            assertFalse(coordinator.uiState.value.isQsRingOnlyActive)
+
+            // Disabling showOnLockScreen collapses lock screen to battery ring only (matching QS open)
+            coordinator.updatePreferences(CapsulePreferences(showOnLockScreen = false))
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE1_CUTOUT_ANCHOR, coordinator.uiState.value.visualState)
+            assertEquals(CapsuleContent.Idle, coordinator.uiState.value.content)
+            assertNull(coordinator.uiState.value.leftSatellite)
+            assertTrue(coordinator.uiState.value.isQsRingOnlyActive)
+
+            // Unlocking restores the active pill directly and suppresses the redundant Unlocked bounce
+            coordinator.onEvent(CapsuleEvent.KeyguardLockedChanged(isLocked = false))
+            coordinator.onEvent(
+                CapsuleEvent.DeviceUnlocked(
+                    CapsuleContent.Unlock(unlockMethod = UnlockMethod.GENERIC),
+                ),
+            )
+            runCurrent()
+            assertFalse(coordinator.uiState.value.isQsRingOnlyActive)
+            assertEquals(CapsuleVisualState.STATE2_HORIZONTAL_PILL, coordinator.uiState.value.visualState)
+            assertTrue(coordinator.uiState.value.content is CapsuleContent.Media)
         }
 
     private fun sampleMedia(): CapsuleContent.Media =

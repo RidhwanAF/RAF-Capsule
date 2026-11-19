@@ -38,13 +38,65 @@ sealed interface CapsuleContent {
      * @property title Short title or app label.
      * @property statusText Formatted timer countdown, chronometer, or status badge.
      * @property packageName Optional owning package used to launch the app directly on tap.
+     * @property iconBytes Optional compressed PNG icon bytes for the originating app or notification icon.
      */
     data class LiveActivity(
         val key: String,
         val title: String,
         val statusText: String,
+        val subtitle: String = "",
         val packageName: String? = null,
-    ) : CapsuleContent
+        val iconBytes: ByteArray? = null,
+        val showChronometer: Boolean = false,
+        val chronometerBaseEpochMs: Long = 0L,
+        val isCountdown: Boolean = false,
+    ) : CapsuleContent {
+        /**
+         * Resolves live formatted duration (`MM:SS` or `H:MM:SS`) against [nowEpochMs] when backed
+         * by an active Android chronometer, or falls back to static [statusText].
+         */
+        fun resolveDisplayStatus(nowEpochMs: Long): String {
+            if (!showChronometer || chronometerBaseEpochMs <= 0L) return statusText
+            val totalSec = if (isCountdown) {
+                ((chronometerBaseEpochMs - nowEpochMs).coerceAtLeast(0L) + 999L) / 1000L
+            } else {
+                (nowEpochMs - chronometerBaseEpochMs).coerceAtLeast(0L) / 1000L
+            }
+            val hours = totalSec / 3600L
+            val minutes = (totalSec % 3600L) / 60L
+            val seconds = totalSec % 60L
+            val minStr = minutes.toString().padStart(2, '0')
+            val secStr = seconds.toString().padStart(2, '0')
+            return if (hours > 0L) "$hours:$minStr:$secStr" else "$minStr:$secStr"
+        }
+
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (other !is LiveActivity) return false
+            return key == other.key &&
+                title == other.title &&
+                statusText == other.statusText &&
+                subtitle == other.subtitle &&
+                packageName == other.packageName &&
+                iconBytes.contentEquals(other.iconBytes) &&
+                showChronometer == other.showChronometer &&
+                chronometerBaseEpochMs == other.chronometerBaseEpochMs &&
+                isCountdown == other.isCountdown
+        }
+
+        override fun hashCode(): Int {
+            var result = key.hashCode()
+            result = 31 * result + title.hashCode()
+            result = 31 * result + statusText.hashCode()
+            result = 31 * result + subtitle.hashCode()
+            result = 31 * result + (packageName?.hashCode() ?: 0)
+            result = 31 * result + (iconBytes?.contentHashCode() ?: 0)
+            result = 31 * result + showChronometer.hashCode()
+            result = 31 * result + chronometerBaseEpochMs.hashCode()
+            result = 31 * result + isCountdown.hashCode()
+            return result
+        }
+    }
 
     /**
      * Executable Android notification action surfaced inside an expanded notification card.
@@ -82,6 +134,8 @@ sealed interface CapsuleContent {
         val iconBytes: ByteArray?,
         val timestampMs: Long,
         val actions: List<NotificationActionItem> = emptyList(),
+        val attachmentImageBytes: ByteArray? = null,
+        val attachmentMimeType: String? = null,
     ) : CapsuleContent {
         override fun equals(other: Any?): Boolean {
             if (this === other) return true
@@ -93,7 +147,9 @@ sealed interface CapsuleContent {
                 text == other.text &&
                 iconBytes.contentEquals(other.iconBytes) &&
                 timestampMs == other.timestampMs &&
-                actions == other.actions
+                actions == other.actions &&
+                attachmentImageBytes.contentEquals(other.attachmentImageBytes) &&
+                attachmentMimeType == other.attachmentMimeType
         }
 
         override fun hashCode(): Int {
@@ -105,9 +161,21 @@ sealed interface CapsuleContent {
             result = 31 * result + (iconBytes?.contentHashCode() ?: 0)
             result = 31 * result + timestampMs.hashCode()
             result = 31 * result + actions.hashCode()
+            result = 31 * result + (attachmentImageBytes?.contentHashCode() ?: 0)
+            result = 31 * result + (attachmentMimeType?.hashCode() ?: 0)
             return result
         }
     }
+
+    /**
+     * Persistent resting summary pill shown when no higher-priority active pill is displayed
+     * and unread notifications exist in the system shade.
+     *
+     * @property count Number of active clearable notifications currently in the shade.
+     */
+    data class NotificationSummary(
+        val count: Int,
+    ) : CapsuleContent
 
     /**
      * Compact 1-side pill payload displayed when holding or plugging in during charging.
@@ -139,6 +207,11 @@ sealed interface CapsuleContent {
      * @property artworkBytes Optional compressed PNG/JPEG artwork bytes for presentation decoding.
      * @property primaryColorArgb Dominant ARGB color sampled from artwork.
      * @property secondaryColorArgb Accent ARGB color sampled from artwork.
+     * @property sessionTokenKey Stable identifier distinguishing multiple simultaneous media controllers.
+     * @property appIconBytes Optional compressed PNG icon bytes for the media source app.
+     * @property audioOutputLabel Active audio route label (e.g. "Phone speaker", "Pixel Buds").
+     * @property audioOutputKind Normalized output route category for icon rendering.
+     * @property lyrics Optional synced or multi-line lyrics extracted from media metadata.
      */
     data class Media(
         val packageName: String,
@@ -150,6 +223,11 @@ sealed interface CapsuleContent {
         val artworkBytes: ByteArray?,
         val primaryColorArgb: Int,
         val secondaryColorArgb: Int,
+        val sessionTokenKey: String = "",
+        val appIconBytes: ByteArray? = null,
+        val audioOutputLabel: String = "",
+        val audioOutputKind: MediaOutputKind = MediaOutputKind.SPEAKER,
+        val lyrics: List<LyricLine> = emptyList(),
     ) : CapsuleContent {
         override fun equals(other: Any?): Boolean {
             if (this === other) return true
@@ -162,7 +240,12 @@ sealed interface CapsuleContent {
                 durationMs == other.durationMs &&
                 artworkBytes.contentEquals(other.artworkBytes) &&
                 primaryColorArgb == other.primaryColorArgb &&
-                secondaryColorArgb == other.secondaryColorArgb
+                secondaryColorArgb == other.secondaryColorArgb &&
+                sessionTokenKey == other.sessionTokenKey &&
+                appIconBytes.contentEquals(other.appIconBytes) &&
+                audioOutputLabel == other.audioOutputLabel &&
+                audioOutputKind == other.audioOutputKind &&
+                lyrics == other.lyrics
         }
 
         override fun hashCode(): Int {
@@ -175,6 +258,11 @@ sealed interface CapsuleContent {
             result = 31 * result + (artworkBytes?.contentHashCode() ?: 0)
             result = 31 * result + primaryColorArgb
             result = 31 * result + secondaryColorArgb
+            result = 31 * result + sessionTokenKey.hashCode()
+            result = 31 * result + (appIconBytes?.contentHashCode() ?: 0)
+            result = 31 * result + audioOutputLabel.hashCode()
+            result = 31 * result + audioOutputKind.hashCode()
+            result = 31 * result + lyrics.hashCode()
             return result
         }
     }
@@ -237,6 +325,165 @@ sealed interface CapsuleContent {
         val unlockMethod: UnlockMethod = UnlockMethod.GENERIC,
         val nextAlarmLabel: String? = null,
     ) : CapsuleContent
+
+    /**
+     * Connected Bluetooth peripheral alert and status card payload.
+     *
+     * @property name Device friendly name (e.g. "Pixel Buds Pro").
+     * @property address MAC or hardware address identifier.
+     * @property batteryPercent Reported peripheral battery percentage (0..100), or null when unavailable.
+     * @property category Coarse Bluetooth accessory category for icon selection.
+     * @property isConnected True while the accessory link is active.
+     */
+    data class BluetoothDevice(
+        val name: String,
+        val address: String,
+        val batteryPercent: Int? = null,
+        val category: BluetoothDeviceCategory = BluetoothDeviceCategory.OTHER,
+        val isConnected: Boolean = true,
+    ) : CapsuleContent
+
+    /**
+     * Incoming or ongoing phone / VoIP call payload with answer and decline affordances.
+     *
+     * @property key Notification key identifying this call notification.
+     * @property callerName Caller display name or number.
+     * @property callStatus Status subtitle (e.g., "Incoming call", "Ongoing • 01:24").
+     * @property packageName Owning dialer or VoIP app package name.
+     * @property appName Human-readable owning app name.
+     * @property appIconBytes Optional compressed PNG bytes for caller/app icon.
+     * @property isIncoming True while ringing / awaiting user action.
+     * @property hasAnswerAction True when the notification exposes an Answer PendingIntent.
+     * @property hasDeclineAction True when the notification exposes a Decline or Hang Up PendingIntent.
+     * @property isOngoing True while call is active in progress.
+     * @property startedAtMs Chronometer base or notification timestamp in milliseconds.
+     */
+    data class CallAlert(
+        val key: String,
+        val callerName: String,
+        val callStatus: String,
+        val packageName: String,
+        val appName: String,
+        val appIconBytes: ByteArray? = null,
+        val isIncoming: Boolean = true,
+        val hasAnswerAction: Boolean = false,
+        val hasDeclineAction: Boolean = false,
+        val isOngoing: Boolean = false,
+        val startedAtMs: Long = 0L,
+    ) : CapsuleContent {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (other !is CallAlert) return false
+            return key == other.key &&
+                callerName == other.callerName &&
+                callStatus == other.callStatus &&
+                packageName == other.packageName &&
+                appName == other.appName &&
+                appIconBytes.contentEquals(other.appIconBytes) &&
+                isIncoming == other.isIncoming &&
+                hasAnswerAction == other.hasAnswerAction &&
+                hasDeclineAction == other.hasDeclineAction &&
+                isOngoing == other.isOngoing &&
+                startedAtMs == other.startedAtMs
+        }
+
+        override fun hashCode(): Int {
+            var result = key.hashCode()
+            result = 31 * result + callerName.hashCode()
+            result = 31 * result + callStatus.hashCode()
+            result = 31 * result + packageName.hashCode()
+            result = 31 * result + appName.hashCode()
+            result = 31 * result + (appIconBytes?.contentHashCode() ?: 0)
+            result = 31 * result + isIncoming.hashCode()
+            result = 31 * result + hasAnswerAction.hashCode()
+            result = 31 * result + hasDeclineAction.hashCode()
+            result = 31 * result + isOngoing.hashCode()
+            result = 31 * result + startedAtMs.hashCode()
+            return result
+        }
+    }
+
+    /**
+     * Mobile Wi-Fi Hotspot status surfaced primarily via the detached left satellite bubble or card.
+     *
+     * @property isEnabled True while the Wi-Fi AP / tethering hotspot is active.
+     * @property connectedClients Number of connected tethered clients when reported by system, or 0.
+     * @property ssid Optional configured hotspot SSID name.
+     */
+    data class Hotspot(
+        val isEnabled: Boolean,
+        val connectedClients: Int = 0,
+        val ssid: String? = null,
+    ) : CapsuleContent
+
+    /**
+     * Active system status mode surfaced in the detached left satellite bubble and expandable card.
+     *
+     * @property kind System mode category (Airplane, DND, Battery Saver, VPN, Silent/Vibrate, Data Saver).
+     * @property isActive Whether the system mode is currently enabled.
+     * @property detailLabel Optional short detail caption (e.g. "Silent", "Vibrate").
+     */
+    data class SystemStatus(
+        val kind: SystemStatusKind,
+        val isActive: Boolean,
+        val detailLabel: String = "",
+    ) : CapsuleContent
+
+    /**
+     * Icon-only detached satellite indicator positioned to the left of the camera cutout.
+     *
+     * @property source Prioritized source identity across hardware, live activity, and system modes.
+     * @property content Underlying domain payload opened smoothly when expanding the satellite.
+     */
+    data class LeftSatelliteItem(
+        val source: SatelliteSource,
+        val content: CapsuleContent,
+        val activeIndex: Int = 0,
+        val totalCount: Int = 1,
+    )
+}
+
+/** Active system toggle/mode categories surfaced in the separated left satellite bubble. */
+enum class SystemStatusKind {
+    AIRPLANE_MODE,
+    DO_NOT_DISTURB,
+    BATTERY_SAVER,
+    VPN,
+    RINGER_MUTED,
+    DATA_SAVER,
+}
+
+/** Source category shown in the separated left satellite circle. */
+enum class SatelliteSource {
+    TORCH,
+    HOTSPOT,
+    LIVE_ACTIVITY,
+    AIRPLANE_MODE,
+    DO_NOT_DISTURB,
+    BATTERY_SAVER,
+    VPN,
+    RINGER_MUTED,
+    DATA_SAVER,
+}
+
+/** Physical or wireless audio output device category for active media playback. */
+enum class MediaOutputKind {
+    SPEAKER,
+    BLUETOOTH,
+    WIRED,
+    CAST,
+    UNKNOWN,
+}
+
+/** Coarse Bluetooth peripheral device category. */
+enum class BluetoothDeviceCategory {
+    HEADPHONES,
+    SPEAKER,
+    WATCH,
+    CAR,
+    COMPUTER,
+    PHONE,
+    OTHER,
 }
 
 /** Authentication modality resolved or inferred on keyguard dismissal. */
@@ -254,6 +501,17 @@ enum class AudioStreamType {
     NOTIFICATION,
     VOICE,
 }
+
+/**
+ * Single synced or plain lyric line extracted from media metadata.
+ *
+ * @property timestampMs Millisecond offset for synced LRC lines, or `-1L` when unsynced.
+ * @property text Display text of the lyric line.
+ */
+data class LyricLine(
+    val timestampMs: Long,
+    val text: String,
+)
 
 /**
  * Immutable volume level snapshot for a single audio stream.

@@ -15,6 +15,15 @@ interface NotificationRepository {
     /** Returns the current active live activity notification if any. */
     fun currentLiveActivity(): CapsuleContent.LiveActivity?
 
+    /** Returns the current active incoming or ongoing call notification if any. */
+    fun currentActiveCall(): CapsuleContent.CallAlert? = null
+
+    /** Executes the active call notification Answer PendingIntent when supported. */
+    fun answerCall(key: String): Boolean = false
+
+    /** Executes the active call notification Decline / Hang-up PendingIntent when supported. */
+    fun declineCall(key: String): Boolean = false
+
     /** Launches the cached notification PendingIntent or application launch intent. */
     fun openNotificationOrApp(key: String?, packageName: String)
 
@@ -25,7 +34,7 @@ interface NotificationRepository {
     fun dismissNotification(key: String)
 
     /** Emits live counts of active clearable status-bar notifications. */
-    fun observeActiveNotificationCount(): kotlinx.coroutines.flow.Flow<Int>
+    fun observeActiveNotificationCount(): Flow<Int>
 
     /** Reads the current active notification count synchronously. */
     fun currentActiveNotificationCount(): Int

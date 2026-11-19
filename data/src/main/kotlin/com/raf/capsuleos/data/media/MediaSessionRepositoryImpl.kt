@@ -2,30 +2,49 @@ package com.raf.capsuleos.data.media
 
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.media.AudioAttributes
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
 import android.media.MediaMetadata
+import android.media.MediaRouter2
 import android.media.session.MediaController
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
+import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.provider.Settings
+import androidx.core.graphics.drawable.toBitmap
 import com.raf.capsuleos.domain.model.CapsuleContent
+import com.raf.capsuleos.domain.model.LrcLyricsParser
+import com.raf.capsuleos.domain.model.LyricLine
+import com.raf.capsuleos.domain.model.MediaOutputKind
 import com.raf.capsuleos.domain.repository.MediaSessionRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import java.io.ByteArrayOutputStream
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.max
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
- * Observes and controls the top active Android [MediaController] via [MediaSessionManager].
+ * Observes and controls all active Android [MediaController] instances via [MediaSessionManager],
+ * extracting album art colors, app icon badges, and current audio output device routing.
  */
 @Singleton
 class MediaSessionRepositoryImpl @Inject constructor(
@@ -34,77 +53,101 @@ class MediaSessionRepositoryImpl @Inject constructor(
 
     private val mediaSessionManager =
         context.getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
+    private val audioManager =
+        context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private val listenerComponent =
         ComponentName(context, CapsuleNotificationListenerService::class.java)
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    private val sessionsLock = Any()
+
     @Volatile
-    private var activeController: MediaController? = null
+    private var allControllers: List<MediaController> = emptyList()
 
-    private var cachedArtworkKey: String? = null
-    private var cachedArtworkBytes: ByteArray? = null
-    private var cachedPrimaryColor: Int = 0xFF64B5F6.toInt()
-    private var cachedSecondaryColor: Int = 0xFFBA68C8.toInt()
+    @Volatile
+    private var selectedTokenKey: String? = null
 
-    override fun observeActiveMedia(): Flow<CapsuleContent.Media?> = callbackFlow {
-        var currentController: MediaController? = null
-        var callback: MediaController.Callback? = null
+    private val mediaSessionsFlow = MutableStateFlow<List<CapsuleContent.Media>>(emptyList())
 
-        fun detachCurrentController() {
-            val controller = currentController
-            val cb = callback
-            if (controller != null && cb != null) {
-                runCatching { controller.unregisterCallback(cb) }
+    private val appIconBytesCache = ConcurrentHashMap<String, ByteArray>()
+    private val artworkCache = ConcurrentHashMap<String, CachedArtwork>()
+
+    private data class CachedArtwork(
+        val artKey: String,
+        val bytes: ByteArray?,
+        val primaryArgb: Int,
+        val secondaryArgb: Int,
+        val lyrics: List<LyricLine>,
+    )
+
+    override fun observeActiveMedia(): Flow<CapsuleContent.Media?> =
+        observeMediaSessions()
+            .map { sessions ->
+                val selectedKey = selectedTokenKey
+                sessions.firstOrNull { it.isPlaying }
+                    ?: selectedKey?.let { key -> sessions.firstOrNull { it.sessionTokenKey == key } }
+                    ?: sessions.firstOrNull()
             }
-            currentController = null
-            callback = null
-            activeController = null
+            .distinctUntilChanged()
+
+    override fun observeMediaSessions(): Flow<List<CapsuleContent.Media>> = callbackFlow {
+        val registeredCallbacks = LinkedHashMap<String, Pair<MediaController, MediaController.Callback>>()
+
+        fun emitAllSnapshots() {
+            val controllers = synchronized(sessionsLock) { allControllers }
+            val mapped = controllers.mapNotNull { it.toDomainMedia() }
+            mediaSessionsFlow.value = mapped
+            trySend(mapped)
         }
 
-        fun emitSnapshot(controller: MediaController?) {
-            trySend(controller?.toDomainMedia())
+        fun unregisterAll() {
+            synchronized(sessionsLock) {
+                registeredCallbacks.values.forEach { (controller, cb) ->
+                    runCatching { controller.unregisterCallback(cb) }
+                }
+                registeredCallbacks.clear()
+                allControllers = emptyList()
+            }
         }
 
-        fun bindTopController(controllers: List<MediaController>?) {
-            val preferred = controllers.orEmpty().firstOrNull { controller ->
+        fun syncControllers(rawControllers: List<MediaController>?) {
+            val nextList = rawControllers.orEmpty()
+            val ordered = nextList.sortedByDescending { controller ->
                 val state = controller.playbackState?.state
                 state == PlaybackState.STATE_PLAYING || state == PlaybackState.STATE_BUFFERING
-            } ?: controllers.orEmpty().firstOrNull()
-
-            if (preferred?.sessionToken == currentController?.sessionToken) {
-                emitSnapshot(currentController)
-                return
             }
+            val nextKeys = ordered.mapTo(mutableSetOf()) { it.tokenKey() }
 
-            detachCurrentController()
-            if (preferred == null) {
-                emitSnapshot(null)
-                return
+            synchronized(sessionsLock) {
+                val iterator = registeredCallbacks.entries.iterator()
+                while (iterator.hasNext()) {
+                    val (key, pair) = iterator.next()
+                    if (key !in nextKeys) {
+                        runCatching { pair.first.unregisterCallback(pair.second) }
+                        artworkCache.remove(key)
+                        iterator.remove()
+                    }
+                }
+                ordered.forEach { controller ->
+                    val key = controller.tokenKey()
+                    if (!registeredCallbacks.containsKey(key)) {
+                        val cb = object : MediaController.Callback() {
+                            override fun onPlaybackStateChanged(state: PlaybackState?) = emitAllSnapshots()
+                            override fun onMetadataChanged(metadata: MediaMetadata?) = emitAllSnapshots()
+                            override fun onAudioInfoChanged(info: MediaController.PlaybackInfo) = emitAllSnapshots()
+                            override fun onSessionDestroyed() = emitAllSnapshots()
+                        }
+                        controller.registerCallback(cb, mainHandler)
+                        registeredCallbacks[key] = controller to cb
+                    }
+                }
+                allControllers = ordered
             }
-
-            val cb = object : MediaController.Callback() {
-                override fun onPlaybackStateChanged(state: PlaybackState?) {
-                    emitSnapshot(preferred)
-                }
-
-                override fun onMetadataChanged(metadata: MediaMetadata?) {
-                    emitSnapshot(preferred)
-                }
-
-                override fun onSessionDestroyed() {
-                    detachCurrentController()
-                    emitSnapshot(null)
-                }
-            }
-            preferred.registerCallback(cb, mainHandler)
-            currentController = preferred
-            callback = cb
-            activeController = preferred
-            emitSnapshot(preferred)
+            emitAllSnapshots()
         }
 
         val sessionListener = MediaSessionManager.OnActiveSessionsChangedListener { controllers ->
-            bindTopController(controllers)
+            syncControllers(controllers)
         }
 
         var listenerRegistered = false
@@ -117,9 +160,10 @@ class MediaSessionRepositoryImpl @Inject constructor(
                     mainHandler,
                 )
                 listenerRegistered = true
-                bindTopController(mediaSessionManager.getActiveSessions(listenerComponent))
+                syncControllers(mediaSessionManager.getActiveSessions(listenerComponent))
             }.onFailure {
-                trySend(null)
+                mediaSessionsFlow.value = emptyList()
+                trySend(emptyList())
             }
         }
 
@@ -134,10 +178,11 @@ class MediaSessionRepositoryImpl @Inject constructor(
         val tickerJob = launch {
             while (true) {
                 delay(500.milliseconds)
-                val controller = currentController
-                val state = controller?.playbackState?.state
-                if (controller != null && state == PlaybackState.STATE_PLAYING) {
-                    emitSnapshot(controller)
+                val hasPlaying = synchronized(sessionsLock) {
+                    allControllers.any { it.playbackState?.state == PlaybackState.STATE_PLAYING }
+                }
+                if (hasPlaying) {
+                    emitAllSnapshots()
                 }
             }
         }
@@ -147,15 +192,19 @@ class MediaSessionRepositoryImpl @Inject constructor(
         awaitClose {
             bridgeJob.cancel()
             tickerJob.cancel()
-            detachCurrentController()
+            unregisterAll()
             if (listenerRegistered) {
                 runCatching { mediaSessionManager.removeOnActiveSessionsChangedListener(sessionListener) }
             }
         }
     }.distinctUntilChanged()
 
-    override fun togglePlayPause() {
-        val controller = activeController ?: return
+    override fun selectMediaSession(sessionTokenKey: String) {
+        selectedTokenKey = sessionTokenKey.takeIf { it.isNotBlank() }
+    }
+
+    override fun togglePlayPause(sessionTokenKey: String?) {
+        val controller = resolveTargetController(sessionTokenKey) ?: return
         val state = controller.playbackState?.state
         if (state == PlaybackState.STATE_PLAYING || state == PlaybackState.STATE_BUFFERING) {
             controller.transportControls.pause()
@@ -164,17 +213,70 @@ class MediaSessionRepositoryImpl @Inject constructor(
         }
     }
 
-    override fun skipNext() {
-        activeController?.transportControls?.skipToNext()
+    override fun skipNext(sessionTokenKey: String?) {
+        resolveTargetController(sessionTokenKey)?.transportControls?.skipToNext()
     }
 
-    override fun skipPrevious() {
-        activeController?.transportControls?.skipToPrevious()
+    override fun skipPrevious(sessionTokenKey: String?) {
+        resolveTargetController(sessionTokenKey)?.transportControls?.skipToPrevious()
     }
 
-    override fun seekTo(positionMs: Long) {
-        activeController?.transportControls?.seekTo(max(0L, positionMs))
+    override fun seekTo(positionMs: Long, sessionTokenKey: String?) {
+        resolveTargetController(sessionTokenKey)?.transportControls?.seekTo(max(0L, positionMs))
     }
+
+    override fun showSystemAudioOutputSwitcher(sessionTokenKey: String?): Boolean {
+        // Primary: Trigger Android 15/16/17 SystemUI's publicly exported blurred Volume & Media
+        // Output bottom sheet (com.android.systemui/.volume.VolumePanelDialogReceiver) via the
+        // standard Settings.Panel.ACTION_VOLUME action.
+        val systemUiPanelIntent = Intent(Settings.Panel.ACTION_VOLUME).setPackage(SYSTEM_UI_PACKAGE)
+        val hasSystemUiPanelReceiver = runCatching {
+            context.packageManager.queryBroadcastReceivers(
+                systemUiPanelIntent,
+                PackageManager.ResolveInfoFlags.of(0L),
+            ).isNotEmpty()
+        }.getOrDefault(false)
+        if (hasSystemUiPanelReceiver) {
+            val sent = runCatching {
+                context.sendBroadcast(systemUiPanelIntent)
+                true
+            }.getOrDefault(false)
+            if (sent) return true
+        }
+
+        // Secondary: Android 14+ / 16.1+ MediaRouter2 system output switcher (when app is foreground)
+        val controller = resolveTargetController(sessionTokenKey)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            val shownViaRouter = runCatching {
+                val router = MediaRouter2.getInstance(context)
+                val token = controller?.sessionToken
+                if (Build.VERSION.SDK_INT_FULL >= Build.VERSION_CODES_FULL.BAKLAVA_1 && token != null) {
+                    router.showSystemOutputSwitcher(token) || router.showSystemOutputSwitcher()
+                } else {
+                    router.showSystemOutputSwitcher()
+                }
+            }.getOrDefault(false)
+            if (shownViaRouter) return true
+        }
+
+        // Return false so CapsuleOverlayController falls back to launching Settings.Panel.ACTION_VOLUME Activity
+        return false
+    }
+
+    private fun resolveTargetController(sessionTokenKey: String?): MediaController? {
+        val controllers = synchronized(sessionsLock) { allControllers }
+        val explicitKey = sessionTokenKey?.takeIf { it.isNotBlank() } ?: selectedTokenKey
+        if (!explicitKey.isNullOrBlank()) {
+            controllers.firstOrNull { it.tokenKey() == explicitKey }?.let { return it }
+        }
+        return controllers.firstOrNull {
+            val st = it.playbackState?.state
+            st == PlaybackState.STATE_PLAYING || st == PlaybackState.STATE_BUFFERING
+        } ?: controllers.firstOrNull()
+    }
+
+    private fun MediaController.tokenKey(): String =
+        "$packageName:${sessionToken.hashCode()}"
 
     private fun MediaController.toDomainMedia(): CapsuleContent.Media? {
         val meta = metadata ?: return null
@@ -189,16 +291,26 @@ class MediaSessionRepositoryImpl @Inject constructor(
         val isPlaying = playback?.state == PlaybackState.STATE_PLAYING ||
             playback?.state == PlaybackState.STATE_BUFFERING
         val computedPosition = computePosition(playback, duration)
+        val tokenId = tokenKey()
+
         val bitmap = meta.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
             ?: meta.getBitmap(MediaMetadata.METADATA_KEY_ART)
-        val artKey = "$packageName|$title|$artist|${bitmap?.generationId ?: 0}"
-        if (artKey != cachedArtworkKey) {
-            cachedArtworkKey = artKey
+        val rawLyrics = extractRawLyrics(meta, extras)
+        val artKey = "$packageName|$title|$artist|${bitmap?.generationId ?: 0}|${rawLyrics?.hashCode() ?: 0}"
+        val cachedArt = artworkCache[tokenId]?.takeIf { it.artKey == artKey } ?: run {
             val (primary, secondary) = BitmapColorExtractor.extractColors(bitmap)
-            cachedPrimaryColor = primary
-            cachedSecondaryColor = secondary
-            cachedArtworkBytes = bitmap?.let { BitmapColorExtractor.toPngBytes(it) }
+            val created = CachedArtwork(
+                artKey = artKey,
+                bytes = bitmap?.let { BitmapColorExtractor.toPngBytes(it) },
+                primaryArgb = primary,
+                secondaryArgb = secondary,
+                lyrics = LrcLyricsParser.parse(rawLyrics),
+            )
+            artworkCache[tokenId] = created
+            created
         }
+
+        val (outputLabel, outputKind) = resolveAudioOutput(playbackInfo)
 
         return CapsuleContent.Media(
             packageName = packageName,
@@ -207,10 +319,87 @@ class MediaSessionRepositoryImpl @Inject constructor(
             isPlaying = isPlaying,
             positionMs = computedPosition,
             durationMs = duration,
-            artworkBytes = cachedArtworkBytes,
-            primaryColorArgb = cachedPrimaryColor,
-            secondaryColorArgb = cachedSecondaryColor,
+            artworkBytes = cachedArt.bytes,
+            primaryColorArgb = cachedArt.primaryArgb,
+            secondaryColorArgb = cachedArt.secondaryArgb,
+            sessionTokenKey = tokenId,
+            appIconBytes = loadAppIconBytes(packageName),
+            audioOutputLabel = outputLabel,
+            audioOutputKind = outputKind,
+            lyrics = cachedArt.lyrics,
         )
+    }
+
+    private fun extractRawLyrics(meta: MediaMetadata, controllerExtras: Bundle?): String? {
+        for (key in LYRICS_METADATA_KEYS) {
+            val direct = runCatching { meta.getString(key) }.getOrNull()?.trim()
+            if (!direct.isNullOrBlank()) return direct
+        }
+        val desc = meta.getString(MediaMetadata.METADATA_KEY_DISPLAY_DESCRIPTION)?.trim()
+        if (!desc.isNullOrBlank() && (desc.contains('[') && desc.contains(']') || desc.count { it == '\n' } >= 2)) {
+            return desc
+        }
+        if (controllerExtras != null) {
+            for (key in LYRICS_EXTRAS_KEYS) {
+                val extra = controllerExtras.getString(key)?.trim()
+                if (!extra.isNullOrBlank()) return extra
+            }
+        }
+        return null
+    }
+
+    private fun loadAppIconBytes(pkg: String): ByteArray? {
+        appIconBytesCache[pkg]?.let { return it }
+        val drawable = runCatching { context.packageManager.getApplicationIcon(pkg) }.getOrNull() ?: return null
+        return runCatching {
+            val bmp = drawable.toBitmap(width = 48, height = 48, config = Bitmap.Config.ARGB_8888)
+            val bytes = ByteArrayOutputStream().use { out ->
+                bmp.compress(Bitmap.CompressFormat.PNG, 90, out)
+                out.toByteArray()
+            }
+            bmp.recycle()
+            appIconBytesCache[pkg] = bytes
+            bytes
+        }.getOrNull()
+    }
+
+    private fun resolveAudioOutput(playbackInfo: MediaController.PlaybackInfo?): Pair<String, MediaOutputKind> {
+        if (playbackInfo?.playbackType == MediaController.PlaybackInfo.PLAYBACK_TYPE_REMOTE) {
+            return "Cast" to MediaOutputKind.CAST
+        }
+        val mediaAttributes = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_MEDIA)
+            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+            .build()
+        val routedDevices = runCatching {
+            audioManager.getAudioDevicesForAttributes(mediaAttributes)
+        }.getOrNull()?.takeIf { it.isNotEmpty() }
+            ?: runCatching { audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).toList() }.getOrNull().orEmpty()
+
+        val bluetooth = routedDevices.firstOrNull { device ->
+            device.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+                device.type == AudioDeviceInfo.TYPE_BLE_HEADSET ||
+                device.type == AudioDeviceInfo.TYPE_BLE_SPEAKER ||
+                device.type == AudioDeviceInfo.TYPE_BLE_BROADCAST ||
+                device.type == AudioDeviceInfo.TYPE_HEARING_AID
+        }
+        if (bluetooth != null) {
+            val name = bluetooth.productName?.toString()?.trim()?.takeIf { it.isNotEmpty() } ?: "Bluetooth"
+            return name to MediaOutputKind.BLUETOOTH
+        }
+
+        val wired = routedDevices.firstOrNull { device ->
+            device.type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
+                device.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
+                device.type == AudioDeviceInfo.TYPE_USB_HEADSET ||
+                device.type == AudioDeviceInfo.TYPE_USB_DEVICE
+        }
+        if (wired != null) {
+            val name = wired.productName?.toString()?.trim()?.takeIf { it.isNotEmpty() } ?: "Wired audio"
+            return name to MediaOutputKind.WIRED
+        }
+
+        return "Speaker" to MediaOutputKind.SPEAKER
     }
 
     private fun computePosition(playbackState: PlaybackState?, durationMs: Long): Long {
@@ -223,5 +412,25 @@ class MediaSessionRepositoryImpl @Inject constructor(
             }
         }
         return if (durationMs > 0L) position.coerceIn(0L, durationMs) else max(0L, position)
+    }
+
+    private companion object {
+        const val SYSTEM_UI_PACKAGE = "com.android.systemui"
+        val LYRICS_METADATA_KEYS = listOf(
+            "android.media.metadata.LYRICS",
+            "LYRICS",
+            "lyrics",
+            "lyric",
+            "lrc",
+            "com.spotify.music.extra.LYRICS",
+            "com.apple.android.music.LYRICS",
+        )
+        val LYRICS_EXTRAS_KEYS = listOf(
+            "lyrics",
+            "lyric",
+            "lrc",
+            "synced_lyrics",
+            "android.media.metadata.LYRICS",
+        )
     }
 }

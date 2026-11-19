@@ -13,7 +13,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.raf.capsuleos.domain.model.AudioStreamType
 import com.raf.capsuleos.domain.model.CapsuleContent
+import com.raf.capsuleos.domain.model.ExpandedMediaGlowEffect
 import com.raf.capsuleos.domain.model.RingerModeState
+import com.raf.capsuleos.domain.model.SystemStatusKind
 
 /**
  * Dispatches State 3 full-expanded content to the matching interactive control card with pure
@@ -24,9 +26,19 @@ import com.raf.capsuleos.domain.model.RingerModeState
 fun State3ExpandedCard(
     modifier: Modifier = Modifier,
     content: CapsuleContent,
+    mediaSessions: List<CapsuleContent.Media> = emptyList(),
+    selectedMediaIndex: Int = 0,
+    expandedMediaGlowEffects: Set<ExpandedMediaGlowEffect> = setOf(
+        ExpandedMediaGlowEffect.CARD_BORDER_NEURON,
+        ExpandedMediaGlowEffect.OUTER_SCREEN_GLOW,
+        ExpandedMediaGlowEffect.ALBUM_ART_RING,
+    ),
     topClearanceDp: Float,
     contentPaddingDp: Float = 18f,
     timeSeconds: Float,
+    interactionsEnabled: Boolean = true,
+    showMediaBackdrop: Boolean = true,
+    enableAlbumSharedTransition: Boolean = true,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
     onUserInteraction: () -> Unit,
@@ -35,10 +47,12 @@ fun State3ExpandedCard(
     onDismissNotification: (CapsuleContent.NotificationAlert) -> Unit,
     onReplyFocusChanged: (Boolean) -> Unit,
     onOpenMediaApp: (String) -> Unit,
-    onTogglePlayPause: () -> Unit,
-    onSkipNext: () -> Unit,
-    onSkipPrevious: () -> Unit,
-    onSeekTo: (Long) -> Unit,
+    onSelectMediaSession: (Int) -> Unit = {},
+    onOpenAudioOutput: () -> Unit = {},
+    onTogglePlayPause: (String) -> Unit,
+    onSkipNext: (String) -> Unit,
+    onSkipPrevious: (String) -> Unit,
+    onSeekTo: (String, Long) -> Unit,
     onToggleTorch: (Boolean) -> Unit,
     onSetTorchStrength: (Int) -> Unit,
     onSetStreamVolume: (AudioStreamType, Int) -> Unit,
@@ -46,7 +60,15 @@ fun State3ExpandedCard(
     onSetRingerMode: (RingerModeState) -> Unit,
     onSetBrightnessPercent: (Int) -> Unit,
     onToggleAutoBrightness: () -> Unit,
+    onAnswerCall: (CapsuleContent.CallAlert) -> Unit = {},
+    onDeclineCall: (CapsuleContent.CallAlert) -> Unit = {},
+    onOpenCallApp: (CapsuleContent.CallAlert) -> Unit = {},
+    onOpenLiveActivityApp: (CapsuleContent.LiveActivity) -> Unit = {},
+    onOpenSystemStatusSettings: (SystemStatusKind) -> Unit = {},
+    onOpenBluetoothSettings: () -> Unit = {},
+    onOpenHotspotSettings: () -> Unit = {},
     onLockScreen: () -> Unit,
+    onOpenNotificationShade: () -> Unit = {},
     onOpenClock: () -> Unit,
 ) {
     Box(modifier = modifier.fillMaxSize()) {
@@ -62,12 +84,20 @@ fun State3ExpandedCard(
             when (active) {
                 is CapsuleContent.Media -> MediaExpandedContent(
                     media = active,
+                    mediaSessions = mediaSessions,
+                    selectedMediaIndex = selectedMediaIndex,
+                    expandedMediaGlowEffects = expandedMediaGlowEffects,
                     topClearanceDp = topClearanceDp,
                     contentPaddingDp = contentPaddingDp,
                     timeSeconds = timeSeconds,
+                    interactionsEnabled = interactionsEnabled,
+                    showBackdrop = showMediaBackdrop,
+                    enableAlbumSharedTransition = enableAlbumSharedTransition,
                     sharedTransitionScope = sharedTransitionScope,
                     animatedVisibilityScope = animatedVisibilityScope,
-                    onOpenMediaApp = { onOpenMediaApp(active.packageName) },
+                    onOpenMediaApp = onOpenMediaApp,
+                    onSelectMediaSession = onSelectMediaSession,
+                    onOpenAudioOutput = onOpenAudioOutput,
                     onUserInteraction = onUserInteraction,
                     onTogglePlayPause = onTogglePlayPause,
                     onSkipNext = onSkipNext,
@@ -81,17 +111,41 @@ fun State3ExpandedCard(
                     sharedTransitionScope = sharedTransitionScope,
                     animatedVisibilityScope = animatedVisibilityScope,
                     onUserInteraction = onUserInteraction,
-                    onOpenNotification = { onOpenNotification(active) },
+                    onOpenNotification = { if (interactionsEnabled) onOpenNotification(active) },
                     onTriggerAction = { actionId, replyText ->
-                        onTriggerNotificationAction(active, actionId, replyText)
+                        if (interactionsEnabled) onTriggerNotificationAction(active, actionId, replyText)
                     },
-                    onDismissNotification = { onDismissNotification(active) },
+                    onDismissNotification = { if (interactionsEnabled) onDismissNotification(active) },
                     onReplyFocusChanged = onReplyFocusChanged,
+                )
+                is CapsuleContent.CallAlert -> CallExpandedContent(
+                    call = active,
+                    topClearanceDp = topClearanceDp,
+                    contentPaddingDp = contentPaddingDp,
+                    interactionsEnabled = interactionsEnabled,
+                    onOpenCallApp = { onOpenCallApp(active) },
+                    onAnswerCall = { onAnswerCall(active) },
+                    onDeclineCall = { onDeclineCall(active) },
+                )
+                is CapsuleContent.BluetoothDevice -> BluetoothExpandedContent(
+                    device = active,
+                    topClearanceDp = topClearanceDp,
+                    contentPaddingDp = contentPaddingDp,
+                    interactionsEnabled = interactionsEnabled,
+                    onOpenBluetoothSettings = onOpenBluetoothSettings,
+                )
+                is CapsuleContent.Hotspot -> HotspotExpandedContent(
+                    hotspot = active,
+                    topClearanceDp = topClearanceDp,
+                    contentPaddingDp = contentPaddingDp,
+                    interactionsEnabled = interactionsEnabled,
+                    onOpenHotspotSettings = onOpenHotspotSettings,
                 )
                 is CapsuleContent.Torch -> TorchExpandedContent(
                     torch = active,
                     topClearanceDp = topClearanceDp,
                     contentPaddingDp = contentPaddingDp,
+                    interactionsEnabled = interactionsEnabled,
                     sharedTransitionScope = sharedTransitionScope,
                     animatedVisibilityScope = this@AnimatedContent,
                     onUserInteraction = onUserInteraction,
@@ -102,6 +156,7 @@ fun State3ExpandedCard(
                     volume = active,
                     topClearanceDp = topClearanceDp,
                     contentPaddingDp = contentPaddingDp,
+                    interactionsEnabled = interactionsEnabled,
                     onUserInteraction = onUserInteraction,
                     onSetStreamVolume = onSetStreamVolume,
                     onSetRingerMode = onSetRingerMode,
@@ -110,7 +165,7 @@ fun State3ExpandedCard(
                     alarm = active,
                     topClearanceDp = topClearanceDp,
                     contentPaddingDp = contentPaddingDp,
-                    onOpenClock = onOpenClock,
+                    onOpenClock = { if (interactionsEnabled) onOpenClock() },
                 )
                 is CapsuleContent.Unlock -> UnlockExpandedContent(
                     unlock = active,
@@ -123,6 +178,7 @@ fun State3ExpandedCard(
                     brief = active,
                     topClearanceDp = topClearanceDp,
                     contentPaddingDp = contentPaddingDp,
+                    interactionsEnabled = interactionsEnabled,
                     sharedTransitionScope = sharedTransitionScope,
                     animatedVisibilityScope = this@AnimatedContent,
                     onUserInteraction = onUserInteraction,
@@ -132,11 +188,32 @@ fun State3ExpandedCard(
                     onSetBrightnessPercent = onSetBrightnessPercent,
                     onToggleAutoBrightness = onToggleAutoBrightness,
                     onLockScreen = onLockScreen,
+                    onOpenNotificationShade = onOpenNotificationShade,
                     onOpenClock = onOpenClock,
+                )
+                is CapsuleContent.LiveActivity -> LiveActivityExpandedContent(
+                    liveActivity = active,
+                    topClearanceDp = topClearanceDp,
+                    contentPaddingDp = contentPaddingDp,
+                    sharedTransitionScope = sharedTransitionScope,
+                    animatedVisibilityScope = animatedVisibilityScope,
+                    onUserInteraction = onUserInteraction,
+                    onOpenLiveActivityApp = { if (interactionsEnabled) onOpenLiveActivityApp(active) },
+                )
+                is CapsuleContent.SystemStatus -> SystemStatusExpandedContent(
+                    status = active,
+                    topClearanceDp = topClearanceDp,
+                    contentPaddingDp = contentPaddingDp,
+                    interactionsEnabled = interactionsEnabled,
+                    sharedTransitionScope = sharedTransitionScope,
+                    animatedVisibilityScope = animatedVisibilityScope,
+                    onUserInteraction = onUserInteraction,
+                    onOpenSystemStatusSettings = onOpenSystemStatusSettings,
+                    onSetRingerMode = onSetRingerMode,
                 )
                 is CapsuleContent.Charging,
                 is CapsuleContent.BatteryPeek,
-                is CapsuleContent.LiveActivity,
+                is CapsuleContent.NotificationSummary,
                 CapsuleContent.Idle,
                 -> Unit
             }
@@ -147,6 +224,11 @@ fun State3ExpandedCard(
 private fun state3CategoryKey(content: CapsuleContent): String = when (content) {
     is CapsuleContent.Media -> "media"
     is CapsuleContent.NotificationAlert -> "notif:${content.key}"
+    is CapsuleContent.CallAlert -> "call:${content.key}"
+    is CapsuleContent.BluetoothDevice -> "bt:${content.address}"
+    is CapsuleContent.Hotspot -> "hotspot"
+    is CapsuleContent.LiveActivity -> "live:${content.key}"
+    is CapsuleContent.SystemStatus -> "sys:${content.kind.name}"
     is CapsuleContent.Torch -> "torch"
     is CapsuleContent.Volume -> "volume"
     is CapsuleContent.Alarm -> "alarm"

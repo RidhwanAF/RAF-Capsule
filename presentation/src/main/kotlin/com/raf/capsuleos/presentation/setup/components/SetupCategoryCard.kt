@@ -1,11 +1,15 @@
 package com.raf.capsuleos.presentation.setup.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -23,10 +27,9 @@ import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.RadioButtonUnchecked
+import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -35,6 +38,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -42,6 +49,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.raf.capsuleos.presentation.R
 import com.raf.capsuleos.presentation.common.capsuleExpressiveButtonShapes
@@ -58,68 +66,72 @@ fun SetupCategoryCard(
     modifier: Modifier = Modifier,
     uiState: SetupUiState,
     adbCommand: String,
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
     onGrantAccessibility: () -> Unit,
     onGrantNotificationListener: () -> Unit,
     onGrantWriteSettings: () -> Unit,
     onGrantDndPolicyAccess: () -> Unit,
+    onGrantBluetoothPermission: () -> Unit = {},
     onCopyAdbCommand: () -> Unit,
     onToggleStartPause: () -> Unit,
     onOpenSimulation: () -> Unit,
 ) {
     val haptics = LocalHapticFeedback.current
+    var expanded by rememberSaveable { mutableStateOf(true) }
 
-    Card(
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-        ),
-        modifier = modifier.fillMaxWidth(),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-        ) {
-            Row(
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(
-                    text = stringResource(R.string.title_setup_category),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                )
-                AnimatedVisibility(
-                    visible = uiState.areAllPermissionsGranted,
-                    enter = fadeIn(tween(240)),
-                    exit = fadeOut(tween(180)),
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer,
+    ExpandableCategoryCard(
+        collapsible = true,
+        expanded = expanded,
+        onToggleExpand = { expanded = !expanded },
+        header = {
+            ExpandableCategoryHeader(
+                icon = Icons.Rounded.Security,
+                title = stringResource(R.string.title_setup_category),
+                subtitle = stringResource(
+                    if (uiState.areAllPermissionsGranted) {
+                        R.string.label_setup_ready
+                    } else {
+                        R.string.label_setup_required_missing
+                    },
+                ),
+                expanded = expanded,
+                onToggleExpand = { expanded = !expanded },
+                trailingBadge = {
+                    AnimatedVisibility(
+                        visible = uiState.areAllPermissionsGranted,
+                        enter = fadeIn(tween(240)),
+                        exit = fadeOut(tween(180)),
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer,
                         ) {
-                            Icon(
-                                imageVector = Icons.Rounded.CheckCircle,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.size(14.dp),
-                            )
-                            Text(
-                                text = stringResource(R.string.label_granted),
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.CheckCircle,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.size(14.dp),
+                                )
+                                Text(
+                                    text = stringResource(R.string.label_granted),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                )
+                            }
                         }
                     }
-                }
-            }
+                },
+            )
+        },
+        modifier = modifier,
+    ) {
 
             AnimatedVisibility(
                 visible = !uiState.areAllPermissionsGranted,
@@ -135,39 +147,54 @@ fun SetupCategoryCard(
                     )
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    AnimatedPermissionRow(
-                        visible = !uiState.hasAccessibilityOverlay,
-                        title = stringResource(R.string.label_accessibility_permission),
-                        description = stringResource(R.string.msg_accessibility_permission_desc),
-                        actionLabel = stringResource(R.string.action_grant),
-                        onActionClick = onGrantAccessibility,
-                    )
-                    AnimatedPermissionRow(
-                        visible = !uiState.hasNotificationListener,
-                        title = stringResource(R.string.label_media_permission),
-                        description = stringResource(R.string.msg_media_permission_desc),
-                        actionLabel = stringResource(R.string.action_grant),
-                        onActionClick = onGrantNotificationListener,
-                    )
-                    AnimatedPermissionRow(
-                        visible = !uiState.hasWriteSettings,
-                        title = stringResource(R.string.label_write_settings),
-                        description = stringResource(R.string.msg_write_settings_desc),
-                        actionLabel = stringResource(R.string.action_grant),
-                        onActionClick = onGrantWriteSettings,
-                    )
-                    AnimatedPermissionRow(
-                        visible = !uiState.hasDndPolicyAccess,
-                        title = stringResource(R.string.label_dnd_policy_access),
-                        description = stringResource(R.string.msg_dnd_policy_desc),
-                        actionLabel = stringResource(R.string.action_grant),
-                        onActionClick = onGrantDndPolicyAccess,
-                    )
-                    AnimatedAdbPermissionRow(
-                        visible = !uiState.hasWriteSecureSettings,
-                        adbCommand = adbCommand,
-                        onCopyCommand = onCopyAdbCommand,
-                    )
+                    AdaptiveSubItemFlowRow(verticalSpacing = 4.dp) { itemMod ->
+                        AnimatedPermissionRow(
+                            visible = !uiState.hasAccessibilityOverlay,
+                            title = stringResource(R.string.label_accessibility_permission),
+                            description = stringResource(R.string.msg_accessibility_permission_desc),
+                            actionLabel = stringResource(R.string.action_grant),
+                            onActionClick = onGrantAccessibility,
+                            modifier = itemMod,
+                        )
+                        AnimatedPermissionRow(
+                            visible = !uiState.hasNotificationListener,
+                            title = stringResource(R.string.label_media_permission),
+                            description = stringResource(R.string.msg_media_permission_desc),
+                            actionLabel = stringResource(R.string.action_grant),
+                            onActionClick = onGrantNotificationListener,
+                            modifier = itemMod,
+                        )
+                        AnimatedPermissionRow(
+                            visible = !uiState.hasWriteSettings,
+                            title = stringResource(R.string.label_write_settings),
+                            description = stringResource(R.string.msg_write_settings_desc),
+                            actionLabel = stringResource(R.string.action_grant),
+                            onActionClick = onGrantWriteSettings,
+                            modifier = itemMod,
+                        )
+                        AnimatedPermissionRow(
+                            visible = !uiState.hasDndPolicyAccess,
+                            title = stringResource(R.string.label_dnd_policy_access),
+                            description = stringResource(R.string.msg_dnd_policy_desc),
+                            actionLabel = stringResource(R.string.action_grant),
+                            onActionClick = onGrantDndPolicyAccess,
+                            modifier = itemMod,
+                        )
+                        AnimatedPermissionRow(
+                            visible = !uiState.hasBluetoothPermission,
+                            title = stringResource(R.string.label_bluetooth_permission),
+                            description = stringResource(R.string.msg_bluetooth_permission_desc),
+                            actionLabel = stringResource(R.string.action_grant),
+                            onActionClick = onGrantBluetoothPermission,
+                            modifier = itemMod,
+                        )
+                        AnimatedAdbPermissionRow(
+                            visible = !uiState.hasWriteSecureSettings,
+                            adbCommand = adbCommand,
+                            onCopyCommand = onCopyAdbCommand,
+                            modifier = itemMod,
+                        )
+                    }
                 }
             }
 
@@ -199,71 +226,89 @@ fun SetupCategoryCard(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            Button(
-                onClick = {
-                    haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-                    onToggleStartPause()
-                },
-                enabled = uiState.hasAccessibilityOverlay,
-                shapes = capsuleExpressiveButtonShapes(restRadius = 24.dp, pressedRadius = 10.dp),
-                colors = if (uiState.isCapsuleRunning) {
-                    ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+            val sharedSimModifier = if (sharedTransitionScope != null && animatedVisibilityScope != null) {
+                with(sharedTransitionScope) {
+                    Modifier.sharedBounds(
+                        sharedContentState = rememberSharedContentState(key = "nav_simulation_container"),
+                        animatedVisibilityScope = animatedVisibilityScope,
+                        boundsTransform = { _, _ -> spring(dampingRatio = 0.84f, stiffness = 360f) },
                     )
-                } else {
-                    ButtonDefaults.buttonColors()
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(50.dp),
-            ) {
-                Icon(
-                    imageVector = if (uiState.isCapsuleRunning) {
-                        Icons.Rounded.Pause
-                    } else {
-                        Icons.Rounded.PlayArrow
+                }
+            } else {
+                Modifier
+            }
+
+            AdaptiveSubItemFlowRow(
+                horizontalSpacing = 10.dp,
+                verticalSpacing = 10.dp,
+            ) { itemMod ->
+                Button(
+                    onClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                        onToggleStartPause()
                     },
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = stringResource(
-                        if (uiState.isCapsuleRunning) {
-                            R.string.action_pause_capsule
+                    enabled = uiState.hasAccessibilityOverlay,
+                    shapes = capsuleExpressiveButtonShapes(restRadius = 24.dp, pressedRadius = 10.dp),
+                    colors = if (uiState.isCapsuleRunning) {
+                        ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                        )
+                    } else {
+                        ButtonDefaults.buttonColors()
+                    },
+                    modifier = itemMod.height(50.dp),
+                ) {
+                    Icon(
+                        imageVector = if (uiState.isCapsuleRunning) {
+                            Icons.Rounded.Pause
                         } else {
-                            R.string.action_start_capsule
+                            Icons.Rounded.PlayArrow
                         },
-                    ),
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = stringResource(
+                            if (uiState.isCapsuleRunning) {
+                                R.string.action_pause_capsule
+                            } else {
+                                R.string.action_start_capsule
+                            },
+                        ),
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.basicMarquee(),
+                    )
+                }
 
-            Spacer(modifier = Modifier.height(10.dp))
-
-            OutlinedButton(
-                onClick = {
-                    haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                    onOpenSimulation()
-                },
-                shapes = capsuleExpressiveButtonShapes(restRadius = 22.dp, pressedRadius = 10.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(46.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.AutoAwesome,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = stringResource(R.string.action_open_simulation),
-                    fontWeight = FontWeight.Medium,
-                )
+                OutlinedButton(
+                    onClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                        onOpenSimulation()
+                    },
+                    shapes = capsuleExpressiveButtonShapes(restRadius = 22.dp, pressedRadius = 10.dp),
+                    modifier = itemMod
+                        .height(50.dp)
+                        .then(sharedSimModifier),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.AutoAwesome,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = stringResource(R.string.action_open_simulation),
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.basicMarquee(),
+                    )
+                }
             }
-        }
     }
 }
 
@@ -309,6 +354,9 @@ private fun AnimatedPermissionRow(
                             text = title,
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.basicMarquee(),
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(

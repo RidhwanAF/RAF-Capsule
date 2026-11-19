@@ -1,6 +1,6 @@
 <resources>
-    <string name="app_name">Raf Capsule</string>
-    <string name="title_setup_screen">Raf Capsule</string>
+    <string name="app_name">RAF Capsule OS</string>
+    <string name="title_setup_screen">RAF Capsule OS</string>
     <string name="msg_setup_subtitle">Dynamic camera cutout capsule • Android 17 Ready</string>
     <string name="title_setup_category">Setup</string>
     <string name="title_camera_position_category">Camera Position</string>
@@ -10,7 +10,61 @@
     <string name="label_setup_required_missing">Grant remaining permissions below</string>
     <string name="action_start_capsule">Start Capsule</string>
     <string name="action_pause_capsule">Pause Capsule</string>
+    <string name="action_open_customization">Customize Capsule</string>
     <string name="action_open_simulation">Interactive Simulation</string>
+    <string name="title_customization_screen">Capsule Customization</string>
+    <string name="msg_customization_subtitle">Cutout geometry, behavior, glow effects &amp; gestures</string>
+    <string name="title_capsule_config_section">Capsule Configuration</string>
+    <string name="msg_behavior_subtitle">Status bar integration, inner padding &amp; auto-collapse timeout</string>
+    <string name="msg_indicators_subtitle">Neuron glow, battery ring, left status bubble &amp; media glow</string>
+    <string name="msg_gestures_subtitle">Global &amp; per-card double-tap and long-hold actions</string>
+    <string name="msg_quick_test_subtitle">Trigger synthetic volume, alarm, Now Brief &amp; notification cards</string>
+    <string name="desc_expand_collapse_category">Expand or collapse category</string>
+    <string name="desc_open_category_screen">Open category in separate screen</string>
+    <string name="title_app_settings">App Settings</string>
+    <string name="msg_app_settings_subtitle">Theme appearance, monochrome palette &amp; system language</string>
+    <string name="desc_open_app_settings">Open App Settings</string>
+    <string name="title_theme_category">Appearance &amp; Theme</string>
+    <string name="label_theme_mode">Theme Polarity</string>
+    <string name="label_theme_system">System</string>
+    <string name="label_theme_light">Light</string>
+    <string name="label_theme_dark">Dark</string>
+    <string name="label_dynamic_color">Dynamic Color</string>
+    <string name="msg_dynamic_color_desc">Use wallpaper Material You colors when enabled, or Material 3 Expressive Monochrome when disabled.</string>
+    <string name="title_language_category">Language</string>
+    <string name="msg_language_sync_desc">Synced directly with Android System App Info language settings.</string>
+    <string name="label_language_system">Follow System (Default)</string>
+    <string name="label_language_arabic" translatable="false">Arabic</string>
+    <string name="label_language_native_arabic" translatable="false">العربية</string>
+    <string name="label_language_chinese" translatable="false">Chinese (Simplified)</string>
+    <string name="label_language_native_chinese" translatable="false">简体中文</string>
+    <string name="label_language_english" translatable="false">English</string>
+    <string name="label_language_native_english" translatable="false">English</string>
+    <string name="label_language_french" translatable="false">French</string>
+    <string name="label_language_native_french" translatable="false">Français</string>
+    <string name="label_language_german" translatable="false">German</string>
+    <string name="label_language_native_german" translatable="false">Deutsch</string>
+    <string name="label_language_hindi" translatable="false">Hindi</string>
+    <string name="label_language_native_hindi" translatable="false">हिन्दी</string>
+    <string name="label_language_indonesian" translatable="false">Indonesian</string>
+    <string name="label_language_native_indonesian" translatable="false">Bahasa Indonesia</string>
+    <string name="label_language_japanese" translatable="false">Japanese</string>
+    <string name="label_language_native_japanese" translatable="false">日本語</string>
+    <string name="label_language_korean" translatable="false">Korean</string>
+    <string name="label_language_native_korean" translatable="false">한국어</string>
+    <string name="label_language_portuguese" translatable="false">Portuguese</string>
+    <string name="label_language_native_portuguese" translatable="false">Português</string>
+    <string name="label_language_russian" translatable="false">Russian</string>
+    <string name="label_language_native_russian" translatable="false">Русский</string>
+    <string name="label_language_spanish" translatable="false">Spanish</string>
+    <string name="label_language_native_spanish" translatable="false">Español</string>
+    <string name="label_language_thai" translatable="false">Thai</string>
+    <string name="label_language_native_thai" translatable="false">ไทย</string>
+    <string name="label_language_vietnamese" translatable="false">Vietnamese</string>
+    <string name="label_language_native_vietnamese" translatable="false">Tiếng Việt</string>
+    <string name="hint_search_languages">Search languages…</string>
+    <string name="desc_clear_search">Clear search</string>
+    <string name="label_no_languages_found">No matching languages</string>
     <string name="action_auto_detect">Auto-Detect</string>
     <string name="msg_cutout_detected">Detected %1$s camera • %2$d dp</string>
     <string name="msg_no_cutout_detected">No hardware cutout found • Centered default applied</string>
@@ -37,7 +91,7 @@
     <string name="msg_sandbox_ready">Tap, double-tap, hold, swipe left/right, or drag down on the capsule above.</string>
     <string name="label_accessibility_permission">Top Camera Cutout Overlay (Accessibility)</string>
     <string name="msg_accessibility_permission_desc">Places the 1:1 battery ring directly on the camera hole above the status bar with full touch &amp; hold support.</string>
-    <string name="msg_accessibility_desc">Raf Capsule hosts an interactive camera cutout ring and status capsule at the top of the screen.</string>
+    <string name="msg_accessibility_desc">RAF Capsule OS hosts an interactive camera cutout ring and status capsule at the top of the screen.</string>
     <string name="label_media_permission">Notification &amp; Live Activity Bridge</string>
     <string name="msg_media_permission_desc">Reads active MediaSession controls, non-silent notifications, and ongoing timer/live activities.</string>
     <string name="label_secure_settings">Status Bar Icon Hide (ADB)</string>
@@ -53,9 +107,10 @@
     <string name="action_test_notification">Notif</string>
     <string name="label_cutout_width">Camera Ring Size Padding</string>
     <string name="label_cutout_top_offset">Vertical Offset</string>
-    <string name="label_auto_collapse_ms">Auto-Collapse Timeout</string>
+    <string name="label_horizontal_auto_collapse_ms">Horizontal Expand Auto-Collapse Timeout</string>
+    <string name="label_auto_collapse_ms">Full Expanded Auto-Collapse Timeout</string>
     <string name="label_below_status_bar">Move Below Status Bar (Offset Mode)</string>
-    <string name="label_auto_hide_status_icons">Hide Status Bar Icons on Card Expand</string>
+    <string name="label_hide_on_qs_open">Hide on QS Open (Battery Ring Only)</string>
     <string name="label_suppress_system_heads_up">Hide System Popup Notifications (QS Only)</string>
     <string name="title_now_brief">Now Brief</string>
     <string name="label_torch">Flashlight</string>
@@ -107,4 +162,109 @@
     <string name="msg_write_settings_desc">Allows the Brightness slider and Auto-Brightness toggle inside Now Brief.</string>
     <string name="label_dnd_policy_access">Do Not Disturb Policy (Silent Toggle)</string>
     <string name="msg_dnd_policy_desc">Optional permission to include full Silent mode when cycling Ringer in Now Brief.</string>
+    <string name="label_bluetooth_permission">Bluetooth Device Connection Alerts</string>
+    <string name="msg_bluetooth_permission_desc">Detects when headphones, speakers, or accessories connect and reads reported battery level.</string>
+    <string name="label_bluetooth_connected">Connected</string>
+    <string name="label_bluetooth_battery">Battery %1$d%%</string>
+    <string name="action_open_bluetooth_settings">Bluetooth Settings</string>
+    <string name="desc_bluetooth_icon">Bluetooth device</string>
+    <string name="label_incoming_call">Incoming call</string>
+    <string name="label_ongoing_call">Ongoing call</string>
+    <string name="action_answer_call">Answer</string>
+    <string name="action_decline_call">Decline</string>
+    <string name="action_end_call">End Call</string>
+    <string name="desc_call_icon">Active call</string>
+    <string name="label_hotspot">Mobile Hotspot</string>
+    <string name="label_hotspot_active">Hotspot Active</string>
+    <string name="label_hotspot_inactive">Hotspot Off</string>
+    <plurals name="label_hotspot_clients">
+        <item quantity="one">%1$d client connected</item>
+        <item quantity="other">%1$d clients connected</item>
+    </plurals>
+    <string name="action_open_hotspot_settings">Hotspot Settings</string>
+    <string name="desc_hotspot_icon">Mobile hotspot</string>
+    <string name="desc_audio_output">Switch audio output</string>
+    <string name="title_indicators_media_category">Indicators &amp; Media Glow</string>
+    <string name="label_enable_neuron_glow">Opening &amp; Closing Glowing Neuron</string>
+    <string name="label_show_battery_on_ring">Battery Level on Camera Ring</string>
+    <string name="label_enable_bluetooth_alerts">Bluetooth Connected Alerts</string>
+    <string name="label_enable_call_auto_expand">Auto-Expand on Incoming Calls</string>
+    <string name="label_enable_left_satellite">Separated Left Status Bubble</string>
+    <string name="label_satellite_torch">Show Flashlight in Left Bubble</string>
+    <string name="label_satellite_hotspot">Show Hotspot in Left Bubble</string>
+    <string name="label_satellite_live_activity">Show Live Activity in Left Bubble</string>
+    <string name="label_media_glow_style">Media Glow Style</string>
+    <string name="label_media_glow_off">Expand Only</string>
+    <string name="label_media_glow_pill">Horizontal Pill</string>
+    <string name="label_media_glow_ring">Camera Ring</string>
+    <string name="label_media_glow_album">Album Card</string>
+    <string name="label_keep_expanded_media_glow">Keep Expanded Media Glow Always Visible</string>
+    <string name="title_gestures_category">Gestures &amp; Actions</string>
+    <string name="label_global_double_tap">Global Double-Tap</string>
+    <string name="label_global_long_hold">Global Long-Hold</string>
+    <string name="label_per_card_gestures">Per-Card Gesture Overrides</string>
+    <string name="label_double_tap">Double-Tap</string>
+    <string name="label_long_hold">Long-Hold</string>
+    <string name="label_gesture_inherit">Inherit Global</string>
+    <string name="label_gesture_none">None</string>
+    <string name="label_gesture_expand">Expand Card</string>
+    <string name="label_gesture_collapse">Collapse</string>
+    <string name="label_gesture_lock_screen">Lock Screen</string>
+    <string name="label_gesture_toggle_torch">Toggle Flashlight</string>
+    <string name="label_gesture_toggle_media">Play / Pause Media</string>
+    <string name="label_gesture_peek_battery">Peek Battery</string>
+    <string name="label_gesture_launch_app">Open App</string>
+    <string name="label_card_idle_ring">Idle Ring</string>
+    <string name="label_card_media">Media</string>
+    <string name="label_card_flashlight">Flashlight</string>
+    <string name="label_card_notification">Notification</string>
+    <string name="label_card_volume">Volume</string>
+    <string name="title_pick_app">Choose App to Open</string>
+    <string name="hint_search_apps">Search installed apps…</string>
+    <string name="label_sim_bluetooth">Bluetooth</string>
+    <string name="label_sim_hotspot">Hotspot</string>
+    <string name="label_sim_live_activity">Live Timer</string>
+    <string name="label_sim_call">Incoming Call</string>
+    <string name="label_sim_multi_media">Multi Media</string>
+    <string name="label_live_activity">Live Activity</string>
+    <string name="desc_toggle_lyrics">Toggle synced lyrics</string>
+    <string name="label_enable_outer_neuron_glow">Outer Screen-Frame Neuron Glow</string>
+    <string name="label_media_expanded_animations">Expanded Media Animations (Multi-Select)</string>
+    <string name="label_media_expanded_border_glow">Card Border</string>
+    <string name="label_media_expanded_outer_glow">Outer Frame</string>
+    <string name="label_media_expanded_album_ring">Album Card</string>
+    <string name="label_media_horizontal_glow">Horizontal Expand Media Glow</string>
+    <string name="label_media_horizontal_off">Off</string>
+    <string name="label_media_follow_global_auto_collapse">Follow global fully expanded auto collapse</string>
+    <string name="label_media_auto_collapse_sec">Media Expanded Auto-Collapse</string>
+    <string name="label_keep_outer_media_glow">Keep Outer Screen-Frame Media Glow Always Visible</string>
+    <string name="section_glow_visuals">Glow &amp; Visual Effects</string>
+    <string name="section_system_alerts">System Alerts</string>
+    <string name="section_left_satellite">Left Status Bubble</string>
+    <string name="section_system_integration">System Integration</string>
+    <string name="section_spacing_timeouts">Spacing &amp; Auto-Collapse</string>
+    <string name="section_precision_calibration">Precision Calibration</string>
+    <string name="section_global_gestures">Global Gestures</string>
+    <string name="label_satellite_airplane">Show Airplane Mode in Left Bubble</string>
+    <string name="label_satellite_dnd">Show Do Not Disturb in Left Bubble</string>
+    <string name="label_satellite_battery_saver">Show Battery Saver in Left Bubble</string>
+    <string name="label_satellite_vpn">Show VPN in Left Bubble</string>
+    <string name="label_satellite_ringer_muted">Show Silent / Vibrate in Left Bubble</string>
+    <string name="label_satellite_data_saver">Show Data Saver in Left Bubble</string>
+    <string name="label_status_airplane">Airplane Mode</string>
+    <string name="label_status_dnd">Do Not Disturb</string>
+    <string name="label_status_battery_saver">Battery Saver</string>
+    <string name="label_status_vpn">VPN Connected</string>
+    <string name="label_status_ringer_muted">Sound Muted</string>
+    <string name="label_status_data_saver">Data Saver</string>
+    <string name="label_status_active">Active</string>
+    <string name="action_open_settings">Settings</string>
+    <string name="action_restore_ring">Restore Ring</string>
+    <string name="label_show_on_lock_screen">Show on Lock Screen</string>
+    <plurals name="label_notification_count_summary">
+        <item quantity="one">%1$d notification</item>
+        <item quantity="other">%1$d notifications</item>
+    </plurals>
+    <string name="label_satellite_position">Bubble Position</string>
+    <string name="desc_notification_attachment">Notification attachment</string>
 </resources>

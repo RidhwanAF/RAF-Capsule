@@ -1,36 +1,39 @@
 package com.raf.capsuleos
 
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
-import androidx.compose.ui.platform.LocalContext
+import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.raf.capsuleos.domain.model.CapsulePreferences
+import com.raf.capsuleos.domain.repository.CapsuleSettingsRepository
+import com.raf.capsuleos.presentation.common.CapsuleTheme
 import com.raf.capsuleos.presentation.navigation.CapsuleNavHost
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
 /**
- * Main setup and control activity for CapsuleOS.
+ * Main AppCompat activity hosting [CapsuleNavHost], synced AppCompat per-app locales,
+ * and reactive M3 Expressive / Dynamic Color theming with synchronized system bar appearance.
  */
 @AndroidEntryPoint
-class MainActivity : ComponentActivity() {
+class MainActivity : AppCompatActivity() {
+
+    @Inject
+    lateinit var settingsRepository: CapsuleSettingsRepository
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        super.onCreate(savedInstanceState)
         setContent {
-            val darkTheme = isSystemInDarkTheme()
-            val context = LocalContext.current
-            val colorScheme = if (darkTheme) {
-                dynamicDarkColorScheme(context)
-            } else {
-                dynamicLightColorScheme(context)
-            }
+            val preferences by settingsRepository.observePreferences()
+                .collectAsStateWithLifecycle(initialValue = CapsulePreferences())
 
-            MaterialTheme(colorScheme = colorScheme) {
+            CapsuleTheme(
+                appThemeMode = preferences.appThemeMode,
+                useDynamicColor = preferences.useDynamicColor,
+            ) {
                 CapsuleNavHost()
             }
         }

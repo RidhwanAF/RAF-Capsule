@@ -1,10 +1,12 @@
 package com.raf.capsuleos.presentation.capsule.service
 
 import android.content.Context
+import android.content.res.Configuration
 import android.graphics.RectF
 import android.hardware.display.DisplayManager
 import android.view.Display
 import android.view.RoundedCorner
+import android.view.Surface
 import android.view.WindowInsets
 import android.view.WindowManager
 import com.raf.capsuleos.domain.model.CameraAnchorPosition
@@ -23,6 +25,8 @@ internal data class DetectedCutoutMeasurement(
 /**
  * Inspects [WindowManager.getCurrentWindowMetrics] and [DisplayManager] display cutouts to measure
  * physical camera hole bounds, status bar height, corner radii, and alignment region.
+ * Automatically transforms rotated landscape cutout coordinates back into portrait orientation so
+ * in-app previews and auto-detection never inherit sideways landscape offsets.
  */
 internal object CutoutGeometryResolver {
 
@@ -30,12 +34,22 @@ internal object CutoutGeometryResolver {
         val density = context.resources.displayMetrics.density.coerceAtLeast(1f)
         val windowManager = context.getSystemService(WindowManager::class.java)
         val displayManager = context.getSystemService(DisplayManager::class.java)
+        val defaultDisplay = displayManager?.getDisplay(Display.DEFAULT_DISPLAY)
+        val rotation = defaultDisplay?.rotation ?: Surface.ROTATION_0
 
         val metrics = windowManager?.currentWindowMetrics
         val displayWidthPx = (metrics?.bounds?.width() ?: context.resources.displayMetrics.widthPixels)
             .toFloat()
             .coerceAtLeast(1f)
-        val screenWidthDp = (displayWidthPx / density).coerceAtLeast(320f)
+        val displayHeightPx = (metrics?.bounds?.height() ?: context.resources.displayMetrics.heightPixels)
+            .toFloat()
+            .coerceAtLeast(1f)
+        val isLandscape = rotation == Surface.ROTATION_90 ||
+            rotation == Surface.ROTATION_270 ||
+            context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE ||
+            displayWidthPx > displayHeightPx
+        val portraitWidthPx = if (isLandscape) minOf(displayWidthPx, displayHeightPx) else displayWidthPx
+        val screenWidthDp = (portraitWidthPx / density).coerceAtLeast(320f)
         val insets = metrics?.windowInsets
 
         val statusBarBottomPx = insets
@@ -49,27 +63,24 @@ internal object CutoutGeometryResolver {
         val maxCornerPx = maxOf(tlCornerPx, trCornerPx)
         val screenCornerDp = if (maxCornerPx > 0) (maxCornerPx.toFloat() / density) else 42f
 
-        val cutout = insets?.displayCutout
-            ?: displayManager?.getDisplay(Display.DEFAULT_DISPLAY)?.cutout
+        val cutout = insets?.displayCutout ?: defaultDisplay?.cutout
 
         val path = cutout?.cutoutPath
         if (path != null) {
             val bounds = RectF()
             path.computeBounds(bounds, true)
             if (!bounds.isEmpty && bounds.width() > 0f && bounds.height() > 0f) {
-                val centerXOffsetDp = (bounds.centerX() - (displayWidthPx / 2f)) / density
-                return DetectedCutoutMeasurement(
-                    geometry = CutoutGeometry(
-                        holeWidthDp = bounds.width() / density,
-                        holeHeightDp = bounds.height() / density,
-                        topOffsetDp = bounds.top / density,
-                        statusBarBottomDp = statusBarBottomDp,
-                        screenWidthDp = screenWidthDp,
-                        holeCenterOffsetXDp = centerXOffsetDp,
-                        screenTopCornerRadiusDp = screenCornerDp,
-                    ),
-                    detectedPosition = resolvePositionForRatio(bounds.centerX() / displayWidthPx),
-                    hasHardwareCutout = true,
+                return buildPortraitMeasurementFromBounds(
+                    bounds = bounds,
+                    isLandscape = isLandscape,
+                    rotation = rotation,
+                    displayWidthPx = displayWidthPx,
+                    displayHeightPx = displayHeightPx,
+                    portraitWidthPx = portraitWidthPx,
+                    screenWidthDp = screenWidthDp,
+                    statusBarBottomDp = statusBarBottomDp,
+                    screenCornerDp = screenCornerDp,
+                    density = density,
                 )
             }
         }
@@ -77,34 +88,105 @@ internal object CutoutGeometryResolver {
         val boundingRect = cutout?.boundingRectTop?.takeIf { !it.isEmpty }
             ?: cutout?.boundingRects?.firstOrNull { !it.isEmpty }
         if (boundingRect != null) {
-            val estimatedHoleSizeDp = (boundingRect.width().toFloat() / density).coerceIn(20f, 64f)
-            val bottomDp = boundingRect.bottom.toFloat() / density
-            val estimatedTopDp = ((bottomDp - estimatedHoleSizeDp) * 0.5f).coerceAtLeast(4f)
-            val centerX = boundingRect.exactCenterX()
-            val centerXOffsetDp = (centerX - (displayWidthPx / 2f)) / density
-            return DetectedCutoutMeasurement(
-                geometry = CutoutGeometry(
-                    holeWidthDp = estimatedHoleSizeDp,
-                    holeHeightDp = estimatedHoleSizeDp,
-                    topOffsetDp = estimatedTopDp,
-                    statusBarBottomDp = statusBarBottomDp,
-                    screenWidthDp = screenWidthDp,
-                    holeCenterOffsetXDp = centerXOffsetDp,
-                    screenTopCornerRadiusDp = screenCornerDp,
-                ),
-                detectedPosition = resolvePositionForRatio(centerX / displayWidthPx),
-                hasHardwareCutout = true,
+            return buildPortraitMeasurementFromBounds(
+                bounds = RectF(boundingRect),
+                isLandscape = isLandscape,
+                rotation = rotation,
+                displayWidthPx = displayWidthPx,
+                displayHeightPx = displayHeightPx,
+                portraitWidthPx = portraitWidthPx,
+                screenWidthDp = screenWidthDp,
+                statusBarBottomDp = statusBarBottomDp,
+                screenCornerDp = screenCornerDp,
+                density = density,
             )
         }
 
         return DetectedCutoutMeasurement(
             geometry = CutoutGeometry(
-                statusBarBottomDp = statusBarBottomDp,
+                statusBarBottomDp = statusBarBottomDp.coerceIn(32f, 64f),
                 screenWidthDp = screenWidthDp,
                 screenTopCornerRadiusDp = screenCornerDp,
             ),
             detectedPosition = CameraAnchorPosition.CENTER,
             hasHardwareCutout = false,
+        )
+    }
+
+    /**
+     * Returns a portrait-normalized [CutoutGeometry] guaranteed to keep the capsule visible at the
+     * top of the in-app phone mockup preview regardless of current device orientation.
+     */
+    fun detectForPortraitPreview(context: Context): CutoutGeometry {
+        val detected = detect(context).geometry
+        return detected.copy(
+            holeWidthDp = detected.holeWidthDp.coerceIn(22f, 42f),
+            holeHeightDp = detected.holeHeightDp.coerceIn(22f, 42f),
+            topOffsetDp = detected.topOffsetDp.coerceIn(6f, 34f),
+            statusBarBottomDp = detected.statusBarBottomDp.coerceIn(36f, 58f),
+            holeCenterOffsetXDp = detected.holeCenterOffsetXDp.coerceIn(-120f, 120f),
+            screenTopCornerRadiusDp = detected.screenTopCornerRadiusDp.coerceIn(24f, 44f),
+        )
+    }
+
+    private fun buildPortraitMeasurementFromBounds(
+        bounds: RectF,
+        isLandscape: Boolean,
+        rotation: Int,
+        displayWidthPx: Float,
+        displayHeightPx: Float,
+        portraitWidthPx: Float,
+        screenWidthDp: Float,
+        statusBarBottomDp: Float,
+        screenCornerDp: Float,
+        density: Float,
+    ): DetectedCutoutMeasurement {
+        val holeWidthDp: Float
+        val holeHeightDp: Float
+        val topOffsetDp: Float
+        val centerXRatio: Float
+        val centerXOffsetDp: Float
+        val resolvedStatusBarBottomDp: Float
+
+        if (isLandscape) {
+            holeWidthDp = (bounds.height() / density).coerceIn(20f, 64f)
+            holeHeightDp = (bounds.width() / density).coerceIn(20f, 64f)
+            val portraitTopPx = when (rotation) {
+                Surface.ROTATION_90 -> bounds.left
+                Surface.ROTATION_270 -> (displayWidthPx - bounds.right)
+                else -> minOf(bounds.left, displayWidthPx - bounds.right)
+            }.coerceAtLeast(0f)
+            val portraitCenterXPx = when (rotation) {
+                Surface.ROTATION_90 -> (displayHeightPx - bounds.centerY())
+                Surface.ROTATION_270 -> bounds.centerY()
+                else -> bounds.centerY()
+            }.coerceIn(0f, portraitWidthPx)
+            topOffsetDp = (portraitTopPx / density).coerceIn(4f, 44f)
+            centerXRatio = portraitCenterXPx / portraitWidthPx
+            centerXOffsetDp = (portraitCenterXPx - (portraitWidthPx / 2f)) / density
+            resolvedStatusBarBottomDp = maxOf(statusBarBottomDp, topOffsetDp + holeHeightDp + 8f)
+                .coerceIn(36f, 64f)
+        } else {
+            holeWidthDp = (bounds.width() / density).coerceIn(20f, 64f)
+            holeHeightDp = (bounds.height() / density).coerceIn(20f, 64f)
+            topOffsetDp = (bounds.top / density).coerceAtLeast(0f)
+            centerXRatio = bounds.centerX() / displayWidthPx
+            centerXOffsetDp = (bounds.centerX() - (displayWidthPx / 2f)) / density
+            resolvedStatusBarBottomDp = statusBarBottomDp
+        }
+
+        return DetectedCutoutMeasurement(
+            geometry = CutoutGeometry(
+                holeWidthDp = holeWidthDp,
+                holeHeightDp = holeHeightDp,
+                topOffsetDp = topOffsetDp,
+                statusBarBottomDp = resolvedStatusBarBottomDp,
+                screenWidthDp = screenWidthDp,
+                holeCenterOffsetXDp = centerXOffsetDp,
+                screenTopCornerRadiusDp = screenCornerDp,
+            ),
+            detectedPosition = resolvePositionForRatio(centerXRatio),
+            hasHardwareCutout = true,
         )
     }
 

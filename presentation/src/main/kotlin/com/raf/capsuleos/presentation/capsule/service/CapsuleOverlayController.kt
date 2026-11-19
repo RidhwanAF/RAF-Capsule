@@ -1,6 +1,7 @@
 package com.raf.capsuleos.presentation.capsule.service
 
 import android.app.Dialog
+import android.app.KeyguardManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -11,12 +12,14 @@ import android.graphics.Color
 import android.graphics.ColorFilter
 import android.graphics.Outline
 import android.graphics.PixelFormat
+import android.graphics.Rect
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.hardware.display.DisplayManager
 import android.os.PowerManager
 import android.os.SystemClock
 import android.provider.AlarmClock
+import android.provider.Settings
 import android.view.Choreographer
 import android.view.Display
 import android.view.Gravity
@@ -26,11 +29,18 @@ import android.view.View
 import android.view.Window
 import android.view.WindowManager
 import android.widget.FrameLayout
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.setViewTreeLifecycleOwner
@@ -43,8 +53,9 @@ import com.raf.capsuleos.domain.model.CapsuleEffect
 import com.raf.capsuleos.domain.model.CapsuleEvent
 import com.raf.capsuleos.domain.model.CapsuleUiState
 import com.raf.capsuleos.domain.model.CapsuleVisualState
-import com.raf.capsuleos.domain.model.CutoutGeometry
 import com.raf.capsuleos.domain.model.RingerModeState
+import com.raf.capsuleos.domain.model.SystemStatusKind
+import com.raf.capsuleos.domain.repository.BluetoothRepository
 import com.raf.capsuleos.domain.repository.BrightnessRepository
 import com.raf.capsuleos.domain.repository.CapsuleSettingsRepository
 import com.raf.capsuleos.domain.repository.MediaSessionRepository
@@ -56,11 +67,15 @@ import com.raf.capsuleos.domain.repository.VolumeRepository
 import com.raf.capsuleos.presentation.capsule.ui.CapsuleScrubPresentation
 import com.raf.capsuleos.presentation.capsule.ui.IslandCapsule
 import com.raf.capsuleos.presentation.capsule.ui.computeCapsuleLayoutDpSpec
+import com.raf.capsuleos.presentation.shader.OuterScreenExpansionAura
+import com.raf.capsuleos.presentation.shader.resolveOuterExpansionAuraColors
+import com.raf.capsuleos.presentation.shader.shouldShowOuterExpansionAura
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -72,7 +87,6 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.abs
 import kotlin.math.min
-import kotlin.math.pow
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
@@ -97,6 +111,7 @@ class CapsuleOverlayController @Inject constructor(
     private val torchRepository: TorchRepository,
     private val volumeRepository: VolumeRepository,
     private val brightnessRepository: BrightnessRepository,
+    private val bluetoothRepository: BluetoothRepository,
     private val systemEventsRepository: SystemEventsRepository,
     private val statusBarIconController: StatusBarIconController,
     private val settingsRepository: CapsuleSettingsRepository,
@@ -104,6 +119,7 @@ class CapsuleOverlayController @Inject constructor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val displayManager = appContext.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
     private val powerManager = appContext.getSystemService(Context.POWER_SERVICE) as PowerManager
+    private val keyguardManager = appContext.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
     private val windowManager = appContext.getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
     val coordinator = IslandStateCoordinator(
@@ -126,12 +142,15 @@ class CapsuleOverlayController @Inject constructor(
     )
 
     private var activeDialog: Dialog? = null
+    private var activeAuraDialog: Dialog? = null
     private var activeContainer: FrameLayout? = null
     private var activeLifecycleOwner: ComposeOverlayLifecycleOwner? = null
     private var activeHostContext: Context? = null
     private var lockScreenAction: (() -> Boolean)? = null
+    private var openNotificationShadeAction: (() -> Boolean)? = null
     private var cardBlurDrawable: CapsuleBlurDrawable? = null
     private var windowObserverJob: Job? = null
+    private var collapseStageJob: Job? = null
     private var state3EnteredAtMs: Long = 0L
     private var isReplyInputFocused = false
 
@@ -147,7 +166,11 @@ class CapsuleOverlayController @Inject constructor(
     private val blurRadiusSpring = SpringAxis()
     private var lastFrameNanos = 0L
     private var isSpringLoopRunning = false
-    private var isHoldingCapsule = false
+    private val isHoldingCapsuleState = mutableStateOf(false)
+    private val forceCameraCircleStageState = mutableStateOf(false)
+    private val suppressSatelliteStageState = mutableStateOf(false)
+    private val holdPillBeforeRingState = mutableStateOf<CapsuleUiState?>(null)
+    private var skipNextCollapseStaging = false
     private var jiggleUntilMs = 0L
     private val scrubPresentationState = mutableStateOf<CapsuleScrubPresentation?>(null)
     private var activeScrubSession: ScrubSession? = null
@@ -246,9 +269,11 @@ class CapsuleOverlayController @Inject constructor(
     fun attachAccessibilityHost(
         serviceContext: Context,
         onLockScreen: () -> Boolean = { false },
+        onOpenNotificationShade: () -> Boolean = { false },
     ) {
         _isAccessibilityActive.value = true
         lockScreenAction = onLockScreen
+        openNotificationShadeAction = onOpenNotificationShade
         attachOverlay(hostContext = serviceContext)
     }
 
@@ -256,12 +281,34 @@ class CapsuleOverlayController @Inject constructor(
     fun detachAccessibilityHost() {
         _isAccessibilityActive.value = false
         lockScreenAction = null
+        openNotificationShadeAction = null
         tearDownCurrentOverlay()
     }
 
     private fun triggerLockScreen() {
         coordinator.onEvent(CapsuleEvent.CollapseCapsule)
         lockScreenAction?.invoke()
+    }
+
+    private fun triggerOpenNotificationShade() {
+        coordinator.onEvent(CapsuleEvent.CollapseCapsule)
+        openNotificationShadeAction?.invoke()
+    }
+
+    /** Dispatches device keyguard lockscreen state from the accessibility host. */
+    fun setKeyguardLocked(isLocked: Boolean) {
+        coordinator.onEvent(CapsuleEvent.KeyguardLockedChanged(isLocked))
+    }
+
+    private fun launchSystemIntent(intent: Intent, onFailure: (() -> Unit)? = null) {
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        runCatching { appContext.startActivity(intent) }
+            .onFailure { onFailure?.invoke() }
+    }
+
+    /** Dispatches Quick Settings / notification shade open state from the accessibility service. */
+    fun setQuickSettingsOpen(isOpen: Boolean) {
+        coordinator.onEvent(CapsuleEvent.QuickSettingsChanged(isOpen))
     }
 
     /** Toggles temporary pause/resume of the active capsule without unbinding Accessibility. */
@@ -278,6 +325,7 @@ class CapsuleOverlayController @Inject constructor(
 
     /** Dispatches a synthetic test event from the setup dashboard. */
     fun dispatchTestAction(action: CapsuleTestAction) {
+        coordinator.onEvent(CapsuleEvent.QuickSettingsChanged(false))
         when (action) {
             CapsuleTestAction.VOLUME -> coordinator.onEvent(
                 CapsuleEvent.VolumeChanged(volumeRepository.currentSnapshot(AudioStreamType.MEDIA)),
@@ -291,7 +339,7 @@ class CapsuleOverlayController @Inject constructor(
                     ),
                 ),
             )
-            CapsuleTestAction.NOW_BRIEF -> coordinator.onEvent(CapsuleEvent.ExpandToFull)
+            CapsuleTestAction.NOW_BRIEF -> coordinator.onEvent(CapsuleEvent.ExpandNowBrief)
             CapsuleTestAction.NOTIFICATION -> coordinator.onEvent(
                 CapsuleEvent.NotificationPosted(
                     CapsuleContent.NotificationAlert(
@@ -299,7 +347,11 @@ class CapsuleOverlayController @Inject constructor(
                         packageName = appContext.packageName,
                         appName = "Raf Capsule",
                         title = "New Message — Tap to expand & open",
-                        text = "Sample notification preview with frosted vertical blur.",
+                        text = "Sample notification preview with frosted vertical blur.\n" +
+                            "Long messaging threads automatically expand taller for comfortable reading.\n" +
+                            "Scroll down to see the directional primary top & bottom edge indicators appear only when more content is available in that direction.\n" +
+                            "Inline photos, GIFs, and stickers from messaging apps also render directly below the message text.\n" +
+                            "Tap Open to jump straight into the app or Dismiss to clear.",
                         iconBytes = null,
                         timestampMs = System.currentTimeMillis(),
                     ),
@@ -329,137 +381,240 @@ class CapsuleOverlayController @Inject constructor(
             setContent {
                 val state by coordinator.uiState.collectAsStateWithLifecycle()
                 val blurSupported by _isBlurEnabled.collectAsStateWithLifecycle()
-                IslandCapsule(
-                    uiState = state,
-                    cornerRadiusDp = animatedCornerDpState.floatValue,
-                    isBlurSupported = blurSupported,
-                    scrubPresentation = scrubPresentationState.value,
-                    onHoldingStateChanged = { holding ->
-                        if (isHoldingCapsule != holding) {
-                            isHoldingCapsule = holding
+                val forceCamera by forceCameraCircleStageState
+                val suppressSatellite by suppressSatelliteStageState
+                val heldPill by holdPillBeforeRingState
+                val effectiveUiState = heldPill ?: state
+                MaterialTheme(colorScheme = dynamicDarkColorScheme(hostContext)) {
+                    IslandCapsule(
+                        uiState = effectiveUiState,
+                        cornerRadiusDp = animatedCornerDpState.floatValue,
+                        isBlurSupported = blurSupported,
+                        scrubPresentation = scrubPresentationState.value,
+                        isForceCameraCircleStage = forceCamera,
+                        isSatelliteDelayedStage = suppressSatellite,
+                        onHoldingStateChanged = { holding ->
+                            if (isHoldingCapsuleState.value != holding) {
+                                isHoldingCapsuleState.value = holding
+                                updateSpringTargets()
+                            }
+                        },
+                        onHoldPeekStart = { coordinator.onEvent(CapsuleEvent.HoldPeekStarted) },
+                        onHoldPeekEnd = { coordinator.onEvent(CapsuleEvent.HoldPeekReleased) },
+                        onTap = { coordinator.onEvent(CapsuleEvent.TapCapsule) },
+                        onExpand = { coordinator.onEvent(CapsuleEvent.ExpandToFull) },
+                        onLongHoldGesture = { coordinator.onEvent(CapsuleEvent.LongHoldCapsule) },
+                        onDoubleTapGesture = { coordinator.onEvent(CapsuleEvent.DoubleTapCapsule) },
+                        onExpandSatellite = {
+                            holdPillBeforeRingState.value = null
+                            forceCameraCircleStageState.value = false
+                            suppressSatelliteStageState.value = false
+                            coordinator.onEvent(CapsuleEvent.ExpandLeftSatellite)
+                        },
+                        onMergeSatelliteIntoMainBeforeCamera = {
+                            collapseStageJob?.cancel()
+                            collapseStageJob = null
+                            holdPillBeforeRingState.value = null
+                            forceCameraCircleStageState.value = false
+                            suppressSatelliteStageState.value = true
                             updateSpringTargets()
-                        }
-                    },
-                    onHoldPeekStart = { coordinator.onEvent(CapsuleEvent.HoldPeekStarted) },
-                    onHoldPeekEnd = { coordinator.onEvent(CapsuleEvent.HoldPeekReleased) },
-                    onTap = { coordinator.onEvent(CapsuleEvent.TapCapsule) },
-                    onExpand = { coordinator.onEvent(CapsuleEvent.ExpandToFull) },
-                    onUserInteraction = { coordinator.onEvent(CapsuleEvent.UserInteractedInCard) },
-                    onCycleContent = { direction -> coordinator.onEvent(CapsuleEvent.CycleContent(direction)) },
-                    onVerticalScrubStart = ::startVerticalScrub,
-                    onVerticalScrubProgress = ::updateVerticalScrub,
-                    onVerticalScrubEnd = ::endVerticalScrub,
-                    onOpenNotification = { alert ->
-                        setOverlayKeyboardFocus(false)
-                        notificationRepository.openNotificationOrApp(alert.key, alert.packageName)
-                        coordinator.onEvent(CapsuleEvent.NotificationRemoved(alert.key))
-                        coordinator.onEvent(CapsuleEvent.CollapseCapsule)
-                    },
-                    onTriggerNotificationAction = { alert, actionId, replyText ->
-                        coordinator.onEvent(CapsuleEvent.UserInteractedInCard)
-                        notificationRepository.executeNotificationAction(alert.key, actionId, replyText)
-                        if (replyText != null) {
+                        },
+                        onMergeToCameraBeforeExpand = {
+                            collapseStageJob?.cancel()
+                            collapseStageJob = null
+                            holdPillBeforeRingState.value = null
+                            suppressSatelliteStageState.value = false
+                            forceCameraCircleStageState.value = true
+                            updateSpringTargets()
+                        },
+                        onCycleSatellite = { direction -> coordinator.onEvent(CapsuleEvent.CycleLeftSatellite(direction)) },
+                        onUserInteraction = { coordinator.onEvent(CapsuleEvent.UserInteractedInCard) },
+                        onCycleContent = { direction -> coordinator.onEvent(CapsuleEvent.CycleContent(direction)) },
+                        onVerticalScrubStart = ::startVerticalScrub,
+                        onVerticalScrubProgress = ::updateVerticalScrub,
+                        onVerticalScrubEnd = ::endVerticalScrub,
+                        onOpenNotification = { alert ->
                             setOverlayKeyboardFocus(false)
+                            notificationRepository.openNotificationOrApp(alert.key, alert.packageName)
+                            coordinator.onEvent(CapsuleEvent.NotificationRemoved(alert.key))
                             coordinator.onEvent(CapsuleEvent.CollapseCapsule)
-                        }
-                    },
-                    onDismissNotification = { alert ->
-                        setOverlayKeyboardFocus(false)
-                        notificationRepository.dismissNotification(alert.key)
-                        coordinator.onEvent(CapsuleEvent.NotificationRemoved(alert.key))
-                    },
-                    onReplyFocusChanged = ::setOverlayKeyboardFocus,
-                    onOpenMediaApp = { pkg ->
-                        notificationRepository.openNotificationOrApp(null, pkg)
-                        coordinator.onEvent(CapsuleEvent.CollapseCapsule)
-                    },
-                    onTogglePlayPause = {
-                        coordinator.onEvent(CapsuleEvent.UserInteractedInCard)
-                        mediaSessionRepository.togglePlayPause()
-                    },
-                    onSkipNext = {
-                        coordinator.onEvent(CapsuleEvent.UserInteractedInCard)
-                        mediaSessionRepository.skipNext()
-                    },
-                    onSkipPrevious = {
-                        coordinator.onEvent(CapsuleEvent.UserInteractedInCard)
-                        mediaSessionRepository.skipPrevious()
-                    },
-                    onSeekTo = { positionMs ->
-                        coordinator.onEvent(CapsuleEvent.UserInteractedInCard)
-                        mediaSessionRepository.seekTo(positionMs)
-                    },
-                    onToggleTorch = { enabled ->
-                        coordinator.onEvent(CapsuleEvent.UserInteractedInCard)
-                        torchRepository.setTorchEnabled(enabled)
-                    },
-                    onSetTorchStrength = { level ->
-                        coordinator.onEvent(CapsuleEvent.UserInteractedInCard)
-                        torchRepository.setTorchStrength(level)
-                    },
-                    onSetStreamVolume = { stream, value ->
-                        coordinator.onEvent(CapsuleEvent.UserInteractedInCard)
-                        volumeRepository.setStreamVolume(stream, value)
-                        coordinator.onEvent(
-                            CapsuleEvent.VolumeChanged(volumeRepository.currentSnapshot(stream)),
-                        )
-                    },
-                    onCycleRingerMode = {
-                        coordinator.onEvent(CapsuleEvent.UserInteractedInCard)
-                        val updatedRinger = volumeRepository.cycleRingerMode()
-                        val activeStream = (coordinator.uiState.value.content as? CapsuleContent.Volume)
-                            ?.activeStream
-                            ?: (coordinator.uiState.value.content as? CapsuleContent.NowBrief)
-                                ?.volume?.activeStream
-                            ?: AudioStreamType.MEDIA
-                        coordinator.onEvent(
-                            CapsuleEvent.VolumeChanged(
-                                volumeRepository.currentSnapshot(activeStream).copy(ringerMode = updatedRinger),
-                            ),
-                        )
-                    },
-                    onSetRingerMode = { mode ->
-                        coordinator.onEvent(CapsuleEvent.UserInteractedInCard)
-                        val updatedRinger = volumeRepository.setRingerMode(mode)
-                        if (mode == RingerModeState.SILENT && updatedRinger != RingerModeState.SILENT) {
+                        },
+                        onTriggerNotificationAction = { alert, actionId, replyText ->
+                            coordinator.onEvent(CapsuleEvent.UserInteractedInCard)
+                            notificationRepository.executeNotificationAction(alert.key, actionId, replyText)
+                            if (replyText != null) {
+                                setOverlayKeyboardFocus(false)
+                                coordinator.onEvent(CapsuleEvent.CollapseCapsule)
+                            }
+                        },
+                        onDismissNotification = { alert ->
+                            setOverlayKeyboardFocus(false)
+                            notificationRepository.dismissNotification(alert.key)
+                            coordinator.onEvent(CapsuleEvent.NotificationRemoved(alert.key))
+                        },
+                        onReplyFocusChanged = ::setOverlayKeyboardFocus,
+                        onOpenMediaApp = { pkg ->
+                            notificationRepository.openNotificationOrApp(null, pkg)
                             coordinator.onEvent(CapsuleEvent.CollapseCapsule)
-                        } else {
+                        },
+                        onSelectMediaSession = { index ->
+                            coordinator.onEvent(CapsuleEvent.SelectMediaSession(index))
+                        },
+                        onOpenAudioOutput = {
+                            coordinator.onEvent(CapsuleEvent.CollapseCapsule)
+                            val activeMedia = coordinator.uiState.value.content as? CapsuleContent.Media
+                            val shown = mediaSessionRepository.showSystemAudioOutputSwitcher(
+                                activeMedia?.sessionTokenKey?.ifBlank { null },
+                            )
+                            if (!shown) {
+                                launchSystemIntent(Intent(Settings.Panel.ACTION_VOLUME))
+                            }
+                        },
+                        onTogglePlayPause = { tokenKey ->
+                            coordinator.onEvent(CapsuleEvent.UserInteractedInCard)
+                            mediaSessionRepository.togglePlayPause(tokenKey.ifBlank { null })
+                        },
+                        onSkipNext = { tokenKey ->
+                            coordinator.onEvent(CapsuleEvent.UserInteractedInCard)
+                            mediaSessionRepository.skipNext(tokenKey.ifBlank { null })
+                        },
+                        onSkipPrevious = { tokenKey ->
+                            coordinator.onEvent(CapsuleEvent.UserInteractedInCard)
+                            mediaSessionRepository.skipPrevious(tokenKey.ifBlank { null })
+                        },
+                        onSeekTo = { tokenKey, positionMs ->
+                            coordinator.onEvent(CapsuleEvent.UserInteractedInCard)
+                            mediaSessionRepository.seekTo(positionMs, tokenKey.ifBlank { null })
+                        },
+                        onToggleTorch = { enabled ->
+                            coordinator.onEvent(CapsuleEvent.UserInteractedInCard)
+                            torchRepository.setTorchEnabled(enabled)
+                        },
+                        onSetTorchStrength = { level ->
+                            coordinator.onEvent(CapsuleEvent.UserInteractedInCard)
+                            torchRepository.setTorchStrength(level)
+                        },
+                        onSetStreamVolume = { stream, value ->
+                            coordinator.onEvent(CapsuleEvent.UserInteractedInCard)
+                            volumeRepository.setStreamVolume(stream, value)
+                            coordinator.onEvent(
+                                CapsuleEvent.VolumeChanged(volumeRepository.currentSnapshot(stream)),
+                            )
+                        },
+                        onCycleRingerMode = {
+                            coordinator.onEvent(CapsuleEvent.UserInteractedInCard)
+                            val updatedRinger = volumeRepository.cycleRingerMode()
                             val activeStream = (coordinator.uiState.value.content as? CapsuleContent.Volume)
                                 ?.activeStream
                                 ?: (coordinator.uiState.value.content as? CapsuleContent.NowBrief)
                                     ?.volume?.activeStream
-                                ?: AudioStreamType.RING
+                                ?: AudioStreamType.MEDIA
                             coordinator.onEvent(
                                 CapsuleEvent.VolumeChanged(
                                     volumeRepository.currentSnapshot(activeStream).copy(ringerMode = updatedRinger),
                                 ),
                             )
-                        }
-                    },
-                    onSetBrightnessPercent = { percent ->
-                        coordinator.onEvent(CapsuleEvent.UserInteractedInCard)
-                        val updated = brightnessRepository.setBrightnessPercent(percent)
-                        coordinator.onEvent(CapsuleEvent.BrightnessChanged(updated))
-                    },
-                    onToggleAutoBrightness = {
-                        coordinator.onEvent(CapsuleEvent.UserInteractedInCard)
-                        val updated = brightnessRepository.toggleAutoBrightness()
-                        coordinator.onEvent(CapsuleEvent.BrightnessChanged(updated))
-                    },
-                    onLockScreen = ::triggerLockScreen,
-                    onDoubleTapLock = ::triggerLockScreen,
-                    onOpenClock = {
-                        coordinator.onEvent(CapsuleEvent.CollapseCapsule)
-                        val clockIntent = Intent(AlarmClock.ACTION_SHOW_ALARMS).apply {
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        }
-                        runCatching { appContext.startActivity(clockIntent) }
-                    },
-                )
+                        },
+                        onSetRingerMode = { mode ->
+                            coordinator.onEvent(CapsuleEvent.UserInteractedInCard)
+                            val updatedRinger = volumeRepository.setRingerMode(mode)
+                            if (mode == RingerModeState.SILENT && updatedRinger != RingerModeState.SILENT) {
+                                coordinator.onEvent(CapsuleEvent.CollapseCapsule)
+                            } else {
+                                val activeStream = (coordinator.uiState.value.content as? CapsuleContent.Volume)
+                                    ?.activeStream
+                                    ?: (coordinator.uiState.value.content as? CapsuleContent.NowBrief)
+                                        ?.volume?.activeStream
+                                    ?: AudioStreamType.RING
+                                coordinator.onEvent(
+                                    CapsuleEvent.VolumeChanged(
+                                        volumeRepository.currentSnapshot(activeStream).copy(ringerMode = updatedRinger),
+                                    ),
+                                )
+                            }
+                        },
+                        onSetBrightnessPercent = { percent ->
+                            coordinator.onEvent(CapsuleEvent.UserInteractedInCard)
+                            val updated = brightnessRepository.setBrightnessPercent(percent)
+                            coordinator.onEvent(CapsuleEvent.BrightnessChanged(updated))
+                        },
+                        onToggleAutoBrightness = {
+                            coordinator.onEvent(CapsuleEvent.UserInteractedInCard)
+                            val updated = brightnessRepository.toggleAutoBrightness()
+                            coordinator.onEvent(CapsuleEvent.BrightnessChanged(updated))
+                        },
+                        onAnswerCall = { call ->
+                            coordinator.onEvent(CapsuleEvent.UserInteractedInCard)
+                            notificationRepository.answerCall(call.key)
+                        },
+                        onDeclineCall = { call ->
+                            notificationRepository.declineCall(call.key)
+                            coordinator.onEvent(CapsuleEvent.CollapseCapsule)
+                        },
+                        onOpenCallApp = { call ->
+                            notificationRepository.openNotificationOrApp(call.key, call.packageName)
+                            coordinator.onEvent(CapsuleEvent.CollapseCapsule)
+                        },
+                        onOpenLiveActivityApp = { live ->
+                            val pkg = live.packageName
+                            if (!pkg.isNullOrBlank()) {
+                                notificationRepository.openNotificationOrApp(live.key, pkg)
+                            }
+                            coordinator.onEvent(CapsuleEvent.CollapseCapsule)
+                        },
+                        onOpenSystemStatusSettings = { kind ->
+                            coordinator.onEvent(CapsuleEvent.CollapseCapsule)
+                            val primaryIntent = when (kind) {
+                                SystemStatusKind.AIRPLANE_MODE -> Intent(Settings.ACTION_AIRPLANE_MODE_SETTINGS)
+                                SystemStatusKind.DO_NOT_DISTURB -> Intent("android.settings.ZEN_MODE_SETTINGS")
+                                SystemStatusKind.BATTERY_SAVER -> Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS)
+                                SystemStatusKind.VPN -> Intent(Settings.ACTION_VPN_SETTINGS)
+                                SystemStatusKind.RINGER_MUTED -> Intent(Settings.ACTION_SOUND_SETTINGS)
+                                SystemStatusKind.DATA_SAVER -> Intent(Settings.ACTION_DATA_USAGE_SETTINGS)
+                            }
+                            launchSystemIntent(primaryIntent) {
+                                launchSystemIntent(Intent(Settings.ACTION_SETTINGS))
+                            }
+                        },
+                        onOpenBluetoothSettings = {
+                            coordinator.onEvent(CapsuleEvent.CollapseCapsule)
+                            launchSystemIntent(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
+                        },
+                        onOpenHotspotSettings = {
+                            coordinator.onEvent(CapsuleEvent.CollapseCapsule)
+                            launchSystemIntent(Intent("android.settings.TETHER_SETTINGS")) {
+                                launchSystemIntent(Intent(Settings.ACTION_WIRELESS_SETTINGS))
+                            }
+                        },
+                        onLockScreen = ::triggerLockScreen,
+                        onOpenNotificationShade = ::triggerOpenNotificationShade,
+                        onOpenClock = {
+                            coordinator.onEvent(CapsuleEvent.CollapseCapsule)
+                            val clockIntent = Intent(AlarmClock.ACTION_SHOW_ALARMS).apply {
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            runCatching { appContext.startActivity(clockIntent) }
+                        },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
             }
         }
 
         val container = object : FrameLayout(hostContext) {
+            private val gestureExclusionRect = Rect()
+            private val gestureExclusionRects = listOf(gestureExclusionRect)
+
+            override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+                super.onLayout(changed, left, top, right, bottom)
+                val w = right - left
+                val h = bottom - top
+                if (w > 0 && h > 0) {
+                    gestureExclusionRect.set(0, 0, w, h)
+                    systemGestureExclusionRects = gestureExclusionRects
+                }
+            }
+
             override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
                 val isState3 = coordinator.uiState.value.visualState == CapsuleVisualState.STATE3_FULL_EXPANDED
                 if (ev.action == MotionEvent.ACTION_OUTSIDE && isState3 && !isReplyInputFocused) {
@@ -469,8 +624,11 @@ class CapsuleOverlayController @Inject constructor(
                     }
                     return true
                 }
-                if (isState3 && (ev.action == MotionEvent.ACTION_DOWN || ev.action == MotionEvent.ACTION_MOVE)) {
-                    coordinator.onEvent(CapsuleEvent.UserInteractedInCard)
+                if (ev.action == MotionEvent.ACTION_DOWN || ev.action == MotionEvent.ACTION_MOVE) {
+                    parent?.requestDisallowInterceptTouchEvent(true)
+                    if (isState3) {
+                        coordinator.onEvent(CapsuleEvent.UserInteractedInCard)
+                    }
                 }
                 return super.dispatchTouchEvent(ev)
             }
@@ -488,10 +646,88 @@ class CapsuleOverlayController @Inject constructor(
         }
         activeContainer = container
 
+        val auraDialog = Dialog(hostContext, android.R.style.Theme_Translucent_NoTitleBar).apply {
+            requestWindowFeature(Window.FEATURE_NO_TITLE)
+            val auraComposeView = ComposeView(hostContext).apply {
+                setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
+                setContent {
+                    val auraState by coordinator.uiState.collectAsStateWithLifecycle()
+                    MaterialTheme(colorScheme = dynamicDarkColorScheme(hostContext)) {
+                        val (auraColorA, auraColorB) = resolveOuterExpansionAuraColors(
+                            state = auraState,
+                            primaryColor = MaterialTheme.colorScheme.primary,
+                            tertiaryColor = MaterialTheme.colorScheme.tertiary,
+                        )
+                        val layoutSpec = computeCapsuleLayoutDpSpec(
+                            state = auraState,
+                            isHoldingCapsule = false,
+                        )
+                        val outerAuraHeightDp = (layoutSpec.topYDp + layoutSpec.heightDp + 36f)
+                            .coerceAtLeast(180f)
+                            .dp
+                        OuterScreenExpansionAura(
+                            visible = shouldShowOuterExpansionAura(auraState),
+                            colorA = auraColorA,
+                            colorB = auraColorB,
+                            screenCornerRadiusDp = auraState.cutout.screenTopCornerRadiusDp.coerceIn(28f, 52f),
+                            spreadDp = 72f,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(outerAuraHeightDp),
+                        )
+                    }
+                }
+            }
+            val auraContainer = FrameLayout(hostContext).apply {
+                setViewTreeLifecycleOwner(lifecycleOwner)
+                setViewTreeViewModelStoreOwner(lifecycleOwner)
+                setViewTreeSavedStateRegistryOwner(lifecycleOwner)
+                addView(
+                    auraComposeView,
+                    FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                    ),
+                )
+            }
+            setContentView(auraContainer)
+            window?.let { auraWin ->
+                auraWin.decorView.setPadding(0, 0, 0, 0)
+                auraWin.setDimAmount(0f)
+                auraWin.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+                val auraHeightPx = (hostContext.resources.displayMetrics.heightPixels * 0.52f)
+                    .roundToInt()
+                    .coerceAtLeast(1)
+                val auraParams = WindowManager.LayoutParams().apply {
+                    copyFrom(auraWin.attributes)
+                    type = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+                    width = WindowManager.LayoutParams.MATCH_PARENT
+                    height = auraHeightPx
+                    gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                    x = 0
+                    y = 0
+                    format = PixelFormat.TRANSLUCENT
+                    flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                        WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                        WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                        WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+                    layoutInDisplayCutoutMode =
+                        WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                }
+                auraWin.attributes = auraParams
+            }
+        }
+
         val state = coordinator.uiState.value
         val spec = computeTargetWindowSpec(hostContext, state)
+        val initialDensity = hostContext.resources.displayMetrics.density.coerceAtLeast(1f)
+        forceCameraCircleStageState.value = false
+        suppressSatelliteStageState.value = false
+        holdPillBeforeRingState.value = null
+        skipNextCollapseStaging = false
         snapSpringsTo(spec)
-        blurDrawable.setCornerRadiusPx(spec.cornerDp * hostContext.resources.displayMetrics.density.coerceAtLeast(1f))
+        blurDrawable.setCornerRadiusPx(spec.cornerDp * initialDensity)
 
         dialog.setContentView(container)
         dialog.window?.let { win ->
@@ -520,6 +756,8 @@ class CapsuleOverlayController @Inject constructor(
         }
 
         runCatching {
+            auraDialog.show()
+            activeAuraDialog = auraDialog
             dialog.show()
             activeDialog = dialog
             startObservingWindowState()
@@ -529,6 +767,12 @@ class CapsuleOverlayController @Inject constructor(
     private fun tearDownCurrentOverlay() {
         stopSpringLoop()
         clearScrubState()
+        collapseStageJob?.cancel()
+        collapseStageJob = null
+        forceCameraCircleStageState.value = false
+        suppressSatelliteStageState.value = false
+        holdPillBeforeRingState.value = null
+        isHoldingCapsuleState.value = false
         isReplyInputFocused = false
         windowObserverJob?.cancel()
         windowObserverJob = null
@@ -536,6 +780,8 @@ class CapsuleOverlayController @Inject constructor(
         statusBarIconController.setSystemHeadsUpSuppressed(false)
         runCatching { activeDialog?.dismiss() }
         activeDialog = null
+        runCatching { activeAuraDialog?.dismiss() }
+        activeAuraDialog = null
         activeContainer = null
         activeLifecycleOwner?.onDestroy()
         activeLifecycleOwner = null
@@ -555,6 +801,11 @@ class CapsuleOverlayController @Inject constructor(
             }
         }
         scope.launch {
+            mediaSessionRepository.observeMediaSessions().collectLatest { sessions ->
+                coordinator.onEvent(CapsuleEvent.MediaSessionsUpdated(sessions))
+            }
+        }
+        scope.launch {
             notificationRepository.observeNotificationEvents().collectLatest { event ->
                 coordinator.onEvent(event)
             }
@@ -567,6 +818,11 @@ class CapsuleOverlayController @Inject constructor(
         scope.launch {
             volumeRepository.observeVolumeChanges().collectLatest { volume ->
                 coordinator.onEvent(CapsuleEvent.VolumeChanged(volume))
+            }
+        }
+        scope.launch {
+            bluetoothRepository.observeBluetoothEvents().collectLatest { event ->
+                coordinator.onEvent(event)
             }
         }
         scope.launch {
@@ -593,6 +849,18 @@ class CapsuleOverlayController @Inject constructor(
                     is CapsuleEffect.LaunchApp -> {
                         notificationRepository.openNotificationOrApp(effect.notificationKey, effect.packageName)
                     }
+                    CapsuleEffect.LockScreen -> triggerLockScreen()
+                    CapsuleEffect.OpenNotificationShade -> triggerOpenNotificationShade()
+                    CapsuleEffect.ToggleTorch -> {
+                        val nextEnabled = !torchRepository.currentSnapshot().isEnabled
+                        torchRepository.setTorchEnabled(nextEnabled)
+                    }
+                    CapsuleEffect.ToggleMediaPlayPause -> {
+                        mediaSessionRepository.togglePlayPause()
+                    }
+                    is CapsuleEffect.SwitchMediaSession -> {
+                        mediaSessionRepository.selectMediaSession(effect.sessionTokenKey)
+                    }
                 }
             }
         }
@@ -602,30 +870,32 @@ class CapsuleOverlayController @Inject constructor(
         windowObserverJob?.cancel()
         windowObserverJob = scope.launch {
             var lastVisualState: CapsuleVisualState? = null
-            var lastJiggleSeq = coordinator.uiState.value.swipeJiggleSeq
+            var lastQsRingOnly = false
+            var lastSwipeJiggleSeq = coordinator.uiState.value.swipeJiggleSeq
 
-            coordinator.uiState.collectLatest { state ->
-                val triggeredJiggle = state.swipeJiggleSeq != lastJiggleSeq
-                lastJiggleSeq = state.swipeJiggleSeq
+            coordinator.uiState.collect { state ->
                 val shouldSuppressHeadsUp = _isAccessibilityActive.value &&
                     !_isUserPaused.value &&
-                    state.preferences.suppressSystemHeadsUp
+                    state.preferences.suppressSystemHeadsUp &&
+                    !state.isQsRingOnlyActive
                 statusBarIconController.setSystemHeadsUpSuppressed(shouldSuppressHeadsUp)
 
-                if (state.shouldHideStatusBarIcons) {
-                    statusBarIconController.hideIconsForExpansion()
-                } else {
-                    statusBarIconController.restoreIcons()
-                }
+                val container = activeContainer ?: return@collect
+                val dialog = activeDialog ?: return@collect
+                val win = dialog.window ?: return@collect
+                val host = activeHostContext ?: return@collect
 
-                val container = activeContainer ?: return@collectLatest
-                val dialog = activeDialog ?: return@collectLatest
-                val win = dialog.window ?: return@collectLatest
+                setOverlayNotTouchableForQs(win, state.isQsRingOnlyActive)
 
                 val isVisible = state.visualState != CapsuleVisualState.HIDDEN_SYSTEM
                 val targetViewVis = if (isVisible) View.VISIBLE else View.GONE
                 if (win.decorView.visibility != targetViewVis) {
                     win.decorView.visibility = targetViewVis
+                }
+                activeAuraDialog?.window?.decorView?.let { auraDecor ->
+                    if (auraDecor.visibility != targetViewVis) {
+                        auraDecor.visibility = targetViewVis
+                    }
                 }
                 container.visibility = targetViewVis
                 if (state.visualState != CapsuleVisualState.STATE3_FULL_EXPANDED) {
@@ -638,7 +908,10 @@ class CapsuleOverlayController @Inject constructor(
                     state3EnteredAtMs = System.currentTimeMillis()
                 }
                 val wasHidden = lastVisualState == CapsuleVisualState.HIDDEN_SYSTEM
+                val wasState3 = lastVisualState == CapsuleVisualState.STATE3_FULL_EXPANDED
+                val wasQsRingOnly = lastQsRingOnly
                 lastVisualState = state.visualState
+                lastQsRingOnly = state.isQsRingOnlyActive
 
                 val activeScrub = activeScrubSession
                 if (activeScrub != null) {
@@ -647,22 +920,146 @@ class CapsuleOverlayController @Inject constructor(
                     if (state.visualState != CapsuleVisualState.HIDDEN_SYSTEM &&
                         (activeScrub.isFingerDown || isExpectedTransition)
                     ) {
-                        return@collectLatest
+                        return@collect
                     }
                     clearScrubState()
                 }
 
-                if (isVisible && wasHidden) {
-                    activeHostContext?.let { host ->
-                        snapSpringsTo(computeTargetWindowSpec(host, state))
-                        applySpringsToWindow(host, win)
+                if (state.visualState == CapsuleVisualState.STATE3_FULL_EXPANDED) {
+                    collapseStageJob?.cancel()
+                    collapseStageJob = null
+                    holdPillBeforeRingState.value = null
+                    forceCameraCircleStageState.value = false
+                    suppressSatelliteStageState.value = false
+                    updateSpringTargets()
+                    return@collect
+                }
+
+                if (!isVisible) {
+                    collapseStageJob?.cancel()
+                    collapseStageJob = null
+                    holdPillBeforeRingState.value = null
+                    forceCameraCircleStageState.value = false
+                    suppressSatelliteStageState.value = false
+                    skipNextCollapseStaging = false
+                    return@collect
+                }
+
+                if (wasHidden) {
+                    collapseStageJob?.cancel()
+                    collapseStageJob = null
+                    holdPillBeforeRingState.value = null
+                    forceCameraCircleStageState.value = false
+                    suppressSatelliteStageState.value = false
+                    skipNextCollapseStaging = false
+                    val spec = computeTargetWindowSpec(host, state)
+                    snapSpringsTo(spec)
+                    applySpringsToWindow(host, win)
+                    return@collect
+                }
+
+                // When collapsing from Horizontal Expand -> Camera Ring while the separated circle
+                // remains active, DO NOT merge/hide/re-separate the circle — let the horizontal
+                // capsule smoothly shrink to the camera ring while the separated circle glides beside it.
+                if (state.isQsRingOnlyActive) {
+                    collapseStageJob?.cancel()
+                    collapseStageJob = null
+                    holdPillBeforeRingState.value = null
+                    forceCameraCircleStageState.value = false
+                    suppressSatelliteStageState.value = false
+                    updateSpringTargets()
+                    return@collect
+                }
+
+                val suppressStaging = skipNextCollapseStaging
+                skipNextCollapseStaging = false
+                if (wasState3) {
+                    collapseStageJob?.cancel()
+                    val hasSatellite = state.leftSatellite != null
+                    if (hasSatellite) {
+                        // Collapse fully into the main capsule FIRST with left circle completely gone;
+                        // only after the main capsule has completely settled, separate the left circle.
+                        forceCameraCircleStageState.value = false
+                        suppressSatelliteStageState.value = true
+                        updateSpringTargets()
+                        val mainOnlySpec = computeTargetWindowSpec(host, state.copy(leftSatellite = null))
+                        collapseStageJob = scope.launch {
+                            val startMs = SystemClock.uptimeMillis()
+                            while (SystemClock.uptimeMillis() - startMs < 520L) {
+                                delay(16L)
+                                val closeToMain = abs(widthSpring.value - mainOnlySpec.widthPx) <= 1.5f &&
+                                    abs(heightSpring.value - mainOnlySpec.heightPx) <= 1.5f &&
+                                    abs(offsetXSpring.value - mainOnlySpec.offsetXPx) <= 1.5f &&
+                                    abs(widthSpring.velocity) <= 12f &&
+                                    abs(heightSpring.velocity) <= 12f
+                                if (closeToMain) break
+                            }
+                            delay(150L)
+
+                            val finalState = coordinator.uiState.value
+                            if (finalState.visualState != CapsuleVisualState.STATE3_FULL_EXPANDED &&
+                                finalState.visualState != CapsuleVisualState.HIDDEN_SYSTEM &&
+                                !finalState.isQsRingOnlyActive
+                            ) {
+                                suppressSatelliteStageState.value = false
+                                updateSpringTargets()
+                            }
+                        }
+                    } else if (!suppressStaging && state.visualState == CapsuleVisualState.STATE2_HORIZONTAL_PILL) {
+                        forceCameraCircleStageState.value = false
+                        suppressSatelliteStageState.value = false
+                        updateSpringTargets()
+                    } else {
+                        forceCameraCircleStageState.value = false
+                        suppressSatelliteStageState.value = false
+                        updateSpringTargets()
                     }
-                } else {
-                    if (triggeredJiggle && state.visualState == CapsuleVisualState.STATE2_HORIZONTAL_PILL) {
-                        val density = activeHostContext?.resources?.displayMetrics?.density ?: 3f
-                        offsetXSpring.velocity = state.swipeDirection * 290f * density
-                        jiggleUntilMs = SystemClock.uptimeMillis() + 420L
+                    return@collect
+                }
+
+                // Returning from QS-only ring when both horizontal pill and left satellite are active:
+                // restore main horizontal pill first, then slightly delay left circle separation.
+                if (wasQsRingOnly &&
+                    !state.isQsRingOnlyActive &&
+                    state.visualState == CapsuleVisualState.STATE2_HORIZONTAL_PILL &&
+                    state.leftSatellite != null
+                ) {
+                    collapseStageJob?.cancel()
+                    forceCameraCircleStageState.value = false
+                    suppressSatelliteStageState.value = true
+                    updateSpringTargets()
+                    val mainOnlySpec = computeTargetWindowSpec(host, state.copy(leftSatellite = null))
+                    collapseStageJob = scope.launch {
+                        val startMs = SystemClock.uptimeMillis()
+                        while (SystemClock.uptimeMillis() - startMs < 250L) {
+                            delay(16L)
+                            val closeToMain = abs(widthSpring.value - mainOnlySpec.widthPx) <= 3.5f &&
+                                abs(offsetXSpring.value - mainOnlySpec.offsetXPx) <= 3.5f
+                            if (closeToMain) break
+                        }
+                        delay(90L)
+                        val latestState = coordinator.uiState.value
+                        if (!latestState.isQsRingOnlyActive &&
+                            latestState.visualState != CapsuleVisualState.STATE3_FULL_EXPANDED &&
+                            latestState.visualState != CapsuleVisualState.HIDDEN_SYSTEM
+                        ) {
+                            suppressSatelliteStageState.value = false
+                            updateSpringTargets()
+                        }
                     }
+                    return@collect
+                }
+
+                if (state.swipeJiggleSeq != lastSwipeJiggleSeq) {
+                    lastSwipeJiggleSeq = state.swipeJiggleSeq
+                    val density = host.resources.displayMetrics.density.coerceAtLeast(1f)
+                    val dir = if (state.swipeDirection < 0) -1f else 1f
+                    jiggleUntilMs = SystemClock.uptimeMillis() + 340L
+                    offsetXSpring.velocity = dir * 240f * density
+                    ensureSpringLoopRunning()
+                }
+
+                if (!forceCameraCircleStageState.value) {
                     updateSpringTargets()
                 }
             }
@@ -671,7 +1068,18 @@ class CapsuleOverlayController @Inject constructor(
 
     private fun updateSpringTargets() {
         val host = activeHostContext ?: return
-        val state = coordinator.uiState.value
+        val rawState = holdPillBeforeRingState.value ?: coordinator.uiState.value
+        val state = when {
+            forceCameraCircleStageState.value && rawState.visualState != CapsuleVisualState.STATE3_FULL_EXPANDED ->
+                rawState.copy(
+                    visualState = CapsuleVisualState.STATE1_CUTOUT_ANCHOR,
+                    content = CapsuleContent.Idle,
+                    leftSatellite = null,
+                )
+            suppressSatelliteStageState.value && rawState.visualState != CapsuleVisualState.STATE3_FULL_EXPANDED ->
+                rawState.copy(leftSatellite = null)
+            else -> rawState
+        }
         val spec = computeTargetWindowSpec(host, state)
         minClampWPx = spec.minWidthPx
         minClampHPx = spec.minHeightPx
@@ -726,19 +1134,19 @@ class CapsuleOverlayController @Inject constructor(
         }
         lastFrameNanos = frameTimeNanos
 
-        // Sub-step twice per frame for unconditional harmonic spring accuracy across 60Hz–120Hz displays
+        // Sub-step twice per frame with matched geometric spring constants so camera cutout stays 1:1 anchored
         val halfDt = dtSec * 0.5f
         val isJiggling = SystemClock.uptimeMillis() < jiggleUntilMs
-        val xStiffness = if (isJiggling) 520f else 420f
-        val xDamping = if (isJiggling) 0.40f else 0.9f
+        val xStiffness = if (isJiggling) 520f else 410f
+        val xDamping = if (isJiggling) 0.40f else 0.82f
         var active = false
         repeat(2) {
-            val wMoving = widthSpring.step(halfDt, stiffness = 390f, dampingRatio = 0.86f)
-            val hMoving = heightSpring.step(halfDt, stiffness = 340f, dampingRatio = 0.78f)
+            val wMoving = widthSpring.step(halfDt, stiffness = 410f, dampingRatio = 0.82f)
+            val hMoving = heightSpring.step(halfDt, stiffness = 410f, dampingRatio = 0.82f)
             val xMoving = offsetXSpring.step(halfDt, stiffness = xStiffness, dampingRatio = xDamping)
-            val yMoving = topYSpring.step(halfDt, stiffness = 420f, dampingRatio = 0.9f)
-            val cMoving = cornerDpSpring.step(halfDt, stiffness = 360f, dampingRatio = 0.86f)
-            val bMoving = blurRadiusSpring.step(halfDt, stiffness = 440f, dampingRatio = 0.96f)
+            val yMoving = topYSpring.step(halfDt, stiffness = 410f, dampingRatio = 0.82f)
+            val cMoving = cornerDpSpring.step(halfDt, stiffness = 410f, dampingRatio = 0.82f)
+            val bMoving = blurRadiusSpring.step(halfDt, stiffness = 460f, dampingRatio = 0.96f)
             active = wMoving || hMoving || xMoving || yMoving || cMoving || bMoving
         }
 
@@ -747,14 +1155,22 @@ class CapsuleOverlayController @Inject constructor(
         val session = activeScrubSession
         if (session != null && !session.isFingerDown) {
             val density = host.resources.displayMetrics.density.coerceAtLeast(1f)
-            val coastFraction = ((heightSpring.value - session.compactSpec.heightPx) / session.travelPx)
+            val coastFraction = ((heightSpring.value - session.compactBaseSpec.heightPx) / session.travelPx)
                 .coerceIn(-0.04f, 1.14f)
+            val t = coastFraction.coerceIn(0f, 1f)
+            val satThreshold = 0.24f
+            val satLeadT = if (!session.isCollapsing && session.compactUiState.leftSatellite != null) {
+                ((satThreshold - t) / satThreshold).coerceIn(0f, 1f)
+            } else {
+                0f
+            }
             val liveWidthDp = (widthSpring.value.coerceAtLeast(minClampWPx) / density).coerceAtLeast(1f)
             val liveHeightDp = (heightSpring.value.coerceAtLeast(minClampHPx) / density).coerceAtLeast(1f)
             scrubPresentationState.value = scrubPresentationState.value?.copy(
                 fraction = coastFraction,
                 currentWidthDp = liveWidthDp,
                 currentHeightDp = liveHeightDp,
+                satelliteFraction = satLeadT,
             )
         }
 
@@ -762,7 +1178,8 @@ class CapsuleOverlayController @Inject constructor(
             Choreographer.getInstance().postFrameCallback(vsyncCallback)
         } else {
             isSpringLoopRunning = false
-            if (activeScrubSession?.isFingerDown == false) {
+            val scrubFinished = activeScrubSession?.isFingerDown == false
+            if (scrubFinished) {
                 clearScrubState()
             }
         }
@@ -771,8 +1188,13 @@ class CapsuleOverlayController @Inject constructor(
     private fun startVerticalScrub(): Pair<Float, Float> {
         val host = activeHostContext ?: return 420f to 0f
         val win = activeDialog?.window
+        collapseStageJob?.cancel()
+        collapseStageJob = null
+        holdPillBeforeRingState.value = null
+        forceCameraCircleStageState.value = false
+        suppressSatelliteStageState.value = false
         stopSpringLoop()
-        isHoldingCapsule = false
+        isHoldingCapsuleState.value = false
 
         val current = coordinator.uiState.value
         val isFromExpanded = current.visualState == CapsuleVisualState.STATE3_FULL_EXPANDED
@@ -797,21 +1219,24 @@ class CapsuleOverlayController @Inject constructor(
         }
 
         val compactSpec = computeTargetWindowSpec(host, compactState)
+        val compactBaseSpec = computeTargetWindowSpec(host, compactState.copy(leftSatellite = null))
         val expandedSpec = computeTargetWindowSpec(host, expandedState)
         val density = host.resources.displayMetrics.density.coerceAtLeast(1f)
-        val travelPx = (expandedSpec.heightPx - compactSpec.heightPx).coerceAtLeast(160f)
-        val initialFraction = ((heightSpring.value - compactSpec.heightPx) / travelPx)
+        val travelPx = (expandedSpec.heightPx - compactBaseSpec.heightPx).coerceAtLeast(160f)
+        val initialFraction = ((heightSpring.value - compactBaseSpec.heightPx) / travelPx)
             .coerceIn(-0.04f, 1.14f)
 
         val session = ScrubSession(
             compactUiState = compactState,
             compactSpec = compactSpec,
+            compactBaseSpec = compactBaseSpec,
             expandedUiState = expandedState,
             expandedSpec = expandedSpec,
             expandedWidthDp = expandedSpec.widthPx / density,
             expandedHeightDp = expandedSpec.heightPx / density,
             travelPx = travelPx,
             isFingerDown = true,
+            isCollapsing = isFromExpanded,
             expectedCoastVisualState = expandedState.visualState,
         )
         activeScrubSession = session
@@ -844,6 +1269,7 @@ class CapsuleOverlayController @Inject constructor(
                 coordinator.onEvent(CapsuleEvent.UserInteractedInCard)
             }
         } else {
+            skipNextCollapseStaging = true
             if (coordinator.uiState.value.visualState == CapsuleVisualState.STATE3_FULL_EXPANDED) {
                 coordinator.onEvent(CapsuleEvent.CollapseCapsule)
             } else {
@@ -851,7 +1277,15 @@ class CapsuleOverlayController @Inject constructor(
             }
         }
 
-        val targetSpec = if (commitExpanded) session.expandedSpec else session.compactSpec
+        val hideSatUntilSettled = !commitExpanded && session.isCollapsing && session.compactUiState.leftSatellite != null
+        val targetSpec = when {
+            commitExpanded -> session.expandedSpec
+            hideSatUntilSettled -> session.compactBaseSpec
+            else -> session.compactSpec
+        }
+        if (hideSatUntilSettled) {
+            suppressSatelliteStageState.value = true
+        }
         minClampWPx = targetSpec.minWidthPx
         minClampHPx = targetSpec.minHeightPx
 
@@ -876,20 +1310,29 @@ class CapsuleOverlayController @Inject constructor(
         val overFraction = (fraction - 1f).coerceAtLeast(0f)
         val widthT = t
         val blurT = ((t - 0.08f) / 0.65f).coerceIn(0f, 1f)
+        val satThreshold = 0.24f
+        val satLeadT = if (!session.isCollapsing && session.compactUiState.leftSatellite != null) {
+            ((satThreshold - t) / satThreshold).coerceIn(0f, 1f)
+        } else {
+            0f
+        }
         val density = host.resources.displayMetrics.density.coerceAtLeast(1f)
 
-        val baseW = lerp(session.compactSpec.widthPx, session.expandedSpec.widthPx, widthT) + overFraction * 24f
-        val baseH = lerp(session.compactSpec.heightPx, session.expandedSpec.heightPx, t) + overFraction * 140f
-        val targetX = lerp(session.compactSpec.offsetXPx, session.expandedSpec.offsetXPx, widthT)
-        val targetY = lerp(session.compactSpec.topYPx, session.expandedSpec.topYPx, t)
-        val circleCornerNowDp = (min(baseW, baseH) / density) * 0.5f
+        val extraLeadW = session.compactSpec.widthPx - session.compactBaseSpec.widthPx
+        val extraLeadX = session.compactSpec.offsetXPx - session.compactBaseSpec.offsetXPx
+        val mainW = lerp(session.compactBaseSpec.widthPx, session.expandedSpec.widthPx, widthT) + overFraction * 24f
+        val baseW = mainW + satLeadT * extraLeadW
+        val baseH = lerp(session.compactBaseSpec.heightPx, session.expandedSpec.heightPx, t) + overFraction * 140f
+        val targetX = lerp(session.compactBaseSpec.offsetXPx, session.expandedSpec.offsetXPx, widthT) + satLeadT * extraLeadX
+        val targetY = lerp(session.compactBaseSpec.topYPx, session.expandedSpec.topYPx, t)
+        val circleCornerNowDp = (min(mainW, baseH) / density) * 0.5f
         val compactCornerTarget = if (session.compactUiState.visualState == CapsuleVisualState.STATE1_CUTOUT_ANCHOR) {
             circleCornerNowDp
         } else {
-            session.compactSpec.cornerDp
+            session.compactBaseSpec.cornerDp
         }
         val cornerDp = lerp(compactCornerTarget, session.expandedSpec.cornerDp, t)
-        val blurPx = lerp(session.compactSpec.blurRadiusPx, session.expandedSpec.blurRadiusPx, blurT)
+        val blurPx = lerp(session.compactBaseSpec.blurRadiusPx, session.expandedSpec.blurRadiusPx, blurT)
 
         widthSpring.snapTo(baseW.coerceAtLeast(minClampWPx))
         heightSpring.snapTo(baseH.coerceAtLeast(minClampHPx))
@@ -909,12 +1352,33 @@ class CapsuleOverlayController @Inject constructor(
             expandedHeightDp = session.expandedHeightDp,
             currentWidthDp = (widthSpring.value.coerceAtLeast(minClampWPx) / density).coerceAtLeast(1f),
             currentHeightDp = (heightSpring.value.coerceAtLeast(minClampHPx) / density).coerceAtLeast(1f),
+            isCollapsing = session.isCollapsing,
+            satelliteFraction = satLeadT,
+            fromSatellite = session.expandedUiState.isExpandedFromSatellite,
         )
     }
 
     private fun clearScrubState() {
+        val wasCollapsingWithSat = activeScrubSession?.let {
+            it.isCollapsing && it.expectedCoastVisualState != CapsuleVisualState.STATE3_FULL_EXPANDED &&
+                it.compactUiState.leftSatellite != null
+        } == true
         activeScrubSession = null
         scrubPresentationState.value = null
+        if (wasCollapsingWithSat && suppressSatelliteStageState.value) {
+            collapseStageJob?.cancel()
+            collapseStageJob = scope.launch {
+                delay(150L)
+                val finalState = coordinator.uiState.value
+                if (finalState.visualState != CapsuleVisualState.STATE3_FULL_EXPANDED &&
+                    finalState.visualState != CapsuleVisualState.HIDDEN_SYSTEM &&
+                    !finalState.isQsRingOnlyActive
+                ) {
+                    suppressSatelliteStageState.value = false
+                    updateSpringTargets()
+                }
+            }
+        }
     }
 
     private fun lerp(start: Float, end: Float, fraction: Float): Float =
@@ -923,17 +1387,31 @@ class CapsuleOverlayController @Inject constructor(
     private data class ScrubSession(
         val compactUiState: CapsuleUiState,
         val compactSpec: WindowSpec,
+        val compactBaseSpec: WindowSpec,
         val expandedUiState: CapsuleUiState,
         val expandedSpec: WindowSpec,
         val expandedWidthDp: Float,
         val expandedHeightDp: Float,
         val travelPx: Float,
         var isFingerDown: Boolean,
+        val isCollapsing: Boolean,
         var expectedCoastVisualState: CapsuleVisualState,
     )
 
+    private fun setOverlayNotTouchableForQs(window: Window, notTouchable: Boolean) {
+        val currentFlags = window.attributes.flags
+        val isCurrentlyNotTouchable = (currentFlags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE) != 0
+        if (isCurrentlyNotTouchable == notTouchable) return
+        if (notTouchable) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+        }
+    }
+
     private fun setOverlayKeyboardFocus(focused: Boolean) {
         isReplyInputFocused = focused
+        coordinator.onEvent(CapsuleEvent.ReplyFocusChanged(focused))
         val win = activeDialog?.window ?: return
         if (focused) {
             win.clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
@@ -985,7 +1463,7 @@ class CapsuleOverlayController @Inject constructor(
 
     private fun computeTargetWindowSpec(context: Context, state: CapsuleUiState): WindowSpec {
         val density = context.resources.displayMetrics.density.coerceAtLeast(1f)
-        val dpSpec = computeCapsuleLayoutDpSpec(state = state, isHoldingCapsule = isHoldingCapsule)
+        val dpSpec = computeCapsuleLayoutDpSpec(state = state, isHoldingCapsule = isHoldingCapsuleState.value)
         val blurPx = if (state.visualState == CapsuleVisualState.STATE3_FULL_EXPANDED && _isBlurEnabled.value) {
             64f
         } else {
@@ -1020,6 +1498,7 @@ class CapsuleOverlayController @Inject constructor(
 
         coordinator.onEvent(CapsuleEvent.OrientationChanged(isConfigLandscape || isRotatedLandscape))
         coordinator.onEvent(CapsuleEvent.ScreenInactiveChanged(isScreenOffOrAod))
+        coordinator.onEvent(CapsuleEvent.KeyguardLockedChanged(keyguardManager.isKeyguardLocked))
     }
 
     private class SpringAxis {

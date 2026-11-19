@@ -39,6 +39,7 @@ fun CapsuleSlider(
     onValueChange: (Float) -> Unit,
     valueRange: ClosedFloatingPointRange<Float> = 0f..1f,
     steps: Int = 0,
+    enabled: Boolean = true,
     onValueChangeFinished: (() -> Unit)? = null,
     onInteraction: () -> Unit = {},
     colors: SliderColors = SliderDefaults.colors(),
@@ -92,8 +93,10 @@ fun CapsuleSlider(
 
     Slider(
         state = sliderState,
+        enabled = enabled,
         interactionSource = interactionSource,
         onValueChange = { next ->
+            if (!enabled) return@Slider
             sliderState.value = next
             onInteraction()
             val bucket = bucketFor(next)

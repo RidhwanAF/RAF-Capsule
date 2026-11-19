@@ -1,6 +1,8 @@
 package com.raf.capsuleos.data.di
 
+import com.raf.capsuleos.data.hardware.BluetoothRepositoryImpl
 import com.raf.capsuleos.data.hardware.BrightnessRepositoryImpl
+import com.raf.capsuleos.domain.repository.BluetoothRepository
 import com.raf.capsuleos.data.hardware.TorchRepositoryImpl
 import com.raf.capsuleos.data.hardware.VolumeRepositoryImpl
 import com.raf.capsuleos.data.media.MediaSessionRepositoryImpl
@@ -60,4 +62,8 @@ abstract class DataModule {
     @Binds
     @Singleton
     abstract fun bindCapsuleSettingsRepository(impl: CapsuleSettingsRepositoryImpl): CapsuleSettingsRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindBluetoothRepository(impl: BluetoothRepositoryImpl): BluetoothRepository
 }

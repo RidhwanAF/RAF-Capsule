@@ -62,6 +62,7 @@ fun VolumeExpandedContent(
     volume: CapsuleContent.Volume,
     topClearanceDp: Float,
     contentPaddingDp: Float = 18f,
+    interactionsEnabled: Boolean = true,
     onUserInteraction: () -> Unit,
     onSetStreamVolume: (AudioStreamType, Int) -> Unit,
     onSetRingerMode: (RingerModeState) -> Unit,
@@ -154,6 +155,7 @@ fun VolumeExpandedContent(
                         }
                     },
                     valueRange = 0f..max.toFloat(),
+                    enabled = interactionsEnabled,
                     onInteraction = onUserInteraction,
                     colors = SliderDefaults.colors(
                         thumbColor = accent,
@@ -180,6 +182,7 @@ fun VolumeExpandedContent(
                 icon = Icons.Rounded.NotificationsActive,
                 label = stringResource(R.string.label_ringer_normal),
                 accent = accent,
+                enabled = interactionsEnabled,
                 onClick = {
                     onUserInteraction()
                     onSetRingerMode(RingerModeState.NORMAL)
@@ -191,6 +194,7 @@ fun VolumeExpandedContent(
                 icon = Icons.Rounded.Vibration,
                 label = stringResource(R.string.label_ringer_vibrate),
                 accent = accent,
+                enabled = interactionsEnabled,
                 onClick = {
                     onUserInteraction()
                     onSetRingerMode(RingerModeState.VIBRATE)
@@ -202,6 +206,7 @@ fun VolumeExpandedContent(
                 icon = Icons.Rounded.NotificationsOff,
                 label = stringResource(R.string.label_ringer_silent),
                 accent = accent,
+                enabled = interactionsEnabled,
                 onClick = {
                     onUserInteraction()
                     onSetRingerMode(RingerModeState.SILENT)
@@ -219,6 +224,7 @@ private fun RingerModeOptionButton(
     icon: ImageVector,
     label: String,
     accent: Color,
+    enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
     val haptics = LocalHapticFeedback.current
@@ -234,6 +240,7 @@ private fun RingerModeOptionButton(
     )
 
     CapsuleExpressiveSurface(
+        enabled = enabled,
         onClick = {
             haptics.performHapticFeedback(HapticFeedbackType.ToggleOn)
             onClick()

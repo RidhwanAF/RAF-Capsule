@@ -2,13 +2,14 @@ package com.raf.capsuleos.domain.repository
 
 import com.raf.capsuleos.domain.model.CapsuleContent
 import com.raf.capsuleos.domain.model.CapsuleEvent
+import com.raf.capsuleos.domain.model.WeatherSummary
 import kotlinx.coroutines.flow.Flow
 
 /**
- * Contract for observing system-wide battery, charging, live activity, unlock, and alarm events.
+ * Contract for observing system-wide battery, charging, hotspot, live activity, unlock, and alarm events.
  */
 interface SystemEventsRepository {
-    /** Emits battery, live activity, unlock, and alarm events mapped to [CapsuleEvent]. */
+    /** Emits battery, hotspot, live activity, unlock, and alarm events mapped to [CapsuleEvent]. */
     fun observeSystemEvents(): Flow<CapsuleEvent>
 
     /** Returns formatted next alarm time if an alarm is currently scheduled. */
@@ -20,9 +21,12 @@ interface SystemEventsRepository {
     /** Returns current active live activity notification if any. */
     fun currentLiveActivity(): CapsuleContent.LiveActivity?
 
+    /** Returns current mobile hotspot state if detectable. */
+    fun currentHotspotState(): CapsuleContent.Hotspot
+
     /** Emits periodically refreshed At-a-Glance weather summaries (cached / network best-effort). */
-    fun observeWeatherSummary(): kotlinx.coroutines.flow.Flow<com.raf.capsuleos.domain.model.WeatherSummary?>
+    fun observeWeatherSummary(): Flow<WeatherSummary?>
 
     /** Returns the latest cached weather summary if available. */
-    fun currentWeatherSummary(): com.raf.capsuleos.domain.model.WeatherSummary?
+    fun currentWeatherSummary(): WeatherSummary?
 }

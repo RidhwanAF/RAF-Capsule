@@ -10,6 +10,70 @@ enum class CameraAnchorPosition {
     RIGHT,
 }
 
+/** Preferred side for the separated circular status bubble relative to the main capsule. */
+enum class SatellitePosition {
+    LEFT,
+    RIGHT,
+}
+
+/** App UI theme preference applied to Activity screens. */
+enum class AppThemeMode {
+    SYSTEM,
+    LIGHT,
+    DARK,
+}
+
+/** Multi-selectable media glow effects for the State 3 fully expanded media player card. */
+enum class ExpandedMediaGlowEffect {
+    CARD_BORDER_NEURON,
+    OUTER_SCREEN_GLOW,
+    ALBUM_ART_RING,
+}
+
+/** Single-choice ambient media glow mode for Horizontal Expand & Camera Ring compact surfaces. */
+enum class HorizontalMediaGlowStyle {
+    OFF,
+    HORIZONTAL_PILL,
+    CAMERA_RING,
+    ALBUM_ART_RING,
+}
+
+/** Customizable action executed on double-tap or long-hold gestures. */
+enum class CapsuleGestureAction {
+    NONE,
+    EXPAND_CARD,
+    COLLAPSE_CARD,
+    LOCK_SCREEN,
+    TOGGLE_FLASHLIGHT,
+    TOGGLE_MEDIA_PLAY_PAUSE,
+    PEEK_BATTERY,
+    LAUNCH_CUSTOM_APP,
+}
+
+/** Capsule card categories supporting independent double-tap / long-hold gesture overrides. */
+enum class GestureCardTarget {
+    IDLE_RING,
+    MEDIA,
+    FLASHLIGHT,
+    NOTIFICATION,
+    VOLUME,
+}
+
+/**
+ * Bound gesture action and optional custom launch package.
+ * A null [action] in card-specific overrides means "Inherit Global".
+ */
+data class GestureActionBinding(
+    val action: CapsuleGestureAction? = null,
+    val customAppPackage: String? = null,
+)
+
+/** Per-card override configuration for double-tap and long-hold gestures. */
+data class CardGestureConfig(
+    val doubleTap: GestureActionBinding = GestureActionBinding(),
+    val longHold: GestureActionBinding = GestureActionBinding(),
+)
+
 /**
  * Physical camera cutout and status bar dimensions measured in dp from system display insets.
  *
@@ -46,7 +110,7 @@ data class CutoutGeometry(
  * @property expandedContentPaddingDp Inner content padding for expanded State 3 cards in dp.
  * @property hasAutoDetectedCamera Tracks whether initial hardware cutout auto-detection already initialized positioning.
  * @property autoCollapseDelayMs Auto-collapse timeout for transient pills and State 3 card.
- * @property autoHideStatusBarIcons Whether State 3 expanded card hides status bar icons via `icon_blacklist`.
+ * @property hideOnQsOpen When enabled, smoothly collapses expanded pills/cards/satellites down to the battery ring only and disables gestures while Quick Settings is open.
  * @property suppressSystemHeadsUp Suppresses floating system heads-up notification banners so controls remain in Quick Settings shade only (requires `WRITE_SECURE_SETTINGS`).
  */
 data class CapsulePreferences(
@@ -57,27 +121,58 @@ data class CapsulePreferences(
     val horizontalOffsetDp: Float = 0f,
     val expandedContentPaddingDp: Float = 18f,
     val hasAutoDetectedCamera: Boolean = false,
+    val horizontalAutoCollapseDelayMs: Long = 6000L,
     val autoCollapseDelayMs: Long = 4000L,
-    val autoHideStatusBarIcons: Boolean = true,
+    val mediaFollowGlobalAutoCollapse: Boolean = true,
+    val mediaAutoCollapseDelayMs: Long = 15000L,
+    val showOnLockScreen: Boolean = true,
+    val hideOnQsOpen: Boolean = true,
     val suppressSystemHeadsUp: Boolean = true,
+    val enableNeuronGlow: Boolean = true,
+    val enableOuterNeuronGlow: Boolean = true,
+    val expandedMediaGlowEffects: Set<ExpandedMediaGlowEffect> = setOf(
+        ExpandedMediaGlowEffect.CARD_BORDER_NEURON,
+        ExpandedMediaGlowEffect.OUTER_SCREEN_GLOW,
+        ExpandedMediaGlowEffect.ALBUM_ART_RING,
+    ),
+    val horizontalMediaGlowStyle: HorizontalMediaGlowStyle = HorizontalMediaGlowStyle.OFF,
+    val keepExpandedMediaGlowAlways: Boolean = true,
+    val keepOuterMediaGlowAlways: Boolean = true,
+    val showBatteryOnCameraRing: Boolean = true,
+    val enableLeftSatelliteBubble: Boolean = true,
+    val satellitePosition: SatellitePosition = SatellitePosition.LEFT,
+    val showTorchInSatellite: Boolean = true,
+    val showHotspotInSatellite: Boolean = true,
+    val showLiveActivityInSatellite: Boolean = true,
+    val showAirplaneInSatellite: Boolean = true,
+    val showDndInSatellite: Boolean = true,
+    val showBatterySaverInSatellite: Boolean = true,
+    val showVpnInSatellite: Boolean = true,
+    val showRingerMutedInSatellite: Boolean = true,
+    val showDataSaverInSatellite: Boolean = true,
+    val enableBluetoothAlerts: Boolean = true,
+    val enableCallAutoExpand: Boolean = true,
+    val globalDoubleTapAction: CapsuleGestureAction = CapsuleGestureAction.LOCK_SCREEN,
+    val globalDoubleTapAppPackage: String? = null,
+    val globalLongHoldAction: CapsuleGestureAction = CapsuleGestureAction.EXPAND_CARD,
+    val globalLongHoldAppPackage: String? = null,
+    val cardGestures: Map<GestureCardTarget, CardGestureConfig> = emptyMap(),
+    val appThemeMode: AppThemeMode = AppThemeMode.SYSTEM,
+    val useDynamicColor: Boolean = true,
 )
 
 /**
  * Complete reactive UI state emitted by [com.raf.capsuleos.domain.coordinator.IslandStateCoordinator].
- *
- * @property visualState Current visual stage of the 3-state capsule.
- * @property content Active domain content rendered in the capsule.
- * @property manualSwipeSeq Monotonic counter incremented only on explicit horizontal swipe gestures.
- * @property batteryPercent Live battery percentage (0..100) rendered on the 1:1 camera ring.
- * @property isCharging True while the device is charging.
- * @property isNeuralPulseActive Whether the Gemini-style neural dot/border pulse is boosted.
- * @property swipeDirection Horizontal slide animation direction (`-1` or `1`) for content carousel.
- * @property cutout Physical camera cutout and status bar geometry measured on the device.
- * @property preferences Active capsule tuning and behavior settings.
  */
 data class CapsuleUiState(
     val visualState: CapsuleVisualState = CapsuleVisualState.STATE1_CUTOUT_ANCHOR,
     val content: CapsuleContent = CapsuleContent.Idle,
+    val leftSatellite: CapsuleContent.LeftSatelliteItem? = null,
+    val satelliteSwipeSeq: Int = 0,
+    val satelliteSwipeDirection: Int = 1,
+    val satelliteJiggleSeq: Int = 0,
+    val mediaSessions: List<CapsuleContent.Media> = emptyList(),
+    val selectedMediaIndex: Int = 0,
     val manualSwipeSeq: Int = 0,
     val swipeJiggleSeq: Int = 0,
     val batteryPercent: Int = 85,
@@ -85,6 +180,10 @@ data class CapsuleUiState(
     val isNeuralPulseActive: Boolean = false,
     val isCollapseWaveActive: Boolean = false,
     val isRingGlowActive: Boolean = false,
+    val isExpandedFromSatellite: Boolean = false,
+    val isSatelliteGlowActive: Boolean = false,
+    val isQsOpen: Boolean = false,
+    val isKeyguardLocked: Boolean = false,
     val swipeDirection: Int = 1,
     val cutout: CutoutGeometry = CutoutGeometry(),
     val preferences: CapsulePreferences = CapsulePreferences(),
@@ -146,13 +245,54 @@ data class CapsuleUiState(
                 .coerceAtLeast(0f)
         }
 
-    /** True when status bar icons should be hidden (only while State 3 expanded card overlaps top bar). */
-    val shouldHideStatusBarIcons: Boolean
-        get() = !preferences.belowStatusBar &&
-            preferences.autoHideStatusBarIcons &&
-            visualState == CapsuleVisualState.STATE3_FULL_EXPANDED
+    /**
+     * True when Quick Settings is open with [CapsulePreferences.hideOnQsOpen], OR the device is on
+     * the lock screen with [CapsulePreferences.showOnLockScreen] disabled, restricting the capsule
+     * to the battery camera ring only and disabling gestures.
+     */
+    val isQsRingOnlyActive: Boolean
+        get() = (preferences.hideOnQsOpen && isQsOpen) || (!preferences.showOnLockScreen && isKeyguardLocked)
 
     /** True when active media, torch, live activity, or charging data is present. */
     val hasExpandableContent: Boolean
         get() = content !is CapsuleContent.Idle
+
+    /** True when the separated left circular satellite bubble has an active indicator. */
+    val hasLeftSatellite: Boolean
+        get() = leftSatellite != null
+
+    /** Resolves the effective double-tap binding for [target], falling back to the global binding when Inherit Global is selected. */
+    fun resolveEffectiveDoubleTap(target: GestureCardTarget = gestureTargetForContent()): GestureActionBinding {
+        val override = preferences.cardGestures[target]?.doubleTap
+        return if (override?.action != null) {
+            override
+        } else {
+            GestureActionBinding(
+                action = preferences.globalDoubleTapAction,
+                customAppPackage = preferences.globalDoubleTapAppPackage,
+            )
+        }
+    }
+
+    /** Resolves the effective long-hold binding for [target], falling back to the global binding when Inherit Global is selected. */
+    fun resolveEffectiveLongHold(target: GestureCardTarget = gestureTargetForContent()): GestureActionBinding {
+        val override = preferences.cardGestures[target]?.longHold
+        return if (override?.action != null) {
+            override
+        } else {
+            GestureActionBinding(
+                action = preferences.globalLongHoldAction,
+                customAppPackage = preferences.globalLongHoldAppPackage,
+            )
+        }
+    }
+
+    /** Maps [targetContent] to the corresponding [GestureCardTarget] for customizable gestures. */
+    fun gestureTargetForContent(targetContent: CapsuleContent = content): GestureCardTarget = when (targetContent) {
+        is CapsuleContent.Media -> GestureCardTarget.MEDIA
+        is CapsuleContent.Torch -> GestureCardTarget.FLASHLIGHT
+        is CapsuleContent.NotificationAlert -> GestureCardTarget.NOTIFICATION
+        is CapsuleContent.Volume -> GestureCardTarget.VOLUME
+        else -> GestureCardTarget.IDLE_RING
+    }
 }

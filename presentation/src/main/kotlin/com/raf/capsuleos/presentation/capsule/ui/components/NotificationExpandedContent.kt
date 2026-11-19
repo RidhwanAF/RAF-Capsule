@@ -1,9 +1,15 @@
 package com.raf.capsuleos.presentation.capsule.ui.components
 
 import android.graphics.BitmapFactory
+import android.graphics.ImageDecoder
+import android.graphics.drawable.AnimatedImageDrawable
+import android.graphics.drawable.BitmapDrawable
+import android.widget.ImageView
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -14,14 +20,17 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.automirrored.rounded.Reply
@@ -34,6 +43,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,22 +53,27 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.dismiss
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import com.raf.capsuleos.domain.model.CapsuleContent
 import com.raf.capsuleos.presentation.R
 import com.raf.capsuleos.presentation.common.CapsuleExpressiveSurface
 import com.raf.capsuleos.presentation.common.rememberCapsuleHaptics
+import java.nio.ByteBuffer
 
 /**
  * State 3 expanded notification card displaying shared icon & title, body text,
@@ -117,11 +132,19 @@ fun NotificationExpandedContent(
         }
     }
 
+    val dismissAccessibilityLabel = stringResource(R.string.desc_dismiss_notification)
+
     with(sharedTransitionScope) {
         Column(
             verticalArrangement = Arrangement.SpaceBetween,
             modifier = modifier
                 .fillMaxSize()
+                .semantics {
+                    dismiss(label = dismissAccessibilityLabel) {
+                        onDismissNotification()
+                        true
+                    }
+                }
                 .padding(
                     start = contentPaddingDp.dp,
                     end = contentPaddingDp.dp,
@@ -131,100 +154,185 @@ fun NotificationExpandedContent(
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .sharedElement(
-                                sharedContentState = rememberSharedContentState(key = "capsule_icon"),
-                                animatedVisibilityScope = animatedVisibilityScope,
-                                boundsTransform = { _, _ -> spring(dampingRatio = 0.86f, stiffness = 420f) },
-                            )
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(primary.copy(alpha = 0.2f)),
-                    ) {
-                        if (iconBitmap != null) {
-                            Image(
-                                bitmap = iconBitmap,
-                                contentDescription = notification.appName,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize(),
-                            )
-                        } else {
-                            Icon(
-                                imageVector = Icons.Rounded.Notifications,
-                                contentDescription = notification.appName,
-                                tint = primary,
-                                modifier = Modifier.size(22.dp),
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.width(12.dp))
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = notification.appName,
-                            color = primary,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .sharedElement(
+                            sharedContentState = rememberSharedContentState(key = "capsule_icon"),
+                            animatedVisibilityScope = animatedVisibilityScope,
+                            boundsTransform = { _, _ -> spring(dampingRatio = 0.86f, stiffness = 420f) },
                         )
-                        Text(
-                            text = notification.title,
-                            color = Color.White,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.sharedElement(
-                                sharedContentState = rememberSharedContentState(key = "capsule_title"),
-                                animatedVisibilityScope = animatedVisibilityScope,
-                                boundsTransform = { _, _ -> spring(dampingRatio = 0.86f, stiffness = 420f) },
-                            ),
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(primary.copy(alpha = 0.2f)),
+                ) {
+                    if (iconBitmap != null) {
+                        Image(
+                            bitmap = iconBitmap,
+                            contentDescription = notification.appName,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Rounded.Notifications,
+                            contentDescription = notification.appName,
+                            tint = primary,
+                            modifier = Modifier.size(22.dp),
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(12.dp))
 
-                CapsuleExpressiveSurface(
-                    onClick = {
-                        haptics.click()
-                        onDismissNotification()
-                    },
-                    restCornerDp = 16f,
-                    pressedCornerDp = 8f,
-                    backgroundColor = Color.White.copy(alpha = 0.12f),
-                    modifier = Modifier.size(32.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Close,
-                        contentDescription = stringResource(R.string.desc_dismiss_notification),
-                        tint = Color.White.copy(alpha = 0.85f),
-                        modifier = Modifier.size(16.dp),
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = notification.appName,
+                        color = primary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = notification.title,
+                        color = Color.White,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.sharedElement(
+                            sharedContentState = rememberSharedContentState(key = "capsule_title"),
+                            animatedVisibilityScope = animatedVisibilityScope,
+                            boundsTransform = { _, _ -> spring(dampingRatio = 0.86f, stiffness = 420f) },
+                        ),
                     )
                 }
             }
 
-            if (notification.text.isNotBlank()) {
-                Text(
-                    text = notification.text,
-                    color = Color.White.copy(alpha = 0.85f),
-                    fontSize = 13.sp,
-                    lineHeight = 18.sp,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.fillMaxWidth(),
+            if (notification.text.isNotBlank() || notification.attachmentImageBytes != null) {
+                val bodyScrollState = rememberScrollState()
+                val canScrollUp by remember {
+                    derivedStateOf { bodyScrollState.canScrollBackward }
+                }
+                val canScrollDown by remember {
+                    derivedStateOf { bodyScrollState.canScrollForward }
+                }
+                val topEdgeAlpha by animateFloatAsState(
+                    targetValue = if (canScrollUp) 1f else 0f,
+                    animationSpec = tween(durationMillis = 180),
+                    label = "notifTopScrollFade",
                 )
+                val bottomEdgeAlpha by animateFloatAsState(
+                    targetValue = if (canScrollDown) 1f else 0f,
+                    animationSpec = tween(durationMillis = 180),
+                    label = "notifBottomScrollFade",
+                )
+                LaunchedEffect(bodyScrollState.isScrollInProgress) {
+                    if (bodyScrollState.isScrollInProgress) {
+                        onUserInteraction()
+                    }
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .padding(vertical = 4.dp),
+                ) {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(bodyScrollState)
+                            .padding(vertical = 6.dp),
+                    ) {
+                        if (notification.text.isNotBlank()) {
+                            Text(
+                                text = notification.text,
+                                color = Color.White.copy(alpha = 0.9f),
+                                fontSize = 13.sp,
+                                lineHeight = 18.sp,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                        val attachmentBytes = notification.attachmentImageBytes
+                        if (attachmentBytes != null) {
+                            NotificationAttachmentPreview(
+                                attachmentBytes = attachmentBytes,
+                                contentDescription = stringResource(R.string.desc_notification_attachment),
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    }
+
+                    if (topEdgeAlpha > 0.01f) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .fillMaxWidth()
+                                .height(20.dp)
+                                .background(
+                                    Brush.verticalGradient(
+                                        colors = listOf(
+                                            primary.copy(alpha = 0.26f * topEdgeAlpha),
+                                            Color.Transparent,
+                                        ),
+                                    ),
+                                ),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .fillMaxWidth()
+                                    .height(1.dp)
+                                    .background(
+                                        Brush.horizontalGradient(
+                                            colors = listOf(
+                                                Color.Transparent,
+                                                primary.copy(alpha = 0.85f * topEdgeAlpha),
+                                                Color.Transparent,
+                                            ),
+                                        ),
+                                    ),
+                            )
+                        }
+                    }
+
+                    if (bottomEdgeAlpha > 0.01f) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .fillMaxWidth()
+                                .height(20.dp)
+                                .background(
+                                    Brush.verticalGradient(
+                                        colors = listOf(
+                                            Color.Transparent,
+                                            primary.copy(alpha = 0.26f * bottomEdgeAlpha),
+                                        ),
+                                    ),
+                                ),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .fillMaxWidth()
+                                    .height(1.dp)
+                                    .background(
+                                        Brush.horizontalGradient(
+                                            colors = listOf(
+                                                Color.Transparent,
+                                                primary.copy(alpha = 0.85f * bottomEdgeAlpha),
+                                                Color.Transparent,
+                                            ),
+                                        ),
+                                    ),
+                            )
+                        }
+                    }
+                }
             } else {
                 Spacer(modifier = Modifier.height(4.dp))
             }
@@ -361,6 +469,77 @@ fun NotificationExpandedContent(
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * Renders an inline notification attachment (photo, sticker, or animated GIF/WebP) decoded via
+ * Android's native `ImageDecoder`, preserving animation playback for `AnimatedImageDrawable`.
+ */
+@Composable
+private fun NotificationAttachmentPreview(
+    modifier: Modifier = Modifier,
+    attachmentBytes: ByteArray,
+    contentDescription: String,
+) {
+    val decodedDrawable = remember(attachmentBytes) {
+        runCatching {
+            ImageDecoder.decodeDrawable(ImageDecoder.createSource(ByteBuffer.wrap(attachmentBytes)))
+        }.getOrNull()
+    }
+    val fallbackBitmap = remember(attachmentBytes, decodedDrawable) {
+        when (decodedDrawable) {
+            is AnimatedImageDrawable -> null
+            is BitmapDrawable -> decodedDrawable.bitmap.asImageBitmap()
+            else -> BitmapFactory.decodeByteArray(attachmentBytes, 0, attachmentBytes.size)?.asImageBitmap()
+        }
+    }
+
+    if (decodedDrawable is AnimatedImageDrawable) {
+        DisposableEffect(decodedDrawable) {
+            decodedDrawable.start()
+            onDispose {
+                decodedDrawable.stop()
+            }
+        }
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = modifier
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color.White.copy(alpha = 0.06f)),
+        ) {
+            AndroidView(
+                factory = { context ->
+                    ImageView(context).apply {
+                        scaleType = ImageView.ScaleType.FIT_CENTER
+                        adjustViewBounds = true
+                    }
+                },
+                update = { imageView ->
+                    imageView.contentDescription = contentDescription
+                    imageView.setImageDrawable(decodedDrawable)
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 64.dp, max = 132.dp),
+            )
+        }
+    } else if (fallbackBitmap != null) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = modifier
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color.White.copy(alpha = 0.06f)),
+        ) {
+            Image(
+                bitmap = fallbackBitmap,
+                contentDescription = contentDescription,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 132.dp),
+            )
         }
     }
 }

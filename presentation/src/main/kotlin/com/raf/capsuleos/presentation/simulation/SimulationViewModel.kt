@@ -6,10 +6,16 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.raf.capsuleos.domain.coordinator.IslandStateCoordinator
 import com.raf.capsuleos.domain.model.AudioStreamType
+import com.raf.capsuleos.domain.model.BluetoothDeviceCategory
 import com.raf.capsuleos.domain.model.BrightnessInfo
 import com.raf.capsuleos.domain.model.CapsuleContent
+import com.raf.capsuleos.domain.model.CapsuleEffect
 import com.raf.capsuleos.domain.model.CapsuleEvent
 import com.raf.capsuleos.domain.model.CapsulePreferences
+import com.raf.capsuleos.domain.model.CapsuleVisualState
+import com.raf.capsuleos.domain.model.HorizontalMediaGlowStyle
+import com.raf.capsuleos.domain.model.LrcLyricsParser
+import com.raf.capsuleos.domain.model.MediaOutputKind
 import com.raf.capsuleos.domain.model.RingerModeState
 import com.raf.capsuleos.domain.model.StreamVolumeInfo
 import com.raf.capsuleos.domain.model.UnlockMethod
@@ -17,8 +23,10 @@ import com.raf.capsuleos.domain.model.WeatherConditionKind
 import com.raf.capsuleos.domain.model.WeatherSummary
 import com.raf.capsuleos.domain.repository.CapsuleSettingsRepository
 import com.raf.capsuleos.presentation.capsule.service.CutoutGeometryResolver
+import com.raf.capsuleos.presentation.navigation.CustomizationSection
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -63,6 +71,23 @@ class SimulationViewModel @Inject constructor(
     )
     private var sandboxAlarmLabel: String? = "07:00"
     private var sandboxNotificationCount = 0
+    private val sandboxLyricsMidnight = LrcLyricsParser.parse(
+        """
+        [00:00.00]Waiting in a car
+        [00:15.00]Waiting for a ride in the dark
+        [00:30.00]The night city grows
+        [00:40.00]Look at the horizon glow
+        [00:48.00]Waiting in a car
+        [00:58.00]Waiting for a ride in the dark
+        [01:10.00]Drinking in the lounge
+        [01:22.00]Following the neon signs
+        [01:35.00]Waiting for a word
+        [01:48.00]Looking at the milky skyline
+        [02:02.00]The city is my church
+        [02:18.00]It wraps me in the sparkling twilight
+        """.trimIndent(),
+    )
+
     private var sandboxMedia: CapsuleContent.Media? = CapsuleContent.Media(
         packageName = "com.raf.sandbox.music",
         title = "Midnight City (Sandbox)",
@@ -73,7 +98,16 @@ class SimulationViewModel @Inject constructor(
         artworkBytes = null,
         primaryColorArgb = 0xFF6C5CE7.toInt(),
         secondaryColorArgb = 0xFF00CEC9.toInt(),
+        sessionTokenKey = "sandbox:music:1",
+        audioOutputLabel = "Pixel Buds Pro",
+        audioOutputKind = MediaOutputKind.BLUETOOTH,
+        lyrics = sandboxLyricsMidnight,
     )
+    private var sandboxMediaList: List<CapsuleContent.Media> = listOfNotNull(sandboxMedia)
+    private var sandboxHotspot = CapsuleContent.Hotspot(isEnabled = false)
+    private var sandboxLiveActivity: CapsuleContent.LiveActivity? = null
+    private var sandboxBluetooth: CapsuleContent.BluetoothDevice? = null
+    private var sandboxCall: CapsuleContent.CallAlert? = null
     private var notifCounter = 0
 
     private val simMetaState = MutableStateFlow(SandboxMeta())
@@ -122,8 +156,8 @@ class SimulationViewModel @Inject constructor(
     )
 
     init {
-        val detected = CutoutGeometryResolver.detect(context)
-        sandboxCoordinator.updateCutoutGeometry(detected.geometry)
+        val previewGeometry = CutoutGeometryResolver.detectForPortraitPreview(context)
+        sandboxCoordinator.updateCutoutGeometry(previewGeometry)
 
         viewModelScope.launch {
             settingsRepository.observePreferences().collect { prefs ->
@@ -134,18 +168,50 @@ class SimulationViewModel @Inject constructor(
         // Seed sandbox with battery, brightness, volume, and media track
         sandboxCoordinator.onEvent(CapsuleEvent.BatteryUpdated(sandboxBatteryPercent, sandboxCharging))
         sandboxCoordinator.onEvent(CapsuleEvent.BrightnessChanged(sandboxBrightness))
+        sandboxCoordinator.onEvent(CapsuleEvent.MediaSessionsUpdated(sandboxMediaList))
         sandboxCoordinator.onEvent(CapsuleEvent.MediaUpdated(sandboxMedia))
         simMetaState.value = simMetaState.value.copy(isMediaPlaying = true)
 
         viewModelScope.launch {
+            sandboxCoordinator.effects.collect { effect ->
+                when (effect) {
+                    CapsuleEffect.LockScreen -> triggerSandboxLockScreen("Configured gesture")
+                    CapsuleEffect.OpenNotificationShade -> recordSandboxAction("Sandbox Open Notification Shade")
+                    CapsuleEffect.ToggleTorch -> setTorchEnabled(!sandboxTorch.isEnabled)
+                    CapsuleEffect.ToggleMediaPlayPause -> toggleMediaPlaying()
+                    is CapsuleEffect.SwitchMediaSession -> {
+                        val matched = sandboxMediaList.firstOrNull { it.sessionTokenKey == effect.sessionTokenKey }
+                        if (matched != null) {
+                            sandboxMedia = matched
+                            recordSandboxAction("Sandbox Switched Media -> ${matched.title}")
+                        }
+                    }
+                    is CapsuleEffect.LaunchApp -> {
+                        recordSandboxAction("Sandbox Launch App (${effect.packageName})")
+                    }
+                }
+            }
+        }
+
+        viewModelScope.launch {
             while (true) {
                 delay(500.milliseconds)
-                val active = sandboxMedia
-                if (active != null && active.isPlaying) {
-                    val nextPos = if (active.positionMs + 500L >= active.durationMs) 0L else active.positionMs + 500L
-                    val updated = active.copy(positionMs = nextPos)
-                    sandboxMedia = updated
-                    sandboxCoordinator.onEvent(CapsuleEvent.MediaUpdated(updated))
+                val updatedList = sandboxMediaList.map { session ->
+                    if (session.isPlaying) {
+                        val nextPos = if (session.positionMs + 500L >= session.durationMs) 0L else session.positionMs + 500L
+                        session.copy(positionMs = nextPos)
+                    } else {
+                        session
+                    }
+                }
+                if (updatedList != sandboxMediaList) {
+                    sandboxMediaList = updatedList
+                    val active = updatedList.firstOrNull { it.sessionTokenKey == sandboxMedia?.sessionTokenKey }
+                        ?: updatedList.firstOrNull { it.isPlaying }
+                        ?: updatedList.firstOrNull()
+                    sandboxMedia = active
+                    sandboxCoordinator.onEvent(CapsuleEvent.MediaSessionsUpdated(updatedList))
+                    sandboxCoordinator.onEvent(CapsuleEvent.MediaUpdated(active))
                 }
             }
         }
@@ -246,8 +312,10 @@ class SimulationViewModel @Inject constructor(
         sandboxCoordinator.onEvent(CapsuleEvent.BrightnessChanged(sandboxBrightness))
     }
 
-    fun toggleMediaPlaying() {
-        val existing = sandboxMedia
+    fun toggleMediaPlaying(tokenKey: String? = null) {
+        val targetKey = tokenKey?.takeIf { it.isNotBlank() }
+        val existing = targetKey?.let { key -> sandboxMediaList.firstOrNull { it.sessionTokenKey == key } }
+            ?: sandboxMedia
         if (existing == null) {
             val fresh = CapsuleContent.Media(
                 packageName = "com.raf.sandbox.music",
@@ -259,8 +327,14 @@ class SimulationViewModel @Inject constructor(
                 artworkBytes = null,
                 primaryColorArgb = 0xFF6C5CE7.toInt(),
                 secondaryColorArgb = 0xFF00CEC9.toInt(),
+                sessionTokenKey = "sandbox:music:1",
+                audioOutputLabel = "Pixel Buds Pro",
+                audioOutputKind = MediaOutputKind.BLUETOOTH,
+                lyrics = sandboxLyricsMidnight,
             )
             sandboxMedia = fresh
+            sandboxMediaList = listOf(fresh)
+            sandboxCoordinator.onEvent(CapsuleEvent.MediaSessionsUpdated(sandboxMediaList))
             sandboxCoordinator.onEvent(CapsuleEvent.MediaUpdated(fresh))
             simMetaState.value = simMetaState.value.copy(
                 isMediaPlaying = true,
@@ -269,26 +343,79 @@ class SimulationViewModel @Inject constructor(
         } else {
             val toggled = existing.copy(isPlaying = !existing.isPlaying)
             sandboxMedia = toggled
+            sandboxMediaList = sandboxMediaList.map { if (it.sessionTokenKey == toggled.sessionTokenKey) toggled else it }
+            sandboxCoordinator.onEvent(CapsuleEvent.MediaSessionsUpdated(sandboxMediaList))
             sandboxCoordinator.onEvent(CapsuleEvent.MediaUpdated(toggled))
             simMetaState.value = simMetaState.value.copy(
                 isMediaPlaying = toggled.isPlaying,
-                latestLog = "Sandbox Media -> ${if (toggled.isPlaying) "Playing" else "Paused"}",
+                latestLog = "Sandbox Media -> ${if (toggled.isPlaying) "Playing" else "Paused"} (${toggled.title})",
             )
         }
     }
 
-    fun skipTrack(delta: Int) {
+    fun toggleMultiMediaSimulation() {
+        val second = CapsuleContent.Media(
+            packageName = "com.raf.sandbox.youtube",
+            title = "Levitating (Live Studio)",
+            artist = "Dua Lipa",
+            isPlaying = false,
+            positionMs = 64_000L,
+            durationMs = 203_000L,
+            artworkBytes = null,
+            primaryColorArgb = 0xFFE84393.toInt(),
+            secondaryColorArgb = 0xFFFD79A8.toInt(),
+            sessionTokenKey = "sandbox:video:2",
+            audioOutputLabel = "Speaker",
+            audioOutputKind = MediaOutputKind.SPEAKER,
+        )
+        if (sandboxMediaList.size > 1) {
+            sandboxMediaList = listOfNotNull(sandboxMediaList.firstOrNull())
+            sandboxCoordinator.onEvent(CapsuleEvent.MediaSessionsUpdated(sandboxMediaList))
+            recordSandboxAction("Sandbox Multi-Media -> 1 player active")
+        } else {
+            val first = sandboxMedia ?: CapsuleContent.Media(
+                packageName = "com.raf.sandbox.music",
+                title = "Midnight City (Sandbox)",
+                artist = "M83",
+                isPlaying = true,
+                positionMs = 42_000L,
+                durationMs = 243_000L,
+                artworkBytes = null,
+                primaryColorArgb = 0xFF6C5CE7.toInt(),
+                secondaryColorArgb = 0xFF00CEC9.toInt(),
+                sessionTokenKey = "sandbox:music:1",
+                audioOutputLabel = "Pixel Buds Pro",
+                audioOutputKind = MediaOutputKind.BLUETOOTH,
+                lyrics = sandboxLyricsMidnight,
+            )
+            sandboxMedia = first
+            sandboxMediaList = listOf(first, second)
+            sandboxCoordinator.onEvent(CapsuleEvent.MediaSessionsUpdated(sandboxMediaList))
+            sandboxCoordinator.onEvent(CapsuleEvent.MediaUpdated(first))
+            recordSandboxAction("Sandbox Multi-Media -> 2 players active (swipe horizontally on expanded card)")
+        }
+    }
+
+    fun selectMediaSession(index: Int) {
+        sandboxCoordinator.onEvent(CapsuleEvent.SelectMediaSession(index))
+    }
+
+    fun skipTrack(delta: Int, tokenKey: String? = null) {
         val tracks = listOf(
             "Midnight City (Sandbox)" to "M83",
             "Resonance (Sandbox)" to "HOME",
             "Starlight (Sandbox)" to "Muse",
         )
-        val current = sandboxMedia ?: return
+        val current = tokenKey?.takeIf { it.isNotBlank() }?.let { key ->
+            sandboxMediaList.firstOrNull { it.sessionTokenKey == key }
+        } ?: sandboxMedia ?: return
         val idx = tracks.indexOfFirst { it.first == current.title }.coerceAtLeast(0)
         val nextIdx = Math.floorMod(idx + delta, tracks.size)
         val (title, artist) = tracks[nextIdx]
         val updated = current.copy(title = title, artist = artist, positionMs = 0L, isPlaying = true)
         sandboxMedia = updated
+        sandboxMediaList = sandboxMediaList.map { if (it.sessionTokenKey == updated.sessionTokenKey) updated else it }
+        sandboxCoordinator.onEvent(CapsuleEvent.MediaSessionsUpdated(sandboxMediaList))
         sandboxCoordinator.onEvent(CapsuleEvent.MediaUpdated(updated))
         simMetaState.value = simMetaState.value.copy(
             isMediaPlaying = true,
@@ -296,10 +423,14 @@ class SimulationViewModel @Inject constructor(
         )
     }
 
-    fun seekMediaTo(positionMs: Long) {
-        val current = sandboxMedia ?: return
+    fun seekMediaTo(positionMs: Long, tokenKey: String? = null) {
+        val current = tokenKey?.takeIf { it.isNotBlank() }?.let { key ->
+            sandboxMediaList.firstOrNull { it.sessionTokenKey == key }
+        } ?: sandboxMedia ?: return
         val updated = current.copy(positionMs = positionMs.coerceIn(0L, current.durationMs))
         sandboxMedia = updated
+        sandboxMediaList = sandboxMediaList.map { if (it.sessionTokenKey == updated.sessionTokenKey) updated else it }
+        sandboxCoordinator.onEvent(CapsuleEvent.MediaSessionsUpdated(sandboxMediaList))
         sandboxCoordinator.onEvent(CapsuleEvent.MediaUpdated(updated))
     }
 
@@ -307,7 +438,11 @@ class SimulationViewModel @Inject constructor(
         notifCounter += 1
         sandboxNotificationCount += 1
         val samples = listOf(
-            Triple("WhatsApp", "Alex", "Meeting moved to 14:30 — join when ready!"),
+            Triple(
+                "WhatsApp",
+                "Alex",
+                "Meeting moved to 14:30 — join when ready!\n\nAgenda items:\n1. Review capsule spring choreography & gesture polish\n2. Verify synced lyrics and scrollable notification body\n3. Check inline notification image, GIF, and sticker rendering\n4. Test lock screen battery ring behavior on unlock\n5. Confirm right/left separated status bubble placement\n6. Validate scrollable top and bottom gradient indicators\n7. Final sign-off before release deployment tonight.",
+            ),
             Triple("Messages", "Sam", "Dinner tonight at 7?"),
             Triple("Slack", "Release CI", "Tag v1.0.0 release artifact verified"),
         )
@@ -335,6 +470,7 @@ class SimulationViewModel @Inject constructor(
                 ),
             ),
         )
+        sandboxCoordinator.onEvent(CapsuleEvent.ActiveNotificationCountUpdated(sandboxNotificationCount))
         sandboxCoordinator.onEvent(CapsuleEvent.NotificationPosted(alert))
         simMetaState.value = simMetaState.value.copy(
             latestLog = "Sandbox Notification #$notifCounter ($app) posted",
@@ -359,6 +495,7 @@ class SimulationViewModel @Inject constructor(
 
     fun dismissSandboxNotification(alert: CapsuleContent.NotificationAlert) {
         sandboxNotificationCount = (sandboxNotificationCount - 1).coerceAtLeast(0)
+        sandboxCoordinator.onEvent(CapsuleEvent.ActiveNotificationCountUpdated(sandboxNotificationCount))
         sandboxCoordinator.onEvent(CapsuleEvent.NotificationRemoved(alert.key))
         simMetaState.value = simMetaState.value.copy(
             latestLog = "Sandbox Notification dismissed (${alert.appName})",
@@ -391,7 +528,7 @@ class SimulationViewModel @Inject constructor(
         sandboxCoordinator.onEvent(
             CapsuleEvent.DeviceUnlocked(
                 CapsuleContent.Unlock(
-                    unlockMethod = UnlockMethod.FINGERPRINT,
+                    unlockMethod = UnlockMethod.GENERIC,
                     nextAlarmLabel = sandboxAlarmLabel,
                 ),
             ),
@@ -416,9 +553,21 @@ class SimulationViewModel @Inject constructor(
 
     fun resetToIdleRing() {
         sandboxMedia = null
+        sandboxMediaList = emptyList()
         sandboxTorch = sandboxTorch.copy(isEnabled = false)
+        sandboxHotspot = CapsuleContent.Hotspot(isEnabled = false)
+        sandboxLiveActivity = null
+        sandboxBluetooth = null
+        sandboxCall = null
         sandboxCharging = false
+        sandboxNotificationCount = 0
+        sandboxCoordinator.onEvent(CapsuleEvent.ActiveNotificationCountUpdated(0))
+        sandboxCoordinator.onEvent(CapsuleEvent.CallUpdated(null))
+        sandboxCoordinator.onEvent(CapsuleEvent.BluetoothDeviceUpdated(null))
+        sandboxCoordinator.onEvent(CapsuleEvent.LiveActivityUpdated(null))
+        sandboxCoordinator.onEvent(CapsuleEvent.HotspotUpdated(sandboxHotspot))
         sandboxCoordinator.onEvent(CapsuleEvent.TorchUpdated(sandboxTorch))
+        sandboxCoordinator.onEvent(CapsuleEvent.MediaSessionsUpdated(emptyList()))
         sandboxCoordinator.onEvent(CapsuleEvent.MediaUpdated(null))
         sandboxCoordinator.onEvent(CapsuleEvent.BatteryUpdated(sandboxBatteryPercent, false))
         sandboxCoordinator.onEvent(CapsuleEvent.CollapseCapsule)
@@ -430,8 +579,273 @@ class SimulationViewModel @Inject constructor(
         )
     }
 
+    fun triggerMockBluetooth() {
+        val next = if (sandboxBluetooth == null) {
+            CapsuleContent.BluetoothDevice(
+                name = "Pixel Buds Pro",
+                address = "00:11:22:33:44:55",
+                batteryPercent = 84,
+                category = BluetoothDeviceCategory.HEADPHONES,
+                isConnected = true,
+            )
+        } else {
+            null
+        }
+        sandboxBluetooth = next
+        sandboxCoordinator.onEvent(CapsuleEvent.BluetoothDeviceUpdated(next))
+        recordSandboxAction(
+            if (next != null) "Sandbox Bluetooth connected: ${next.name} (${next.batteryPercent}%)"
+            else "Sandbox Bluetooth disconnected",
+        )
+    }
+
+    fun toggleMockHotspot() {
+        val next = !sandboxHotspot.isEnabled
+        sandboxHotspot = CapsuleContent.Hotspot(
+            isEnabled = next,
+            connectedClients = if (next) 2 else 0,
+            ssid = "Raf Pixel Hotspot",
+        )
+        sandboxCoordinator.onEvent(CapsuleEvent.HotspotUpdated(sandboxHotspot))
+        recordSandboxAction("Sandbox Hotspot -> ${if (next) "ON (Left Satellite)" else "OFF"}")
+    }
+
+    fun toggleMockLiveActivity() {
+        val next = if (sandboxLiveActivity == null) {
+            CapsuleContent.LiveActivity(
+                key = "sandbox:live:timer",
+                title = "Kitchen Timer",
+                statusText = "04:12",
+                subtitle = "Pasta timer • Running in background",
+                packageName = context.packageName,
+                showChronometer = true,
+                chronometerBaseEpochMs = System.currentTimeMillis() + 252_000L,
+                isCountdown = true,
+            )
+        } else {
+            null
+        }
+        sandboxLiveActivity = next
+        sandboxCoordinator.onEvent(CapsuleEvent.LiveActivityUpdated(next))
+        recordSandboxAction(
+            if (next != null) "Sandbox Live Activity -> ${next.title} (${next.statusText})"
+            else "Sandbox Live Activity cleared",
+        )
+    }
+
+    fun triggerMockCall() {
+        val next = if (sandboxCall == null) {
+            CapsuleContent.CallAlert(
+                key = "sandbox:call:1",
+                callerName = "Alex Mercer",
+                callStatus = "Incoming call • HD Voice",
+                packageName = "com.google.android.dialer",
+                appName = "Phone",
+                isIncoming = true,
+                hasAnswerAction = true,
+                hasDeclineAction = true,
+                isOngoing = false,
+            )
+        } else {
+            null
+        }
+        sandboxCall = next
+        sandboxCoordinator.onEvent(CapsuleEvent.CallUpdated(next))
+        recordSandboxAction(if (next != null) "Sandbox Incoming Call -> ${next.callerName}" else "Sandbox Call ended")
+    }
+
+    fun answerMockCall() {
+        val current = sandboxCall ?: return
+        val ongoing = current.copy(
+            callStatus = "00:08 • Ongoing",
+            isIncoming = false,
+            hasAnswerAction = false,
+            isOngoing = true,
+        )
+        sandboxCall = ongoing
+        sandboxCoordinator.onEvent(CapsuleEvent.CallUpdated(ongoing))
+        recordSandboxAction("Sandbox Call Answered (${ongoing.callerName})")
+    }
+
+    fun declineMockCall() {
+        sandboxCall = null
+        sandboxCoordinator.onEvent(CapsuleEvent.CallUpdated(null))
+        recordSandboxAction("Sandbox Call Declined / Ended")
+    }
+
     fun recordSandboxAction(message: String) {
         simMetaState.value = simMetaState.value.copy(latestLog = message)
+    }
+
+    private var customizationQsPreviewJob: Job? = null
+
+    /**
+     * Synchronizes the live preview in [com.raf.capsuleos.presentation.customization.CustomizationScreen]
+     * with adaptive initial states (ring-only for Camera Position/Gestures, expanded for Behavior &
+     * expanded cards) and smooth live transitions matching the specific edited item.
+     */
+    fun syncCustomizationSectionPreview(
+        section: CustomizationSection,
+        preferences: CapsulePreferences,
+        previousPreferences: CapsulePreferences?,
+    ) {
+        sandboxCoordinator.updatePreferences(preferences)
+        if (previousPreferences == null) {
+            when (section) {
+                CustomizationSection.CAMERA_POSITION -> {
+                    // Camera padding & anchor screen starts cleanly on the physical Camera Ring only
+                    resetToIdleRing()
+                }
+                CustomizationSection.BEHAVIOR_LAYOUT -> {
+                    // Expanded card preview showcases expanded content padding & collapse behavior upfront
+                    sandboxCoordinator.onEvent(CapsuleEvent.ExpandToFull)
+                }
+                CustomizationSection.INDICATORS_MEDIA -> {
+                    setTorchEnabled(true)
+                    if (!sandboxHotspot.isEnabled) {
+                        toggleMockHotspot()
+                    }
+                    if (!simMetaState.value.isMediaPlaying) {
+                        toggleMediaPlaying()
+                    }
+                    if (preferences.expandedMediaGlowEffects.isNotEmpty() ||
+                        preferences.keepExpandedMediaGlowAlways
+                    ) {
+                        sandboxCoordinator.onEvent(CapsuleEvent.ExpandToFull)
+                    }
+                }
+                CustomizationSection.GESTURES_ACTIONS -> {
+                    // Start on Camera Ring so double-tap / long-hold global gestures can be tested immediately
+                    resetToIdleRing()
+                }
+            }
+            return
+        }
+
+        val ringOnlySettingChanged =
+            preferences.cameraPosition != previousPreferences.cameraPosition ||
+                preferences.horizontalOffsetDp != previousPreferences.horizontalOffsetDp ||
+                preferences.topOffsetAdjustDp != previousPreferences.topOffsetAdjustDp ||
+                preferences.paddingWidthDp != previousPreferences.paddingWidthDp ||
+                preferences.showBatteryOnCameraRing != previousPreferences.showBatteryOnCameraRing
+
+        val hideOnQsChanged = preferences.hideOnQsOpen != previousPreferences.hideOnQsOpen
+        val bluetoothToggledOn = preferences.enableBluetoothAlerts && !previousPreferences.enableBluetoothAlerts
+        val callAutoExpandToggledOn = preferences.enableCallAutoExpand && !previousPreferences.enableCallAutoExpand
+        val satelliteChanged =
+            preferences.enableLeftSatelliteBubble != previousPreferences.enableLeftSatelliteBubble ||
+                preferences.satellitePosition != previousPreferences.satellitePosition ||
+                preferences.showTorchInSatellite != previousPreferences.showTorchInSatellite ||
+                preferences.showHotspotInSatellite != previousPreferences.showHotspotInSatellite ||
+                preferences.showLiveActivityInSatellite != previousPreferences.showLiveActivityInSatellite ||
+                preferences.showAirplaneInSatellite != previousPreferences.showAirplaneInSatellite ||
+                preferences.showDndInSatellite != previousPreferences.showDndInSatellite ||
+                preferences.showBatterySaverInSatellite != previousPreferences.showBatterySaverInSatellite ||
+                preferences.showVpnInSatellite != previousPreferences.showVpnInSatellite ||
+                preferences.showRingerMutedInSatellite != previousPreferences.showRingerMutedInSatellite ||
+                preferences.showDataSaverInSatellite != previousPreferences.showDataSaverInSatellite
+
+        val expandedMediaStyle =
+            preferences.expandedMediaGlowEffects != previousPreferences.expandedMediaGlowEffects ||
+                preferences.keepOuterMediaGlowAlways != previousPreferences.keepOuterMediaGlowAlways ||
+                preferences.mediaFollowGlobalAutoCollapse != previousPreferences.mediaFollowGlobalAutoCollapse ||
+                preferences.mediaAutoCollapseDelayMs != previousPreferences.mediaAutoCollapseDelayMs
+        val compactMediaStyle =
+            preferences.horizontalMediaGlowStyle != previousPreferences.horizontalMediaGlowStyle &&
+                preferences.horizontalMediaGlowStyle != HorizontalMediaGlowStyle.OFF
+
+        val expandedSettingChanged =
+            preferences.expandedContentPaddingDp != previousPreferences.expandedContentPaddingDp ||
+                preferences.autoCollapseDelayMs != previousPreferences.autoCollapseDelayMs ||
+                preferences.enableNeuronGlow != previousPreferences.enableNeuronGlow ||
+                preferences.enableOuterNeuronGlow != previousPreferences.enableOuterNeuronGlow ||
+                preferences.keepExpandedMediaGlowAlways != previousPreferences.keepExpandedMediaGlowAlways ||
+                preferences.keepOuterMediaGlowAlways != previousPreferences.keepOuterMediaGlowAlways ||
+                expandedMediaStyle ||
+                callAutoExpandToggledOn
+
+        val compactPillSettingChanged =
+            preferences.horizontalAutoCollapseDelayMs != previousPreferences.horizontalAutoCollapseDelayMs ||
+                compactMediaStyle ||
+                bluetoothToggledOn ||
+                satelliteChanged
+
+        val isCurrentlyExpanded =
+            sandboxCoordinator.uiState.value.visualState == CapsuleVisualState.STATE3_FULL_EXPANDED
+
+        when {
+            ringOnlySettingChanged -> {
+                customizationQsPreviewJob?.cancel()
+                sandboxCoordinator.onEvent(CapsuleEvent.QuickSettingsChanged(false))
+                resetToIdleRing()
+            }
+            hideOnQsChanged -> {
+                customizationQsPreviewJob?.cancel()
+                if (preferences.hideOnQsOpen) {
+                    if (!simMetaState.value.isMediaPlaying) {
+                        toggleMediaPlaying()
+                    }
+                    customizationQsPreviewJob = viewModelScope.launch {
+                        sandboxCoordinator.onEvent(CapsuleEvent.QuickSettingsChanged(true))
+                        delay(1800.milliseconds)
+                        sandboxCoordinator.onEvent(CapsuleEvent.QuickSettingsChanged(false))
+                    }
+                } else {
+                    sandboxCoordinator.onEvent(CapsuleEvent.QuickSettingsChanged(false))
+                }
+            }
+            callAutoExpandToggledOn -> {
+                if (sandboxCall == null) {
+                    triggerMockCall()
+                } else {
+                    sandboxCoordinator.onEvent(CapsuleEvent.ExpandToFull)
+                }
+            }
+            bluetoothToggledOn -> {
+                if (sandboxBluetooth == null) {
+                    triggerMockBluetooth()
+                } else {
+                    sandboxCoordinator.onEvent(
+                        CapsuleEvent.BluetoothDeviceUpdated(sandboxBluetooth),
+                    )
+                }
+                if (isCurrentlyExpanded) {
+                    sandboxCoordinator.onEvent(CapsuleEvent.CollapseCapsule)
+                }
+            }
+            satelliteChanged -> {
+                if (!simMetaState.value.isTorchOn) {
+                    setTorchEnabled(true)
+                }
+                if (!sandboxHotspot.isEnabled) {
+                    toggleMockHotspot()
+                }
+                if (isCurrentlyExpanded) {
+                    sandboxCoordinator.onEvent(CapsuleEvent.CollapseCapsule)
+                }
+            }
+            expandedSettingChanged -> {
+                if ((preferences.keepExpandedMediaGlowAlways != previousPreferences.keepExpandedMediaGlowAlways ||
+                        expandedMediaStyle) &&
+                    !simMetaState.value.isMediaPlaying
+                ) {
+                    toggleMediaPlaying()
+                }
+                if (!isCurrentlyExpanded) {
+                    sandboxCoordinator.onEvent(CapsuleEvent.ExpandToFull)
+                } else {
+                    sandboxCoordinator.onEvent(CapsuleEvent.UserInteractedInCard)
+                }
+            }
+            compactPillSettingChanged -> {
+                if (!simMetaState.value.isMediaPlaying && !bluetoothToggledOn) {
+                    toggleMediaPlaying()
+                }
+                if (isCurrentlyExpanded) {
+                    sandboxCoordinator.onEvent(CapsuleEvent.CollapseCapsule)
+                }
+            }
+        }
     }
 
     private data class SandboxMeta(

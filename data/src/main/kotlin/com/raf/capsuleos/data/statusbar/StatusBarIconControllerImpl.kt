@@ -22,7 +22,6 @@ class StatusBarIconControllerImpl @Inject constructor(
 ) : StatusBarIconController {
 
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    private var isCurrentlyHidden = false
     private var isHeadsUpSuppressed = false
 
     init {
@@ -40,35 +39,9 @@ class StatusBarIconControllerImpl @Inject constructor(
             Manifest.permission.WRITE_SECURE_SETTINGS,
         ) == PackageManager.PERMISSION_GRANTED
 
-    override fun hideIconsForExpansion() {
-        if (isCurrentlyHidden || !hasSecureSettingsPermission()) return
-
-        runCatching {
-            val resolver = context.contentResolver
-            val current = Settings.Secure.getString(resolver, KEY_ICON_BLACKLIST)
-            prefs.edit {
-                putString(KEY_SAVED_ORIGINAL, current)
-                putBoolean(KEY_IS_HIDDEN, true)
-            }
-
-            val merged = buildSet {
-                current?.split(",")
-                    ?.map { it.trim() }
-                    ?.filter { it.isNotEmpty() }
-                    ?.let(::addAll)
-                addAll(ALL_STATUS_BAR_SLOTS)
-            }.joinToString(",")
-
-            Settings.Secure.putString(resolver, KEY_ICON_BLACKLIST, merged)
-            isCurrentlyHidden = true
-        }.onFailure { err ->
-            Log.e(TAG, "hideIconsForExpansion failed", err)
-        }
-    }
-
     override fun restoreIcons() {
         val wasPersistedHidden = prefs.getBoolean(KEY_IS_HIDDEN, false)
-        if ((!isCurrentlyHidden && !wasPersistedHidden) || !hasSecureSettingsPermission()) return
+        if (!wasPersistedHidden || !hasSecureSettingsPermission()) return
 
         val savedOriginal = prefs.getString(KEY_SAVED_ORIGINAL, null)
         runCatching {
@@ -80,7 +53,6 @@ class StatusBarIconControllerImpl @Inject constructor(
             remove(KEY_SAVED_ORIGINAL)
             putBoolean(KEY_IS_HIDDEN, false)
         }
-        isCurrentlyHidden = false
     }
 
     override fun setSystemHeadsUpSuppressed(suppress: Boolean) {
@@ -127,49 +99,5 @@ class StatusBarIconControllerImpl @Inject constructor(
         const val KEY_HEADS_UP_ENABLED = "heads_up_notifications_enabled"
         const val KEY_HEADS_UP_SUPPRESSED = "heads_up_suppressed_by_capsule"
         const val KEY_SAVED_ORIGINAL_HEADS_UP = "saved_original_heads_up"
-
-        val ALL_STATUS_BAR_SLOTS = listOf(
-            "clock",
-            "battery",
-            "batteryshare",
-            "wifi",
-            "mobile",
-            "stacked_mobile",
-            "phone_signal",
-            "phone_evdo_signal",
-            "data_connection",
-            "data_saver",
-            "airplane",
-            "hotspot",
-            "bluetooth",
-            "alarm_clock",
-            "alarm",
-            "rotate",
-            "headset",
-            "mute",
-            "volume",
-            "zen",
-            "vpn",
-            "nfc",
-            "location",
-            "cast",
-            "satellite",
-            "connected_display",
-            "camera",
-            "microphone",
-            "screen_record",
-            "sensors_off",
-            "managed_profile",
-            "ethernet",
-            "sync_active",
-            "sync_failing",
-            "tty",
-            "speakerphone",
-            "ime",
-            "no_calling",
-            "call_strength",
-            "cdma_eri",
-            "secure",
-        )
     }
 }

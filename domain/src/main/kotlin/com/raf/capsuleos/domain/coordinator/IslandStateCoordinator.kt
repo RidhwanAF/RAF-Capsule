@@ -5,10 +5,14 @@ import com.raf.capsuleos.domain.model.BrightnessInfo
 import com.raf.capsuleos.domain.model.CapsuleContent
 import com.raf.capsuleos.domain.model.CapsuleEffect
 import com.raf.capsuleos.domain.model.CapsuleEvent
+import com.raf.capsuleos.domain.model.CapsuleGestureAction
 import com.raf.capsuleos.domain.model.CapsulePreferences
 import com.raf.capsuleos.domain.model.CapsuleUiState
 import com.raf.capsuleos.domain.model.CapsuleVisualState
 import com.raf.capsuleos.domain.model.CutoutGeometry
+import com.raf.capsuleos.domain.model.GestureActionBinding
+import com.raf.capsuleos.domain.model.SatelliteSource
+import com.raf.capsuleos.domain.model.SystemStatusKind
 import com.raf.capsuleos.domain.model.WeatherSummary
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -64,8 +68,18 @@ class IslandStateCoordinator(
     val effects: SharedFlow<CapsuleEffect> = _effects.asSharedFlow()
 
     private var activeMedia: CapsuleContent.Media? = null
+    private var allMediaSessions: List<CapsuleContent.Media> = emptyList()
+    private var selectedMediaSessionKey: String? = null
     private var activeLiveActivity: CapsuleContent.LiveActivity? = null
     private var activeTorch: CapsuleContent.Torch? = null
+    private var activeHotspot: CapsuleContent.Hotspot? = null
+    private val activeSystemStatuses = LinkedHashMap<SystemStatusKind, CapsuleContent.SystemStatus>()
+    private var selectedSatelliteSource: SatelliteSource? = null
+    private var satelliteSwipeSeq: Int = 0
+    private var satelliteJiggleSeq: Int = 0
+    private var activeBluetooth: CapsuleContent.BluetoothDevice? = null
+    private var activeCall: CapsuleContent.CallAlert? = null
+    private var autoExpandedCallKey: String? = null
     private var activeBrightness: BrightnessInfo? = null
     private var activeWeather: WeatherSummary? = null
     private var activeNotificationCount: Int? = null
@@ -73,6 +87,8 @@ class IslandStateCoordinator(
     private var isCharging: Boolean = false
     private var isLandscape: Boolean = false
     private var isScreenInactive: Boolean = false
+    private var isKeyguardLocked: Boolean = false
+    private var isQsOpen: Boolean = false
 
     private data class StackEntry(
         val stackId: String,
@@ -99,9 +115,12 @@ class IslandStateCoordinator(
     private var neuralPulseJob: Job? = null
     private var collapseWaveJob: Job? = null
     private var ringGlowJob: Job? = null
+    private var satelliteGlowJob: Job? = null
+    private var notifSummaryPeriodicJob: Job? = null
     private var isHoldFromRingActive: Boolean = false
     private var hasInteractedInCurrentState3: Boolean = false
     private var hasInteractedNotificationInCard: Boolean = false
+    private var isReplyingInCard: Boolean = false
 
     /** Updates measured device camera cutout and screen geometry when changed. */
     fun updateCutoutGeometry(cutout: CutoutGeometry) {
@@ -110,11 +129,36 @@ class IslandStateCoordinator(
         }
     }
 
-    /** Updates user preferences for cutout alignment and auto-collapse timing when changed. */
+    /** Updates user preferences for cutout alignment, satellite behavior, and auto-collapse timing when changed. */
     fun updatePreferences(preferences: CapsulePreferences) {
-        if (_uiState.value.preferences != preferences) {
+        val prev = _uiState.value.preferences
+        if (prev != preferences) {
+            val wasHidden = isHiddenByEnvironment
+            val wasRestricted = isRestrictedToRingByQs
             _uiState.update { current -> current.copy(preferences = preferences) }
-            if (_uiState.value.visualState == CapsuleVisualState.STATE3_FULL_EXPANDED) {
+            val routingChanged = prev.enableLeftSatelliteBubble != preferences.enableLeftSatelliteBubble ||
+                prev.showTorchInSatellite != preferences.showTorchInSatellite ||
+                prev.showHotspotInSatellite != preferences.showHotspotInSatellite ||
+                prev.showLiveActivityInSatellite != preferences.showLiveActivityInSatellite ||
+                prev.showAirplaneInSatellite != preferences.showAirplaneInSatellite ||
+                prev.showDndInSatellite != preferences.showDndInSatellite ||
+                prev.showBatterySaverInSatellite != preferences.showBatterySaverInSatellite ||
+                prev.showVpnInSatellite != preferences.showVpnInSatellite ||
+                prev.showRingerMutedInSatellite != preferences.showRingerMutedInSatellite ||
+                prev.showDataSaverInSatellite != preferences.showDataSaverInSatellite ||
+                prev.enableBluetoothAlerts != preferences.enableBluetoothAlerts
+            if (routingChanged) {
+                reconcileSatelliteAndMainStack(preferences)
+            }
+            if (wasHidden != isHiddenByEnvironment) {
+                syncHiddenOrActive()
+            } else if (wasRestricted != isRestrictedToRingByQs) {
+                syncQuickSettingsVisibility()
+            } else if (_uiState.value.visualState == CapsuleVisualState.STATE3_FULL_EXPANDED &&
+                (prev.autoCollapseDelayMs != preferences.autoCollapseDelayMs ||
+                    prev.mediaFollowGlobalAutoCollapse != preferences.mediaFollowGlobalAutoCollapse ||
+                    prev.mediaAutoCollapseDelayMs != preferences.mediaAutoCollapseDelayMs)
+            ) {
                 scheduleState3AutoCollapse()
             }
         }
@@ -136,11 +180,36 @@ class IslandStateCoordinator(
                     syncHiddenOrActive()
                 }
             }
+            is CapsuleEvent.KeyguardLockedChanged -> {
+                if (isKeyguardLocked != event.isLocked) {
+                    isKeyguardLocked = event.isLocked
+                    _uiState.update { current -> current.copy(isKeyguardLocked = isKeyguardLocked) }
+                    if (!event.isLocked && !_uiState.value.preferences.showOnLockScreen) {
+                        viewStack.removeAll { it.stackId == STACK_UNLOCK }
+                    }
+                    syncQuickSettingsVisibility()
+                }
+            }
+            is CapsuleEvent.QuickSettingsChanged -> {
+                if (isQsOpen != event.isQsOpen) {
+                    isQsOpen = event.isQsOpen
+                    _uiState.update { current -> current.copy(isQsOpen = isQsOpen) }
+                    syncQuickSettingsVisibility()
+                }
+            }
             is CapsuleEvent.BatteryUpdated -> handleBatteryUpdated(event.percent, event.isCharging)
             is CapsuleEvent.LiveActivityUpdated -> handleLiveActivityUpdated(event.liveActivity)
+            is CapsuleEvent.MediaUpdated -> handleMediaUpdated(event.media)
+            is CapsuleEvent.MediaSessionsUpdated -> handleMediaSessionsUpdated(event.sessions)
+            is CapsuleEvent.SelectMediaSession -> handleSelectMediaSession(event.index)
+            is CapsuleEvent.BluetoothDeviceUpdated -> handleBluetoothDeviceUpdated(event.device)
+            is CapsuleEvent.HotspotUpdated -> handleHotspotUpdated(event.hotspot)
+            is CapsuleEvent.SystemStatusUpdated -> handleSystemStatusUpdated(event.status)
+            is CapsuleEvent.CallUpdated -> handleCallUpdated(event.call)
+            CapsuleEvent.ExpandLeftSatellite -> handleExpandLeftSatellite()
+            is CapsuleEvent.CycleLeftSatellite -> handleCycleLeftSatellite(event.direction)
             is CapsuleEvent.NotificationPosted -> handleNotificationPosted(event.notification)
             is CapsuleEvent.NotificationRemoved -> handleNotificationRemoved(event.key)
-            is CapsuleEvent.MediaUpdated -> handleMediaUpdated(event.media)
             is CapsuleEvent.TorchUpdated -> handleTorchUpdated(event.torch)
             is CapsuleEvent.VolumeChanged -> handleVolumeChanged(event.volume)
             is CapsuleEvent.AlarmUpdated -> enqueueTransient(
@@ -149,16 +218,25 @@ class IslandStateCoordinator(
                 priority = PRIORITY_ALARM,
                 durationMs = effectiveAutoCollapseMs(),
             )
-            is CapsuleEvent.DeviceUnlocked -> enqueueTransient(
-                stackId = STACK_UNLOCK,
-                content = event.unlock,
-                priority = PRIORITY_UNLOCK,
-                durationMs = effectiveAutoCollapseMs(),
-            )
+            is CapsuleEvent.DeviceUnlocked -> {
+                if (_uiState.value.preferences.showOnLockScreen) {
+                    enqueueTransient(
+                        stackId = STACK_UNLOCK,
+                        content = event.unlock,
+                        priority = PRIORITY_UNLOCK,
+                        durationMs = NON_ACTION_HORIZONTAL_DISMISS_MS,
+                        minDurationMs = NON_ACTION_HORIZONTAL_DISMISS_MS,
+                    )
+                }
+            }
             CapsuleEvent.HoldPeekStarted -> handleHoldPeekStarted()
             CapsuleEvent.HoldPeekReleased -> handleHoldPeekReleased()
+            CapsuleEvent.DoubleTapCapsule -> handleDoubleTapGesture()
+            CapsuleEvent.LongHoldCapsule -> handleLongHoldGesture()
             CapsuleEvent.ExpandToFull -> handleExpandToFull()
+            CapsuleEvent.ExpandNowBrief -> handleExpandNowBrief()
             CapsuleEvent.UserInteractedInCard -> handleCardInteraction()
+            is CapsuleEvent.ReplyFocusChanged -> handleReplyFocusChanged(event.isReplying)
             is CapsuleEvent.CycleContent -> handleCycleContent(event.direction)
             CapsuleEvent.TapCapsule -> handleTapInteraction()
             CapsuleEvent.CollapseCapsule -> collapseToBaseState()
@@ -169,7 +247,7 @@ class IslandStateCoordinator(
     }
 
     private fun syncHiddenOrActive() {
-        if (isLandscape || isScreenInactive) {
+        if (isHiddenByEnvironment) {
             isHoldFromRingActive = false
             clearManualOverride()
             viewStack.removeAll { it.stackId == STACK_CHARGING_PEEK || it.stackId == STACK_BATTERY_PEEK }
@@ -179,18 +257,66 @@ class IslandStateCoordinator(
             _uiState.update { current ->
                 current.copy(
                     visualState = CapsuleVisualState.HIDDEN_SYSTEM,
+                    leftSatellite = null,
                     isNeuralPulseActive = false,
                     isCollapseWaveActive = false,
                     isRingGlowActive = false,
                 )
             }
+        } else if (isRestrictedToRingByQs) {
+            syncQuickSettingsVisibility()
         } else {
+            refreshLeftSatellite()
             collapseToBaseState(dismissShownTransient = false)
+        }
+    }
+
+    private fun syncQuickSettingsVisibility() {
+        if (isHiddenByEnvironment) return
+        if (isRestrictedToRingByQs) {
+            isHoldFromRingActive = false
+            isReplyingInCard = false
+            state3AutoCollapseJob?.cancel()
+            state3AutoCollapseJob = null
+            stackScheduleJob?.cancel()
+            stackScheduleJob = null
+            neuralPulseJob?.cancel()
+            neuralPulseJob = null
+            collapseWaveJob?.cancel()
+            collapseWaveJob = null
+            ringGlowJob?.cancel()
+            ringGlowJob = null
+            satelliteGlowJob?.cancel()
+            satelliteGlowJob = null
+            currentStackId = null
+            _uiState.update { current ->
+                current.copy(
+                    visualState = CapsuleVisualState.STATE1_CUTOUT_ANCHOR,
+                    content = CapsuleContent.Idle,
+                    leftSatellite = null,
+                    batteryPercent = batteryPercent,
+                    isCharging = isCharging,
+                    isQsOpen = isQsOpen,
+                    isKeyguardLocked = isKeyguardLocked,
+                    isNeuralPulseActive = false,
+                    isCollapseWaveActive = false,
+                    isRingGlowActive = false,
+                    isExpandedFromSatellite = false,
+                    isSatelliteGlowActive = false,
+                )
+            }
+        } else {
+            refreshLeftSatellite()
+            evaluateViewStack(allowPulse = false)
         }
     }
 
     private val isHiddenByEnvironment: Boolean
         get() = isLandscape || isScreenInactive
+
+    private val isRestrictedToRingByQs: Boolean
+        get() = (isQsOpen && _uiState.value.preferences.hideOnQsOpen) ||
+            (isKeyguardLocked && !_uiState.value.preferences.showOnLockScreen)
 
     private fun handleBatteryUpdated(percent: Int, charging: Boolean) {
         val wasCharging = isCharging
@@ -222,15 +348,15 @@ class IslandStateCoordinator(
         }
 
         if (isHiddenByEnvironment) return
-        if (!wasCharging && charging) {
-            enqueueTransient(
+        if (charging) {
+            upsertPersistent(
                 stackId = STACK_CHARGING_PEEK,
                 content = CapsuleContent.Charging(batteryPercent = batteryPercent),
                 priority = PRIORITY_CHARGING,
-                durationMs = effectiveAutoCollapseMs(),
-                allowBurst = false,
+                burstDurationMs = null,
+                refreshTimestamp = !wasCharging,
             )
-        } else if (wasCharging && !charging) {
+        } else if (wasCharging) {
             if (manualOverrideStackId == STACK_CHARGING_PEEK) {
                 clearManualOverride()
             }
@@ -249,7 +375,9 @@ class IslandStateCoordinator(
             }
         }
 
-        if (liveActivity != null) {
+        val prefs = currentState.preferences
+        val routeToSatellite = prefs.enableLeftSatelliteBubble && prefs.showLiveActivityInSatellite
+        if (liveActivity != null && !routeToSatellite) {
             upsertPersistent(
                 stackId = "live:${liveActivity.key}",
                 content = liveActivity,
@@ -258,6 +386,7 @@ class IslandStateCoordinator(
         } else {
             removeMatchingStackItems(allowImmediateReplace = false) { it.stackId.startsWith("live:") }
         }
+        refreshLeftSatellite()
     }
 
     private fun handleNotificationPosted(notification: CapsuleContent.NotificationAlert) {
@@ -266,13 +395,20 @@ class IslandStateCoordinator(
         val existingAlert = existing?.content as? CapsuleContent.NotificationAlert
         if (existingAlert != null &&
             existingAlert.title == notification.title &&
-            existingAlert.text == notification.text
+            existingAlert.text == notification.text &&
+            existingAlert.attachmentImageBytes.contentEquals(notification.attachmentImageBytes)
         ) {
             return
         }
 
         val now = clockMillis()
-        val durationMs = min(effectiveAutoCollapseMs(), MAX_NOTIFICATION_AUTO_DISMISS_MS)
+        val hasOtherActiveState = viewStack.any { it.stackId != stackId }
+        val configuredHorizontalMs = effectiveAutoCollapseMs().coerceAtMost(MAX_NOTIFICATION_AUTO_DISMISS_MS)
+        val durationMs = if (!hasOtherActiveState) {
+            max(MIN_NOTIFICATION_STANDALONE_DWELL_MS, configuredHorizontalMs)
+        } else {
+            configuredHorizontalMs
+        }
         val entry = StackEntry(
             stackId = stackId,
             content = notification,
@@ -288,14 +424,21 @@ class IslandStateCoordinator(
         } else {
             viewStack.add(entry)
         }
+        viewStack.indices.forEach { idx ->
+            if (viewStack[idx].stackId == STACK_MEDIA && viewStack[idx].burstUntilMs > 0L) {
+                viewStack[idx] = viewStack[idx].copy(burstUntilMs = 0L)
+            }
+        }
 
-        if (isHiddenByEnvironment || isHoldFromRingActive) return
+        if (isHiddenByEnvironment || isHoldFromRingActive || isRestrictedToRingByQs) return
 
         val currentState = _uiState.value
         if (currentState.visualState == CapsuleVisualState.STATE3_FULL_EXPANDED) {
             val shown = currentState.content
             if (shown is CapsuleContent.NotificationAlert) {
-                val userPinnedThisNotification = hasInteractedNotificationInCard ||
+                val userPinnedThisNotification = hasInteractedInCurrentState3 ||
+                    isReplyingInCard ||
+                    hasInteractedNotificationInCard ||
                     manualOverrideStackId == "notif:${shown.key}"
                 if (!userPinnedThisNotification) {
                     enterState3Expanded(notification)
@@ -320,13 +463,14 @@ class IslandStateCoordinator(
         val currentState = _uiState.value
         if (currentState.visualState == CapsuleVisualState.STATE3_FULL_EXPANDED) {
             val shown = currentState.content
-            if (shown is CapsuleContent.NotificationAlert && shown.key == key) {
+            if (shown is CapsuleContent.NotificationAlert && shown.key == key && !isReplyingInCard) {
                 collapseToBaseState()
             }
         }
     }
 
     private fun handleMediaUpdated(media: CapsuleContent.Media?) {
+        val prevMedia = activeMedia
         activeMedia = media
 
         val isPlaying = media != null && media.isPlaying
@@ -341,6 +485,24 @@ class IslandStateCoordinator(
         }
 
         val currentState = _uiState.value
+        val isViewingMediaInCard = currentState.visualState == CapsuleVisualState.STATE3_FULL_EXPANDED &&
+            currentState.content is CapsuleContent.Media
+        if (isViewingMediaInCard && allMediaSessions.size > 1 && !selectedMediaSessionKey.isNullOrBlank()) {
+            val pinnedSession = allMediaSessions.firstOrNull { it.sessionTokenKey == selectedMediaSessionKey }
+            if (pinnedSession != null && media != null && media.sessionTokenKey != selectedMediaSessionKey) {
+                activeMedia = pinnedSession
+                if (isPlaying) {
+                    upsertPersistent(
+                        stackId = STACK_MEDIA,
+                        content = media,
+                        priority = PRIORITY_MEDIA,
+                        burstDurationMs = null,
+                        refreshTimestamp = false,
+                    )
+                }
+                return
+            }
+        }
         if (currentState.visualState == CapsuleVisualState.STATE3_FULL_EXPANDED) {
             if (media != null && currentState.content is CapsuleContent.Media) {
                 _uiState.update { it.copy(content = media) }
@@ -348,13 +510,166 @@ class IslandStateCoordinator(
         }
 
         if (isPlaying) {
+            val isNewPlaybackEvent = prevMedia == null ||
+                !prevMedia.isPlaying ||
+                prevMedia.title != media.title ||
+                prevMedia.packageName != media.packageName ||
+                prevMedia.sessionTokenKey != media.sessionTokenKey
             upsertPersistent(
                 stackId = STACK_MEDIA,
                 content = media,
                 priority = PRIORITY_MEDIA,
+                burstDurationMs = null,
+                refreshTimestamp = isNewPlaybackEvent,
             )
         } else {
             removeStackItem(STACK_MEDIA, allowImmediateReplace = false)
+        }
+    }
+
+    private fun handleMediaSessionsUpdated(sessions: List<CapsuleContent.Media>) {
+        allMediaSessions = sessions
+        val state = _uiState.value
+        val isViewingMediaInCard = state.visualState == CapsuleVisualState.STATE3_FULL_EXPANDED &&
+            state.content is CapsuleContent.Media
+        val resolvedIndex = when {
+            sessions.isEmpty() -> 0
+            isViewingMediaInCard && !selectedMediaSessionKey.isNullOrBlank() -> {
+                val kept = sessions.indexOfFirst { it.sessionTokenKey == selectedMediaSessionKey }
+                if (kept >= 0) kept else sessions.indexOfFirst { it.isPlaying }.takeIf { it >= 0 } ?: 0
+            }
+            else -> sessions.indexOfFirst { it.isPlaying }.takeIf { it >= 0 } ?: 0
+        }
+        val selected = sessions.getOrNull(resolvedIndex)
+        selectedMediaSessionKey = selected?.sessionTokenKey
+        _uiState.update { current ->
+            current.copy(
+                mediaSessions = sessions,
+                selectedMediaIndex = resolvedIndex,
+            )
+        }
+        if (isViewingMediaInCard && selected != null) {
+            handleMediaUpdated(selected)
+        }
+    }
+
+    private fun handleSelectMediaSession(index: Int) {
+        val sessions = allMediaSessions
+        if (sessions.isEmpty()) return
+        val safeIndex = index.coerceIn(0, sessions.lastIndex)
+        val selected = sessions[safeIndex]
+        selectedMediaSessionKey = selected.sessionTokenKey
+        activeMedia = selected
+        _uiState.update { current ->
+            current.copy(
+                selectedMediaIndex = safeIndex,
+                content = if (current.visualState == CapsuleVisualState.STATE3_FULL_EXPANDED &&
+                    current.content is CapsuleContent.Media
+                ) {
+                    selected
+                } else {
+                    current.content
+                },
+            )
+        }
+        if (selected.sessionTokenKey.isNotBlank()) {
+            _effects.tryEmit(CapsuleEffect.SwitchMediaSession(selected.sessionTokenKey))
+        }
+        handleCardInteraction()
+    }
+
+    private fun handleBluetoothDeviceUpdated(device: CapsuleContent.BluetoothDevice?) {
+        activeBluetooth = device?.takeIf { it.isConnected }
+        if (isHiddenByEnvironment) return
+        val prefs = _uiState.value.preferences
+        if (!prefs.enableBluetoothAlerts) {
+            removeStackItem(STACK_BLUETOOTH, allowImmediateReplace = true)
+            return
+        }
+        if (device != null && device.isConnected) {
+            enqueueTransient(
+                stackId = STACK_BLUETOOTH,
+                content = device,
+                priority = PRIORITY_BLUETOOTH,
+                durationMs = effectiveAutoCollapseMs(),
+            )
+        } else {
+            if (manualOverrideStackId == STACK_BLUETOOTH) {
+                clearManualOverride()
+            }
+            removeStackItem(STACK_BLUETOOTH, allowImmediateReplace = true)
+        }
+    }
+
+    private fun handleHotspotUpdated(hotspot: CapsuleContent.Hotspot) {
+        activeHotspot = hotspot.takeIf { it.isEnabled }
+        if (isHiddenByEnvironment) return
+        val currentState = _uiState.value
+        val prefs = currentState.preferences
+        if (currentState.visualState == CapsuleVisualState.STATE3_FULL_EXPANDED &&
+            currentState.content is CapsuleContent.Hotspot
+        ) {
+            _uiState.update { it.copy(content = hotspot) }
+            scheduleState3AutoCollapse()
+        }
+        val routeToSatellite = prefs.enableLeftSatelliteBubble && prefs.showHotspotInSatellite
+        if (hotspot.isEnabled && !routeToSatellite) {
+            upsertPersistent(
+                stackId = STACK_HOTSPOT,
+                content = hotspot,
+                priority = PRIORITY_HOTSPOT,
+            )
+        } else {
+            if (manualOverrideStackId == STACK_HOTSPOT) {
+                clearManualOverride()
+            }
+            removeStackItem(STACK_HOTSPOT, allowImmediateReplace = false)
+        }
+        refreshLeftSatellite()
+    }
+
+    private fun handleCallUpdated(call: CapsuleContent.CallAlert?) {
+        activeCall = call
+        if (call == null) {
+            autoExpandedCallKey = null
+            if (manualOverrideStackId?.startsWith("call:") == true) {
+                clearManualOverride()
+            }
+            val wasShowingCallInState3 = _uiState.value.visualState == CapsuleVisualState.STATE3_FULL_EXPANDED &&
+                _uiState.value.content is CapsuleContent.CallAlert
+            removeMatchingStackItems(allowImmediateReplace = true) { it.stackId.startsWith("call:") }
+            if (wasShowingCallInState3) {
+                collapseToBaseState()
+            }
+            return
+        }
+
+        val stackId = "call:${call.key}"
+        val isNewCall = autoExpandedCallKey != call.key
+        upsertPersistent(
+            stackId = stackId,
+            content = call,
+            priority = PRIORITY_CALL,
+            burstDurationMs = if (isNewCall) effectiveAutoCollapseMs() else null,
+            refreshTimestamp = isNewCall,
+        )
+        if (isHiddenByEnvironment) return
+
+        val currentState = _uiState.value
+        val isBlockedByUserInteraction = currentState.visualState == CapsuleVisualState.STATE3_FULL_EXPANDED &&
+            (hasInteractedInCurrentState3 || isReplyingInCard)
+        if (currentState.preferences.enableCallAutoExpand &&
+            !isRestrictedToRingByQs &&
+            isNewCall &&
+            !isBlockedByUserInteraction
+        ) {
+            autoExpandedCallKey = call.key
+            clearManualOverride()
+            enterState3Expanded(call)
+        } else if (currentState.visualState == CapsuleVisualState.STATE3_FULL_EXPANDED &&
+            currentState.content is CapsuleContent.CallAlert
+        ) {
+            _uiState.update { it.copy(content = call) }
         }
     }
 
@@ -376,13 +691,16 @@ class IslandStateCoordinator(
                 // Keep State 3 open after Turn Off so user can toggle back ON or let auto-collapse expire
                 _uiState.update { it.copy(content = torch) }
                 scheduleState3AutoCollapse()
+                refreshLeftSatellite()
                 return
             } else if (currentContent is CapsuleContent.NowBrief) {
                 _uiState.update { it.copy(content = currentContent.copy(torch = torch)) }
             }
         }
 
-        if (torch.isEnabled) {
+        val routeToSatellite = currentState.preferences.enableLeftSatelliteBubble &&
+            currentState.preferences.showTorchInSatellite
+        if (torch.isEnabled && !routeToSatellite) {
             upsertPersistent(
                 stackId = STACK_TORCH,
                 content = torch,
@@ -394,6 +712,7 @@ class IslandStateCoordinator(
             }
             removeStackItem(STACK_TORCH, allowImmediateReplace = false)
         }
+        refreshLeftSatellite()
     }
 
     private fun handleVolumeChanged(volume: CapsuleContent.Volume) {
@@ -457,6 +776,58 @@ class IslandStateCoordinator(
                 _uiState.update { it.copy(content = content.copy(activeNotificationCount = safeCount)) }
             }
         }
+        if (safeCount <= 0) {
+            notifSummaryPeriodicJob?.cancel()
+            notifSummaryPeriodicJob = null
+            removeStackItem(STACK_NOTIF_SUMMARY, allowImmediateReplace = true)
+            return
+        }
+        val alreadyShowing = viewStack.any { it.stackId == STACK_NOTIF_SUMMARY }
+        if (alreadyShowing) {
+            upsertInPlaceIfPresent(STACK_NOTIF_SUMMARY) {
+                CapsuleContent.NotificationSummary(count = safeCount)
+            }
+            if (_uiState.value.content is CapsuleContent.NotificationSummary) {
+                _uiState.update { it.copy(content = CapsuleContent.NotificationSummary(count = safeCount)) }
+            }
+        } else if (canShowNotifSummaryPeekNow()) {
+            showNotificationSummaryPeek(safeCount)
+        }
+        ensureNotifSummaryPeriodicLoop()
+    }
+
+    private fun canShowNotifSummaryPeekNow(): Boolean {
+        val count = activeNotificationCount ?: 0
+        if (count <= 0 || isHiddenByEnvironment || isRestrictedToRingByQs) return false
+        if (_uiState.value.visualState != CapsuleVisualState.STATE1_CUTOUT_ANCHOR) return false
+        return viewStack.none { it.stackId != STACK_NOTIF_SUMMARY }
+    }
+
+    private fun showNotificationSummaryPeek(count: Int) {
+        enqueueTransient(
+            stackId = STACK_NOTIF_SUMMARY,
+            content = CapsuleContent.NotificationSummary(count = count),
+            priority = PRIORITY_NOTIF_SUMMARY,
+            durationMs = effectiveAutoCollapseMs(),
+            allowBurst = false,
+        )
+    }
+
+    private fun ensureNotifSummaryPeriodicLoop() {
+        if (notifSummaryPeriodicJob?.isActive == true) return
+        notifSummaryPeriodicJob = scope.launch {
+            while ((activeNotificationCount ?: 0) > 0) {
+                if (viewStack.any { it.stackId == STACK_NOTIF_SUMMARY }) {
+                    delay(effectiveAutoCollapseMs().milliseconds)
+                }
+                delay(NOTIF_SUMMARY_REAPPEAR_INTERVAL_MS.milliseconds)
+                val latestCount = activeNotificationCount ?: 0
+                if (latestCount <= 0) break
+                if (canShowNotifSummaryPeekNow()) {
+                    showNotificationSummaryPeek(latestCount)
+                }
+            }
+        }
     }
 
     private fun buildNowBrief(
@@ -474,7 +845,7 @@ class IslandStateCoordinator(
     }
 
     private fun handleHoldPeekStarted() {
-        if (isHiddenByEnvironment) return
+        if (isHiddenByEnvironment || isRestrictedToRingByQs) return
         if (_uiState.value.visualState != CapsuleVisualState.STATE1_CUTOUT_ANCHOR) return
 
         isHoldFromRingActive = true
@@ -500,7 +871,7 @@ class IslandStateCoordinator(
 
     private fun handleHoldPeekReleased() {
         isHoldFromRingActive = false
-        if (isHiddenByEnvironment) return
+        if (isHiddenByEnvironment || isRestrictedToRingByQs) return
         if (_uiState.value.visualState == CapsuleVisualState.STATE3_FULL_EXPANDED) return
         val activeId = currentStackId ?: return
         if (activeId == STACK_CHARGING_PEEK || activeId == STACK_BATTERY_PEEK) {
@@ -524,6 +895,11 @@ class IslandStateCoordinator(
         return when (val content = _uiState.value.content) {
             is CapsuleContent.Media,
             is CapsuleContent.NotificationAlert,
+            is CapsuleContent.CallAlert,
+            is CapsuleContent.BluetoothDevice,
+            is CapsuleContent.Hotspot,
+            is CapsuleContent.LiveActivity,
+            is CapsuleContent.SystemStatus,
             is CapsuleContent.Torch,
             is CapsuleContent.Volume,
             is CapsuleContent.Alarm,
@@ -555,7 +931,7 @@ class IslandStateCoordinator(
         val candidate = overrideCandidate ?: viewStack
             .asSequence()
             .filterNot { entry ->
-                entry.stackId == STACK_CHARGING_PEEK ||
+                (entry.stackId == STACK_CHARGING_PEEK && !isCharging) ||
                     entry.stackId == STACK_BATTERY_PEEK ||
                     entry.stackId == dismissedId ||
                     (entry.isTransient && entry.expiresAtMs <= now)
@@ -569,7 +945,7 @@ class IslandStateCoordinator(
     }
 
     private fun handleExpandToFull() {
-        if (isHiddenByEnvironment) return
+        if (isHiddenByEnvironment || isRestrictedToRingByQs) return
         val currentState = _uiState.value
         if (currentState.visualState == CapsuleVisualState.STATE3_FULL_EXPANDED) {
             collapseToBaseState()
@@ -591,8 +967,18 @@ class IslandStateCoordinator(
         enterState3Expanded(expandedContent)
     }
 
+    private fun handleExpandNowBrief() {
+        if (isHiddenByEnvironment || isRestrictedToRingByQs) return
+        isHoldFromRingActive = false
+        clearManualOverride()
+        viewStack.removeAll { entry ->
+            entry.stackId == STACK_CHARGING_PEEK || entry.stackId == STACK_BATTERY_PEEK
+        }
+        enterState3Expanded(buildNowBrief())
+    }
+
     private fun handleCycleContent(direction: Int) {
-        if (isHiddenByEnvironment) return
+        if (isHiddenByEnvironment || isRestrictedToRingByQs) return
         val dir = if (direction < 0) -1 else 1
         val now = clockMillis()
         pruneExpired(now)
@@ -640,7 +1026,7 @@ class IslandStateCoordinator(
     }
 
     private fun handleTapInteraction() {
-        if (isHiddenByEnvironment) return
+        if (isHiddenByEnvironment || isRestrictedToRingByQs) return
         val currentState = _uiState.value
         when (currentState.visualState) {
             CapsuleVisualState.HIDDEN_SYSTEM -> Unit
@@ -668,6 +1054,10 @@ class IslandStateCoordinator(
                 when (val content = currentState.content) {
                     is CapsuleContent.Media,
                     is CapsuleContent.NotificationAlert,
+                    is CapsuleContent.CallAlert,
+                    is CapsuleContent.BluetoothDevice,
+                    is CapsuleContent.Hotspot,
+                    is CapsuleContent.SystemStatus,
                     is CapsuleContent.Volume,
                     is CapsuleContent.Torch,
                     is CapsuleContent.Alarm,
@@ -676,22 +1066,21 @@ class IslandStateCoordinator(
                     is CapsuleContent.BatteryPeek,
                     is CapsuleContent.Charging,
                     -> enterState3Expanded(buildNowBrief())
-                    is CapsuleContent.LiveActivity -> {
-                        val pkg = content.packageName
-                        if (!pkg.isNullOrBlank()) {
-                            _effects.tryEmit(CapsuleEffect.LaunchApp(packageName = pkg, notificationKey = content.key))
-                            collapseToBaseState()
-                        } else {
-                            enterState3Expanded(buildNowBrief(liveOverride = content))
-                        }
+                    is CapsuleContent.NotificationSummary -> {
+                        _effects.tryEmit(CapsuleEffect.OpenNotificationShade)
                     }
+                    is CapsuleContent.LiveActivity -> enterState3Expanded(content)
                     is CapsuleContent.NowBrief, CapsuleContent.Idle -> Unit
                 }
             }
             CapsuleVisualState.STATE3_FULL_EXPANDED -> {
                 when (val content = currentState.content) {
-                    // Notification actions (Reply / Open / Dismiss) live cleanly inside the expanded card
+                    // Notification & Call actions live cleanly inside the expanded card
                     is CapsuleContent.NotificationAlert -> handleCardInteraction()
+                    is CapsuleContent.CallAlert -> {
+                        _effects.tryEmit(CapsuleEffect.LaunchApp(packageName = content.packageName, notificationKey = content.key))
+                        handleCardInteraction()
+                    }
                     is CapsuleContent.Media -> {
                         _effects.tryEmit(CapsuleEffect.LaunchApp(packageName = content.packageName))
                         collapseToBaseState()
@@ -708,6 +1097,286 @@ class IslandStateCoordinator(
         }
     }
 
+    private fun handleExpandLeftSatellite() {
+        if (isHiddenByEnvironment || isRestrictedToRingByQs) return
+        val satellite = _uiState.value.leftSatellite ?: return
+        clearManualOverride()
+        isHoldFromRingActive = false
+        when (val content = satellite.content) {
+            is CapsuleContent.Torch -> enterState3Expanded(content, fromSatellite = true)
+            is CapsuleContent.Hotspot -> enterState3Expanded(content, fromSatellite = true)
+            is CapsuleContent.LiveActivity -> enterState3Expanded(content, fromSatellite = true)
+            is CapsuleContent.SystemStatus -> enterState3Expanded(content, fromSatellite = true)
+            else -> enterState3Expanded(buildNowBrief(), fromSatellite = true)
+        }
+    }
+
+    private fun handleDoubleTapGesture() {
+        if (isHiddenByEnvironment || isRestrictedToRingByQs) return
+        executeGestureBinding(_uiState.value.resolveEffectiveDoubleTap())
+    }
+
+    private fun handleLongHoldGesture() {
+        if (isHiddenByEnvironment || isRestrictedToRingByQs) return
+        executeGestureBinding(_uiState.value.resolveEffectiveLongHold())
+    }
+
+    private fun executeGestureBinding(binding: GestureActionBinding) {
+        when (binding.action ?: CapsuleGestureAction.NONE) {
+            CapsuleGestureAction.NONE -> Unit
+            CapsuleGestureAction.EXPAND_CARD -> handleExpandToFull()
+            CapsuleGestureAction.COLLAPSE_CARD -> collapseToBaseState(dismissShownTransient = false)
+            CapsuleGestureAction.LOCK_SCREEN -> _effects.tryEmit(CapsuleEffect.LockScreen)
+            CapsuleGestureAction.TOGGLE_FLASHLIGHT -> _effects.tryEmit(CapsuleEffect.ToggleTorch)
+            CapsuleGestureAction.TOGGLE_MEDIA_PLAY_PAUSE -> _effects.tryEmit(CapsuleEffect.ToggleMediaPlayPause)
+            CapsuleGestureAction.PEEK_BATTERY -> {
+                if (_uiState.value.visualState == CapsuleVisualState.STATE1_CUTOUT_ANCHOR) {
+                    handleTapInteraction()
+                } else {
+                    val (stackId, peekContent) = if (isCharging) {
+                        STACK_CHARGING_PEEK to CapsuleContent.Charging(batteryPercent = batteryPercent)
+                    } else {
+                        STACK_BATTERY_PEEK to CapsuleContent.BatteryPeek(batteryPercent = batteryPercent)
+                    }
+                    enqueueTransient(
+                        stackId = stackId,
+                        content = peekContent,
+                        priority = PRIORITY_MANUAL_PEEK,
+                        durationMs = effectiveAutoCollapseMs(),
+                    )
+                }
+            }
+            CapsuleGestureAction.LAUNCH_CUSTOM_APP -> {
+                binding.customAppPackage?.takeIf { it.isNotBlank() }?.let { pkg ->
+                    _effects.tryEmit(CapsuleEffect.LaunchApp(packageName = pkg))
+                }
+            }
+        }
+    }
+
+    private fun handleCycleLeftSatellite(direction: Int) {
+        if (isHiddenByEnvironment || isRestrictedToRingByQs) return
+        val prefs = _uiState.value.preferences
+        val available = availableSatelliteItems(prefs)
+        if (available.isEmpty()) return
+
+        val dir = if (direction < 0) -1 else 1
+        if (available.size <= 1) {
+            satelliteJiggleSeq++
+            _uiState.update { current ->
+                current.copy(
+                    satelliteSwipeDirection = dir,
+                    satelliteJiggleSeq = satelliteJiggleSeq,
+                )
+            }
+            return
+        }
+
+        val currentSource = _uiState.value.leftSatellite?.source
+        val curIdx = available.indexOfFirst { it.source == currentSource }.coerceAtLeast(0)
+        val nextIdx = (curIdx + dir).mod(available.size)
+        val target = available[nextIdx]
+        selectedSatelliteSource = target.source
+        satelliteSwipeSeq++
+        _uiState.update { current ->
+            current.copy(
+                leftSatellite = target,
+                satelliteSwipeSeq = satelliteSwipeSeq,
+                satelliteSwipeDirection = dir,
+            )
+        }
+    }
+
+    private fun handleSystemStatusUpdated(status: CapsuleContent.SystemStatus) {
+        if (status.isActive) {
+            activeSystemStatuses[status.kind] = status
+        } else {
+            activeSystemStatuses.remove(status.kind)
+        }
+        val current = _uiState.value
+        if (current.visualState == CapsuleVisualState.STATE3_FULL_EXPANDED) {
+            val expandedStatus = current.content as? CapsuleContent.SystemStatus
+            if (expandedStatus?.kind == status.kind) {
+                if (status.isActive) {
+                    _uiState.update { it.copy(content = status) }
+                } else {
+                    collapseToBaseState(dismissShownTransient = false)
+                }
+            }
+        }
+        refreshLeftSatellite()
+    }
+
+    private fun availableSatelliteItems(prefs: CapsulePreferences): List<CapsuleContent.LeftSatelliteItem> {
+        if (isHiddenByEnvironment || !prefs.enableLeftSatelliteBubble) return emptyList()
+        val raw = buildList {
+            activeTorch?.takeIf { it.isEnabled && prefs.showTorchInSatellite }?.let { torch ->
+                add(CapsuleContent.LeftSatelliteItem(source = SatelliteSource.TORCH, content = torch))
+            }
+            activeHotspot?.takeIf { it.isEnabled && prefs.showHotspotInSatellite }?.let { hotspot ->
+                add(CapsuleContent.LeftSatelliteItem(source = SatelliteSource.HOTSPOT, content = hotspot))
+            }
+            activeLiveActivity?.takeIf { prefs.showLiveActivityInSatellite }?.let { live ->
+                add(CapsuleContent.LeftSatelliteItem(source = SatelliteSource.LIVE_ACTIVITY, content = live))
+            }
+            addSystemSatelliteIfEnabled(
+                kind = SystemStatusKind.AIRPLANE_MODE,
+                source = SatelliteSource.AIRPLANE_MODE,
+                enabled = prefs.showAirplaneInSatellite,
+            )
+            addSystemSatelliteIfEnabled(
+                kind = SystemStatusKind.DO_NOT_DISTURB,
+                source = SatelliteSource.DO_NOT_DISTURB,
+                enabled = prefs.showDndInSatellite,
+            )
+            addSystemSatelliteIfEnabled(
+                kind = SystemStatusKind.BATTERY_SAVER,
+                source = SatelliteSource.BATTERY_SAVER,
+                enabled = prefs.showBatterySaverInSatellite,
+            )
+            addSystemSatelliteIfEnabled(
+                kind = SystemStatusKind.VPN,
+                source = SatelliteSource.VPN,
+                enabled = prefs.showVpnInSatellite,
+            )
+            addSystemSatelliteIfEnabled(
+                kind = SystemStatusKind.RINGER_MUTED,
+                source = SatelliteSource.RINGER_MUTED,
+                enabled = prefs.showRingerMutedInSatellite,
+            )
+            addSystemSatelliteIfEnabled(
+                kind = SystemStatusKind.DATA_SAVER,
+                source = SatelliteSource.DATA_SAVER,
+                enabled = prefs.showDataSaverInSatellite,
+            )
+        }
+        val total = raw.size
+        return raw.mapIndexed { idx, item ->
+            item.copy(activeIndex = idx, totalCount = total)
+        }
+    }
+
+    private fun MutableList<CapsuleContent.LeftSatelliteItem>.addSystemSatelliteIfEnabled(
+        kind: SystemStatusKind,
+        source: SatelliteSource,
+        enabled: Boolean,
+    ) {
+        if (!enabled) return
+        val active = activeSystemStatuses[kind]?.takeIf { it.isActive } ?: return
+        add(CapsuleContent.LeftSatelliteItem(source = source, content = active))
+    }
+
+    private fun computeLeftSatellite(prefs: CapsulePreferences): CapsuleContent.LeftSatelliteItem? {
+        val available = availableSatelliteItems(prefs)
+        if (available.isEmpty()) {
+            selectedSatelliteSource = null
+            return null
+        }
+        val selected = selectedSatelliteSource?.let { src -> available.firstOrNull { it.source == src } }
+        if (selected != null) return selected
+        selectedSatelliteSource = null
+        return available.first()
+    }
+
+    private fun refreshLeftSatellite() {
+        val nextSatellite = if (isHiddenByEnvironment || isRestrictedToRingByQs) {
+            null
+        } else {
+            computeLeftSatellite(_uiState.value.preferences)
+        }
+        if (_uiState.value.leftSatellite != nextSatellite) {
+            _uiState.update { current -> current.copy(leftSatellite = nextSatellite) }
+        }
+    }
+
+    private fun reconcileSatelliteAndMainStack(prefs: CapsulePreferences) {
+        val torchToSatellite = prefs.enableLeftSatelliteBubble && prefs.showTorchInSatellite
+        val hotspotToSatellite = prefs.enableLeftSatelliteBubble && prefs.showHotspotInSatellite
+        val liveToSatellite = prefs.enableLeftSatelliteBubble && prefs.showLiveActivityInSatellite
+
+        if (torchToSatellite) {
+            viewStack.removeAll { it.stackId == STACK_TORCH }
+        } else {
+            activeTorch?.takeIf { it.isEnabled }?.let { torch ->
+                if (viewStack.none { it.stackId == STACK_TORCH }) {
+                    viewStack.add(
+                        StackEntry(
+                            stackId = STACK_TORCH,
+                            content = torch,
+                            isTransient = false,
+                            expiresAtMs = Long.MAX_VALUE,
+                            priority = PRIORITY_TORCH,
+                            updatedAtMs = clockMillis(),
+                        ),
+                    )
+                }
+            }
+        }
+
+        if (hotspotToSatellite) {
+            viewStack.removeAll { it.stackId == STACK_HOTSPOT }
+        } else {
+            activeHotspot?.takeIf { it.isEnabled }?.let { hotspot ->
+                if (viewStack.none { it.stackId == STACK_HOTSPOT }) {
+                    viewStack.add(
+                        StackEntry(
+                            stackId = STACK_HOTSPOT,
+                            content = hotspot,
+                            isTransient = false,
+                            expiresAtMs = Long.MAX_VALUE,
+                            priority = PRIORITY_HOTSPOT,
+                            updatedAtMs = clockMillis(),
+                        ),
+                    )
+                }
+            }
+        }
+
+        if (liveToSatellite) {
+            viewStack.removeAll { it.stackId.startsWith("live:") }
+        } else {
+            activeLiveActivity?.let { live ->
+                val stackId = "live:${live.key}"
+                if (viewStack.none { it.stackId == stackId }) {
+                    viewStack.add(
+                        StackEntry(
+                            stackId = stackId,
+                            content = live,
+                            isTransient = false,
+                            expiresAtMs = Long.MAX_VALUE,
+                            priority = PRIORITY_LIVE_ACTIVITY,
+                            updatedAtMs = clockMillis(),
+                        ),
+                    )
+                }
+            }
+        }
+
+        if (!prefs.enableBluetoothAlerts) {
+            viewStack.removeAll { it.stackId == STACK_BLUETOOTH }
+        }
+
+        refreshLeftSatellite()
+        evaluateViewStack(allowPulse = false)
+    }
+
+    private fun handleReplyFocusChanged(isReplying: Boolean) {
+        isReplyingInCard = isReplying
+        if (isReplying) {
+            val now = clockMillis()
+            hasInteractedInCurrentState3 = true
+            hasInteractedNotificationInCard = true
+            state3AutoCollapseJob?.cancel()
+            state3AutoCollapseJob = null
+            if (manualOverrideStackId != null) {
+                manualOverrideExpiresAtMs = now + MANUAL_CYCLE_TIMEOUT_MS
+                scheduleManualOverrideReset()
+            }
+        } else if (_uiState.value.visualState == CapsuleVisualState.STATE3_FULL_EXPANDED) {
+            scheduleState3AutoCollapse()
+        }
+    }
+
     private fun handleCardInteraction() {
         val now = clockMillis()
         hasInteractedInCurrentState3 = true
@@ -718,12 +1387,16 @@ class IslandStateCoordinator(
             manualOverrideExpiresAtMs = now + MANUAL_CYCLE_TIMEOUT_MS
             scheduleManualOverrideReset()
         }
-        if (_uiState.value.visualState == CapsuleVisualState.STATE3_FULL_EXPANDED) {
+        if (_uiState.value.visualState == CapsuleVisualState.STATE3_FULL_EXPANDED && !isReplyingInCard) {
             scheduleState3AutoCollapse()
         }
     }
 
-    private fun enterState3Expanded(content: CapsuleContent) {
+    private fun enterState3Expanded(
+        content: CapsuleContent,
+        fromSatellite: Boolean = false,
+    ) {
+        if (isHiddenByEnvironment || isRestrictedToRingByQs) return
         stackScheduleJob?.cancel()
         stackScheduleJob = null
         collapseWaveJob?.cancel()
@@ -733,6 +1406,7 @@ class IslandStateCoordinator(
         currentStackId = null
         hasInteractedInCurrentState3 = false
         hasInteractedNotificationInCard = false
+        isReplyingInCard = false
         _uiState.update { current ->
             current.copy(
                 visualState = CapsuleVisualState.STATE3_FULL_EXPANDED,
@@ -742,20 +1416,27 @@ class IslandStateCoordinator(
                 isNeuralPulseActive = true,
                 isCollapseWaveActive = false,
                 isRingGlowActive = false,
+                isExpandedFromSatellite = fromSatellite,
             )
+        }
+        if (fromSatellite) {
+            triggerSatelliteGlowPulse()
         }
         triggerNeuralPulseCooldown()
         scheduleState3AutoCollapse()
     }
 
     private fun collapseToBaseState(dismissShownTransient: Boolean = true) {
+        val wasFromSatellite = _uiState.value.isExpandedFromSatellite
         isHoldFromRingActive = false
         hasInteractedInCurrentState3 = false
         hasInteractedNotificationInCard = false
+        isReplyingInCard = false
         state3AutoCollapseJob?.cancel()
         state3AutoCollapseJob = null
         neuralPulseJob?.cancel()
         neuralPulseJob = null
+        _uiState.update { it.copy(isExpandedFromSatellite = false) }
 
         val previousVisualState = _uiState.value.visualState
         val wasState3 = previousVisualState == CapsuleVisualState.STATE3_FULL_EXPANDED
@@ -800,7 +1481,7 @@ class IslandStateCoordinator(
             scheduleManualOverrideReset()
         }
         viewStack.removeAll { entry ->
-            (entry.stackId == STACK_CHARGING_PEEK || entry.stackId == STACK_BATTERY_PEEK) &&
+            ((entry.stackId == STACK_CHARGING_PEEK && !isCharging) || entry.stackId == STACK_BATTERY_PEEK) &&
                 entry.stackId != activeOverrideId
         }
 
@@ -814,6 +1495,9 @@ class IslandStateCoordinator(
             forceShowStackEntry(top.stackId, top.content, withPulse = false)
             if (wasState3) {
                 triggerCollapseWavePulse()
+                if (wasFromSatellite) {
+                    triggerSatelliteGlowPulse()
+                }
             }
         } else {
             clearManualOverride()
@@ -829,8 +1513,11 @@ class IslandStateCoordinator(
             }
             if (wasState3) {
                 triggerCollapseWavePulse()
+                if (wasFromSatellite) {
+                    triggerSatelliteGlowPulse()
+                }
             }
-            if (wasExpandedOrPill) {
+            if (wasExpandedOrPill && !wasFromSatellite) {
                 triggerRingGlowPulse()
             }
         }
@@ -868,23 +1555,31 @@ class IslandStateCoordinator(
         stackId: String,
         content: CapsuleContent,
         priority: Int,
+        burstDurationMs: Long? = null,
+        refreshTimestamp: Boolean = true,
     ) {
         val now = clockMillis()
         val existingIdx = viewStack.indexOfFirst { it.stackId == stackId }
+        val existing = viewStack.getOrNull(existingIdx)
         val entry = StackEntry(
             stackId = stackId,
             content = content,
             isTransient = false,
             expiresAtMs = Long.MAX_VALUE,
             priority = priority,
-            updatedAtMs = now,
+            updatedAtMs = if (refreshTimestamp || existing == null) now else existing.updatedAtMs,
+            burstUntilMs = when {
+                burstDurationMs != null -> now + burstDurationMs
+                existing != null && existing.burstUntilMs > now -> existing.burstUntilMs
+                else -> 0L
+            },
         )
         if (existingIdx >= 0) {
             viewStack[existingIdx] = entry
         } else {
             viewStack.add(entry)
         }
-        evaluateViewStack(allowPulse = existingIdx < 0)
+        evaluateViewStack(allowPulse = existingIdx < 0 || refreshTimestamp)
     }
 
     private inline fun upsertInPlaceIfPresent(
@@ -919,7 +1614,7 @@ class IslandStateCoordinator(
     }
 
     private fun evaluateViewStack(allowPulse: Boolean) {
-        if (isHiddenByEnvironment) return
+        if (isHiddenByEnvironment || isRestrictedToRingByQs) return
         val state = _uiState.value
         if (state.visualState == CapsuleVisualState.STATE3_FULL_EXPANDED) return
         if (isHoldFromRingActive) {
@@ -950,16 +1645,8 @@ class IslandStateCoordinator(
         val activeId = currentStackId
         if (activeId != null) {
             val activeInStack = viewStack.firstOrNull { it.stackId == activeId }
-            val elapsed = now - currentStackShownAtMs
-
-            if (activeInStack != null) {
-                applyState2Update(activeInStack.content, withPulse = null)
-                if (elapsed < MIN_VIEW_DWELL_MS) {
-                    scheduleNextStackTick()
-                    return
-                }
-            } else {
-                // Expired or removed item clears dwell lock immediately so ring size returns promptly
+            if (activeInStack == null) {
+                // Expired or removed item clears active slot immediately so ring size returns promptly
                 currentStackId = null
             }
         }
@@ -992,6 +1679,7 @@ class IslandStateCoordinator(
     }
 
     private fun forceShowStackEntry(stackId: String, content: CapsuleContent, withPulse: Boolean) {
+        if (isHiddenByEnvironment || isRestrictedToRingByQs) return
         val now = clockMillis()
         currentStackId = stackId
         currentStackShownAtMs = now
@@ -1071,10 +1759,15 @@ class IslandStateCoordinator(
         is CapsuleContent.Charging -> STACK_CHARGING_PEEK
         is CapsuleContent.BatteryPeek -> STACK_BATTERY_PEEK
         is CapsuleContent.Torch -> STACK_TORCH
+        is CapsuleContent.Hotspot -> STACK_HOTSPOT
+        is CapsuleContent.SystemStatus -> "sys:${content.kind.name}"
+        is CapsuleContent.BluetoothDevice -> STACK_BLUETOOTH
+        is CapsuleContent.CallAlert -> "call:${content.key}"
         is CapsuleContent.Volume -> STACK_VOLUME
         is CapsuleContent.Alarm -> STACK_ALARM
         is CapsuleContent.Unlock -> STACK_UNLOCK
         is CapsuleContent.NotificationAlert -> "notif:${content.key}"
+        is CapsuleContent.NotificationSummary -> STACK_NOTIF_SUMMARY
         is CapsuleContent.LiveActivity -> "live:${content.key}"
         is CapsuleContent.NowBrief, CapsuleContent.Idle -> null
     }
@@ -1112,12 +1805,7 @@ class IslandStateCoordinator(
     private fun scheduleNextStackTick() {
         stackScheduleJob?.cancel()
         val now = clockMillis()
-        val activeId = currentStackId
         val nextWakeMs = buildList {
-            if (activeId != null) {
-                val dwellRemaining = (currentStackShownAtMs + MIN_VIEW_DWELL_MS) - now
-                if (dwellRemaining > 0L) add(dwellRemaining)
-            }
             viewStack.forEach { entry ->
                 if (entry.isTransient && entry.expiresAtMs < Long.MAX_VALUE) {
                     val rem = entry.expiresAtMs - now
@@ -1141,6 +1829,7 @@ class IslandStateCoordinator(
 
     private fun transientDismissStackId(content: CapsuleContent): String? = when (content) {
         is CapsuleContent.NotificationAlert -> "notif:${content.key}"
+        is CapsuleContent.BluetoothDevice -> STACK_BLUETOOTH
         is CapsuleContent.Volume -> STACK_VOLUME
         is CapsuleContent.Alarm -> STACK_ALARM
         is CapsuleContent.Unlock -> STACK_UNLOCK
@@ -1153,21 +1842,36 @@ class IslandStateCoordinator(
     private fun stackPriorityComparator(now: Long): Comparator<StackEntry> =
         compareBy<StackEntry> { effectivePriority(it, now) }.thenBy { it.updatedAtMs }
 
-    private fun effectivePriority(entry: StackEntry, now: Long): Int =
-        if (entry.burstUntilMs > now) PRIORITY_FRESH_BURST_BASE + entry.priority else entry.priority
+    private fun effectivePriority(entry: StackEntry, now: Long): Int = when {
+        entry.priority == PRIORITY_CALL -> PRIORITY_FRESH_BURST_BASE + PRIORITY_CALL
+        entry.priority == PRIORITY_NOTIFICATION && entry.burstUntilMs > now ->
+            PRIORITY_FRESH_BURST_BASE + PRIORITY_NOTIFICATION
+        entry.burstUntilMs > now -> PRIORITY_FRESH_BURST_BASE
+        else -> entry.priority
+    }
 
     private fun effectiveAutoCollapseMs(): Long =
-        _uiState.value.preferences.autoCollapseDelayMs.coerceAtLeast(MIN_VIEW_DWELL_MS)
+        _uiState.value.preferences.horizontalAutoCollapseDelayMs.coerceAtLeast(MIN_VIEW_DWELL_MS)
 
     private fun fastLowPriorityMs(): Long {
-        val configured = _uiState.value.preferences.autoCollapseDelayMs.coerceAtLeast(MIN_LOW_PRIORITY_COLLAPSE_MS)
+        val configured = _uiState.value.preferences.horizontalAutoCollapseDelayMs.coerceAtLeast(MIN_LOW_PRIORITY_COLLAPSE_MS)
         return (configured / 2L).coerceAtLeast(MIN_LOW_PRIORITY_COLLAPSE_MS)
     }
 
     private fun scheduleState3AutoCollapse() {
         state3AutoCollapseJob?.cancel()
-        val rawDelayMs = _uiState.value.preferences.autoCollapseDelayMs.coerceAtLeast(1500L)
+        if (_uiState.value.content is CapsuleContent.CallAlert || isReplyingInCard) {
+            state3AutoCollapseJob = null
+            return
+        }
+        val prefs = _uiState.value.preferences
+        val rawDelayMs = prefs.autoCollapseDelayMs.coerceAtLeast(1500L)
         val delayMs = when {
+            _uiState.value.content is CapsuleContent.Media -> if (prefs.mediaFollowGlobalAutoCollapse) {
+                rawDelayMs
+            } else {
+                prefs.mediaAutoCollapseDelayMs.coerceIn(10_000L, 60_000L)
+            }
             _uiState.value.content is CapsuleContent.NotificationAlert ->
                 min(rawDelayMs, MAX_NOTIFICATION_AUTO_DISMISS_MS)
             _uiState.value.content is CapsuleContent.Volume && !hasInteractedInCurrentState3 ->
@@ -1211,6 +1915,15 @@ class IslandStateCoordinator(
         }
     }
 
+    private fun triggerSatelliteGlowPulse() {
+        satelliteGlowJob?.cancel()
+        _uiState.update { current -> current.copy(isSatelliteGlowActive = true) }
+        satelliteGlowJob = scope.launch {
+            delay(RING_GLOW_HOLD_MS.milliseconds)
+            _uiState.update { current -> current.copy(isSatelliteGlowActive = false) }
+        }
+    }
+
     private fun cancelAllTimers() {
         stackScheduleJob?.cancel()
         stackScheduleJob = null
@@ -1219,6 +1932,8 @@ class IslandStateCoordinator(
         state3AutoCollapseJob?.cancel()
         state3AutoCollapseJob = null
         neuralPulseJob?.cancel()
+        satelliteGlowJob?.cancel()
+        satelliteGlowJob = null
         neuralPulseJob = null
         collapseWaveJob?.cancel()
         collapseWaveJob = null
@@ -1229,7 +1944,9 @@ class IslandStateCoordinator(
     companion object {
         const val MIN_VIEW_DWELL_MS = 2_000L
         const val MIN_LOW_PRIORITY_COLLAPSE_MS = 1_000L
-        const val MAX_NOTIFICATION_AUTO_DISMISS_MS = 4_500L
+        const val NON_ACTION_HORIZONTAL_DISMISS_MS = 1_000L
+        const val MIN_NOTIFICATION_STANDALONE_DWELL_MS = 6_000L
+        const val MAX_NOTIFICATION_AUTO_DISMISS_MS = 15_000L
         const val NEURAL_DOT_BURST_HOLD_MS = 1_900L
         const val COLLAPSE_WAVE_HOLD_MS = 760L
         const val RING_GLOW_HOLD_MS = 760L
@@ -1237,23 +1954,31 @@ class IslandStateCoordinator(
 
         private const val STACK_MEDIA = "media"
         private const val STACK_TORCH = "torch"
+        private const val STACK_HOTSPOT = "hotspot"
+        private const val STACK_BLUETOOTH = "bluetooth"
         private const val STACK_VOLUME = "volume"
         private const val STACK_ALARM = "alarm"
         private const val STACK_UNLOCK = "unlock"
         private const val STACK_CHARGING_PEEK = "charging_peek"
         private const val STACK_BATTERY_PEEK = "battery_peek"
+        private const val STACK_NOTIF_SUMMARY = "notif_summary"
+        private const val NOTIF_SUMMARY_REAPPEAR_INTERVAL_MS = 30_000L
 
-        // Resting canonical priority order: Notification > Media > LiveActivity > Other > Volume
+        // Resting canonical priority order: Call > Notification > Media > LiveActivity > Bluetooth > Other > Volume > NotifSummary
         private const val PRIORITY_BATTERY_IDLE = 10
         private const val PRIORITY_PAUSED_MEDIA = 20
+        private const val PRIORITY_NOTIF_SUMMARY = 25
         private const val PRIORITY_VOLUME = 30
         private const val PRIORITY_TORCH = 40
+        private const val PRIORITY_HOTSPOT = 45
         private const val PRIORITY_CHARGING = 50
         private const val PRIORITY_ALARM = 60
         private const val PRIORITY_UNLOCK = 70
+        private const val PRIORITY_BLUETOOTH = 85
         private const val PRIORITY_LIVE_ACTIVITY = 100
         private const val PRIORITY_MEDIA = 110
         private const val PRIORITY_NOTIFICATION = 130
+        private const val PRIORITY_CALL = 150
         private const val PRIORITY_FRESH_BURST_BASE = 200
         private const val PRIORITY_MANUAL_PEEK = 300
     }

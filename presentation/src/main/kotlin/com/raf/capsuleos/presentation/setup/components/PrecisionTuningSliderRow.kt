@@ -1,5 +1,6 @@
 package com.raf.capsuleos.presentation.setup.components
 
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -21,6 +22,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.raf.capsuleos.presentation.R
 import com.raf.capsuleos.presentation.common.CapsuleExpressiveSurface
@@ -51,26 +53,36 @@ fun PrecisionTuningSliderRow(
     stepSize: Float,
     onValueChange: (Float) -> Unit,
     showStepButtons: Boolean = true,
+    enabled: Boolean = true,
 ) {
     val haptics = LocalHapticFeedback.current
+    val labelAlpha = if (enabled) 1f else 0.45f
 
     Column(modifier = modifier.fillMaxWidth()) {
         Spacer(modifier = Modifier.height(8.dp))
         Row(
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(
                 text = label,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = labelAlpha),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .weight(1f)
+                    .basicMarquee(),
             )
             Text(
                 text = valueLabel,
                 style = MaterialTheme.typography.bodySmall,
                 fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.primary,
+                color = MaterialTheme.colorScheme.primary.copy(alpha = labelAlpha),
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
             )
         }
 
@@ -85,7 +97,7 @@ fun PrecisionTuningSliderRow(
                 StepIconButton(
                     icon = Icons.Rounded.Remove,
                     contentDescription = stringResource(R.string.desc_decrease_value),
-                    enabled = value > valueRange.start + 0.001f,
+                    enabled = enabled && value > valueRange.start + 0.001f,
                     onClick = {
                         val snapped = snapValueToStep(value - stepSize, valueRange, stepSize)
                         haptics.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick)
@@ -100,6 +112,7 @@ fun PrecisionTuningSliderRow(
                     onValueChange(snapValueToStep(next, valueRange, stepSize))
                 },
                 valueRange = valueRange,
+                enabled = enabled,
                 modifier = Modifier.weight(1f),
             )
 
@@ -107,7 +120,7 @@ fun PrecisionTuningSliderRow(
                 StepIconButton(
                     icon = Icons.Rounded.Add,
                     contentDescription = stringResource(R.string.desc_increase_value),
-                    enabled = value < valueRange.endInclusive - 0.001f,
+                    enabled = enabled && value < valueRange.endInclusive - 0.001f,
                     onClick = {
                         val snapped = snapValueToStep(value + stepSize, valueRange, stepSize)
                         haptics.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick)

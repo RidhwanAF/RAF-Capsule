@@ -1,5 +1,6 @@
 package com.raf.capsuleos.presentation.simulation.components
 
+import android.os.SystemClock
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
@@ -35,6 +36,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -58,12 +60,17 @@ import com.raf.capsuleos.domain.model.CapsuleEvent
 import com.raf.capsuleos.domain.model.CapsuleUiState
 import com.raf.capsuleos.domain.model.CapsuleVisualState
 import com.raf.capsuleos.domain.model.RingerModeState
+import com.raf.capsuleos.domain.model.SystemStatusKind
 import com.raf.capsuleos.presentation.R
 import com.raf.capsuleos.presentation.capsule.ui.CapsuleLayoutDpSpec
 import com.raf.capsuleos.presentation.capsule.ui.CapsuleScrubPresentation
 import com.raf.capsuleos.presentation.capsule.ui.IslandCapsule
 import com.raf.capsuleos.presentation.capsule.ui.computeCapsuleLayoutDpSpec
+import com.raf.capsuleos.presentation.shader.OuterScreenExpansionAura
+import com.raf.capsuleos.presentation.shader.resolveOuterExpansionAuraColors
+import com.raf.capsuleos.presentation.shader.shouldShowOuterExpansionAura
 import com.raf.capsuleos.presentation.simulation.SimulationUiState
+import kotlinx.coroutines.delay
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -76,14 +83,17 @@ import kotlin.math.roundToInt
 fun CapsulePhoneMockup(
     modifier: Modifier = Modifier,
     uiState: SimulationUiState,
+    viewportHeight: Dp = 344.dp,
     onMockupWidthMeasured: (Float) -> Unit,
     onResolveExpandTarget: () -> CapsuleContent,
     onResolveCollapseTarget: () -> Pair<CapsuleVisualState, CapsuleContent>,
     onEvent: (CapsuleEvent) -> Unit,
-    onTogglePlayPause: () -> Unit,
-    onSkipNext: () -> Unit,
-    onSkipPrevious: () -> Unit,
-    onSeekTo: (Long) -> Unit,
+    onTogglePlayPause: (String) -> Unit,
+    onSkipNext: (String) -> Unit,
+    onSkipPrevious: (String) -> Unit,
+    onSeekTo: (String, Long) -> Unit,
+    onSelectMediaSession: (Int) -> Unit = {},
+    onOpenAudioOutput: () -> Unit = {},
     onToggleTorch: (Boolean) -> Unit,
     onSetTorchStrength: (Int) -> Unit,
     onSetStreamVolume: (AudioStreamType, Int) -> Unit,
@@ -91,8 +101,15 @@ fun CapsulePhoneMockup(
     onSetRingerMode: (RingerModeState) -> Unit,
     onSetBrightnessPercent: (Int) -> Unit,
     onToggleAutoBrightness: () -> Unit,
+    onAnswerCall: (CapsuleContent.CallAlert) -> Unit = {},
+    onDeclineCall: (CapsuleContent.CallAlert) -> Unit = {},
+    onOpenCallApp: (CapsuleContent.CallAlert) -> Unit = {},
+    onOpenLiveActivityApp: (CapsuleContent.LiveActivity) -> Unit = {},
+    onOpenSystemStatusSettings: (SystemStatusKind) -> Unit = {},
+    onOpenBluetoothSettings: () -> Unit = {},
+    onOpenHotspotSettings: () -> Unit = {},
     onLockScreenButton: () -> Unit,
-    onDoubleTapLock: () -> Unit,
+    onOpenNotificationShade: () -> Unit = {},
     onWakeFromLock: () -> Unit,
     onOpenNotification: (CapsuleContent.NotificationAlert) -> Unit,
     onTriggerNotificationAction: (CapsuleContent.NotificationAlert, Int, String?) -> Unit,
@@ -105,6 +122,41 @@ fun CapsulePhoneMockup(
     val prefs = capsuleState.preferences
 
     var isHolding by remember { mutableStateOf(false) }
+    var forceCameraCircleStage by remember { mutableStateOf(false) }
+    var suppressSatelliteStage by remember { mutableStateOf(false) }
+    var holdPillBeforeRingState by remember { mutableStateOf<CapsuleUiState?>(null) }
+    var skipNextCollapseStaging by remember { mutableStateOf(false) }
+    var state3EnteredAtMs by remember { mutableLongStateOf(0L) }
+    var prevStateSnapshot by remember { mutableStateOf(capsuleState) }
+    LaunchedEffect(capsuleState.visualState, capsuleState.isQsRingOnlyActive) {
+        val prevSnapshot = prevStateSnapshot
+        val prevExpanded = prevSnapshot.visualState == CapsuleVisualState.STATE3_FULL_EXPANDED
+        val nowExpanded = capsuleState.visualState == CapsuleVisualState.STATE3_FULL_EXPANDED
+        skipNextCollapseStaging = false
+        prevStateSnapshot = capsuleState
+
+        if (nowExpanded && !prevExpanded) {
+            state3EnteredAtMs = SystemClock.uptimeMillis()
+        }
+
+        if (capsuleState.isQsRingOnlyActive) {
+            holdPillBeforeRingState = null
+            forceCameraCircleStage = false
+            suppressSatelliteStage = false
+        } else if (prevExpanded && !nowExpanded && capsuleState.leftSatellite != null) {
+            // Collapse fully into the main capsule FIRST with left circle completely gone;
+            // only after the collapse has completely settled, reveal the left circle.
+            holdPillBeforeRingState = null
+            forceCameraCircleStage = false
+            suppressSatelliteStage = true
+            delay(500L)
+            suppressSatelliteStage = false
+        } else if (nowExpanded) {
+            holdPillBeforeRingState = null
+            forceCameraCircleStage = false
+            suppressSatelliteStage = false
+        }
+    }
     var activeScrubSession by remember { mutableStateOf<MockupScrubSession?>(null) }
     var scrubPresentation by remember { mutableStateOf<CapsuleScrubPresentation?>(null) }
     val swipeJiggleOffsetDp = remember { Animatable(0f) }
@@ -133,7 +185,7 @@ fun CapsulePhoneMockup(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .height(344.dp)
+            .height(viewportHeight)
             .clip(bezelShape)
             .background(wallpaperBrush)
             .border(
@@ -145,7 +197,9 @@ fun CapsulePhoneMockup(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
             ) {
-                if (capsuleState.visualState == CapsuleVisualState.STATE3_FULL_EXPANDED) {
+                if (capsuleState.visualState == CapsuleVisualState.STATE3_FULL_EXPANDED &&
+                    SystemClock.uptimeMillis() - state3EnteredAtMs > 420L
+                ) {
                     onEvent(CapsuleEvent.CollapseCapsule)
                 }
             },
@@ -156,13 +210,25 @@ fun CapsulePhoneMockup(
         }
 
         // Compute layout bounds identically to CapsuleOverlayController
+        val displayCapsuleState = holdPillBeforeRingState ?: capsuleState
+        val effectiveLayoutState = when {
+            forceCameraCircleStage && displayCapsuleState.visualState != CapsuleVisualState.STATE3_FULL_EXPANDED ->
+                displayCapsuleState.copy(
+                    visualState = CapsuleVisualState.STATE1_CUTOUT_ANCHOR,
+                    content = CapsuleContent.Idle,
+                    leftSatellite = null,
+                )
+            suppressSatelliteStage && displayCapsuleState.visualState != CapsuleVisualState.STATE3_FULL_EXPANDED ->
+                displayCapsuleState.copy(leftSatellite = null)
+            else -> displayCapsuleState
+        }
         val targetSpec = computeCapsuleLayoutDpSpec(
-            state = capsuleState,
+            state = effectiveLayoutState,
             isHoldingCapsule = isHolding,
         )
         val springSpecDp = spring<Dp>(
-            dampingRatio = 0.80f,
-            stiffness = 430f,
+            dampingRatio = 0.82f,
+            stiffness = 410f,
         )
         val animWidthDp by animateDpAsState(targetSpec.widthDp.dp, springSpecDp, label = "simW")
         val animHeightDp by animateDpAsState(targetSpec.heightDp.dp, springSpecDp, label = "simH")
@@ -181,11 +247,14 @@ fun CapsulePhoneMockup(
             val s = activeScrubSession!!
             val fClamped = f.coerceIn(0f, 1f)
             val over = (f - 1f).coerceAtLeast(0f)
-            liveWidthDp = lerpFloat(s.compactSpec.widthDp, s.expandedSpec.widthDp, fClamped) + over * 6f
-            liveHeightDp = lerpFloat(s.compactSpec.heightDp, s.expandedSpec.heightDp, fClamped) + over * 18f
-            liveOffsetXDp = lerpFloat(s.compactSpec.offsetXDp, s.expandedSpec.offsetXDp, fClamped)
-            liveTopYDp = lerpFloat(s.compactSpec.topYDp, s.expandedSpec.topYDp, fClamped)
-            liveCornerDp = lerpFloat(s.compactSpec.cornerDp, s.expandedSpec.cornerDp, fClamped)
+            val satT = activeScrub.satelliteFraction
+            val extraW = s.compactSpec.widthDp - s.compactBaseSpec.widthDp
+            val extraX = s.compactSpec.offsetXDp - s.compactBaseSpec.offsetXDp
+            liveWidthDp = lerpFloat(s.compactBaseSpec.widthDp, s.expandedSpec.widthDp, fClamped) + over * 6f + satT * extraW
+            liveHeightDp = lerpFloat(s.compactBaseSpec.heightDp, s.expandedSpec.heightDp, fClamped) + over * 18f
+            liveOffsetXDp = lerpFloat(s.compactBaseSpec.offsetXDp, s.expandedSpec.offsetXDp, fClamped) + satT * extraX
+            liveTopYDp = lerpFloat(s.compactBaseSpec.topYDp, s.expandedSpec.topYDp, fClamped)
+            liveCornerDp = lerpFloat(s.compactBaseSpec.cornerDp, s.expandedSpec.cornerDp, fClamped)
         } else {
             liveWidthDp = animWidthDp.value
             liveHeightDp = animHeightDp.value
@@ -194,10 +263,10 @@ fun CapsulePhoneMockup(
             liveCornerDp = animCornerDp.value
         }
 
-        // Mock Status Bar behind the capsule overlay (fades icons smoothly when State 3 hides icons)
-        val hideIcons = capsuleState.shouldHideStatusBarIcons
+        // Mock Status Bar behind the capsule overlay
+        val isQsSimulated = capsuleState.isQsRingOnlyActive
         val statusIconAlpha by animateFloatAsState(
-            targetValue = if (hideIcons) 0.14f else 0.88f,
+            targetValue = if (isQsSimulated) 0.45f else 0.88f,
             animationSpec = tween(durationMillis = 200),
             label = "simStatusAlpha",
         )
@@ -268,6 +337,27 @@ fun CapsulePhoneMockup(
             )
         }
 
+        // Outer screen-frame expansion aura radiating inward from phone frame edges -> center transparent
+        val (outerAuraColorA, outerAuraColorB) = resolveOuterExpansionAuraColors(
+            state = capsuleState,
+            primaryColor = MaterialTheme.colorScheme.primary,
+            tertiaryColor = MaterialTheme.colorScheme.tertiary,
+        )
+        val outerAuraHeightDp = (targetSpec.topYDp + targetSpec.heightDp + 36f)
+            .coerceAtLeast(180f)
+            .dp
+        OuterScreenExpansionAura(
+            visible = shouldShowOuterExpansionAura(capsuleState),
+            colorA = outerAuraColorA,
+            colorB = outerAuraColorB,
+            screenCornerRadiusDp = outerBezelRadius.value,
+            spreadDp = 68f,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .height(outerAuraHeightDp),
+        )
+
         // Actual IslandCapsule composable running sandbox coordinator state
         Box(
             modifier = Modifier
@@ -281,15 +371,36 @@ fun CapsulePhoneMockup(
                 .size(width = liveWidthDp.coerceAtLeast(24f).dp, height = liveHeightDp.coerceAtLeast(24f).dp),
         ) {
             IslandCapsule(
-                uiState = capsuleState,
+                uiState = displayCapsuleState,
                 cornerRadiusDp = liveCornerDp,
                 isBlurSupported = false,
                 scrubPresentation = activeScrub,
+                isForceCameraCircleStage = forceCameraCircleStage,
+                isSatelliteDelayedStage = suppressSatelliteStage,
                 onHoldingStateChanged = { holding -> isHolding = holding },
                 onHoldPeekStart = { onEvent(CapsuleEvent.HoldPeekStarted) },
                 onHoldPeekEnd = { onEvent(CapsuleEvent.HoldPeekReleased) },
                 onTap = { onEvent(CapsuleEvent.TapCapsule) },
                 onExpand = { onEvent(CapsuleEvent.ExpandToFull) },
+                onLongHoldGesture = { onEvent(CapsuleEvent.LongHoldCapsule) },
+                onDoubleTapGesture = { onEvent(CapsuleEvent.DoubleTapCapsule) },
+                onExpandSatellite = {
+                    holdPillBeforeRingState = null
+                    forceCameraCircleStage = false
+                    suppressSatelliteStage = false
+                    onEvent(CapsuleEvent.ExpandLeftSatellite)
+                },
+                onMergeSatelliteIntoMainBeforeCamera = {
+                    holdPillBeforeRingState = null
+                    forceCameraCircleStage = false
+                    suppressSatelliteStage = true
+                },
+                onMergeToCameraBeforeExpand = {
+                    holdPillBeforeRingState = null
+                    suppressSatelliteStage = false
+                    forceCameraCircleStage = true
+                },
+                onCycleSatellite = { dir -> onEvent(CapsuleEvent.CycleLeftSatellite(dir)) },
                 onUserInteraction = { onEvent(CapsuleEvent.UserInteractedInCard) },
                 onCycleContent = { dir -> onEvent(CapsuleEvent.CycleContent(dir)) },
                 onVerticalScrubStart = {
@@ -309,14 +420,26 @@ fun CapsulePhoneMockup(
                         )
                     }
                     val compactSpec = computeCapsuleLayoutDpSpec(compactState, isHoldingCapsule = false)
+                    val compactBaseSpec = computeCapsuleLayoutDpSpec(
+                        compactState.copy(leftSatellite = null),
+                        isHoldingCapsule = false,
+                    )
                     val expandedSpec = computeCapsuleLayoutDpSpec(expandedState, isHoldingCapsule = false)
-                    val travelPx = ((expandedSpec.heightDp - compactSpec.heightDp) * density).coerceAtLeast(110f)
+                    val travelPx = ((expandedSpec.heightDp - compactBaseSpec.heightDp) * density).coerceAtLeast(110f)
                     val initialFraction = if (currentlyExpanded) 1f else 0f
+                    val satThreshold = 0.24f
+                    val initSatT = if (!currentlyExpanded && compactState.leftSatellite != null) {
+                        ((satThreshold - initialFraction) / satThreshold).coerceIn(0f, 1f)
+                    } else {
+                        0f
+                    }
                     activeScrubSession = MockupScrubSession(
                         compactUiState = compactState,
                         compactSpec = compactSpec,
+                        compactBaseSpec = compactBaseSpec,
                         expandedUiState = expandedState,
                         expandedSpec = expandedSpec,
+                        isCollapsing = currentlyExpanded,
                     )
                     scrubPresentation = CapsuleScrubPresentation(
                         fraction = initialFraction,
@@ -327,6 +450,9 @@ fun CapsulePhoneMockup(
                         expandedHeightDp = expandedSpec.heightDp,
                         currentWidthDp = if (currentlyExpanded) expandedSpec.widthDp else compactSpec.widthDp,
                         currentHeightDp = if (currentlyExpanded) expandedSpec.heightDp else compactSpec.heightDp,
+                        isCollapsing = currentlyExpanded,
+                        satelliteFraction = initSatT,
+                        fromSatellite = expandedState.isExpandedFromSatellite,
                     )
                     travelPx to initialFraction
                 },
@@ -334,6 +460,13 @@ fun CapsulePhoneMockup(
                     val s = activeScrubSession ?: return@IslandCapsule
                     val f = rawFraction.coerceIn(0f, 1.08f)
                     val fc = f.coerceIn(0f, 1f)
+                    val satThreshold = 0.24f
+                    val satT = if (!s.isCollapsing && s.compactUiState.leftSatellite != null) {
+                        ((satThreshold - fc) / satThreshold).coerceIn(0f, 1f)
+                    } else {
+                        0f
+                    }
+                    val extraW = s.compactSpec.widthDp - s.compactBaseSpec.widthDp
                     scrubPresentation = CapsuleScrubPresentation(
                         fraction = f,
                         compactVisualState = s.compactUiState.visualState,
@@ -341,29 +474,37 @@ fun CapsulePhoneMockup(
                         expandedContent = s.expandedUiState.content,
                         expandedWidthDp = s.expandedSpec.widthDp,
                         expandedHeightDp = s.expandedSpec.heightDp,
-                        currentWidthDp = lerpFloat(s.compactSpec.widthDp, s.expandedSpec.widthDp, fc),
-                        currentHeightDp = lerpFloat(s.compactSpec.heightDp, s.expandedSpec.heightDp, fc),
+                        currentWidthDp = lerpFloat(s.compactBaseSpec.widthDp, s.expandedSpec.widthDp, fc) + satT * extraW,
+                        currentHeightDp = lerpFloat(s.compactBaseSpec.heightDp, s.expandedSpec.heightDp, fc),
+                        isCollapsing = s.isCollapsing,
+                        satelliteFraction = satT,
+                        fromSatellite = s.expandedUiState.isExpandedFromSatellite,
                     )
                 },
                 onVerticalScrubEnd = { commitExpanded, velocity ->
+                    val s = activeScrubSession
                     val fraction = scrubPresentation?.fraction ?: 0f
+                    val threshold = if (s?.isCollapsing == true) 0.75f else 0.25f
                     val shouldExpand = when {
                         abs(velocity) > 650f -> velocity > 0f
-                        else -> commitExpanded || fraction >= 0.42f
+                        else -> commitExpanded || fraction >= threshold
                     }
                     activeScrubSession = null
                     scrubPresentation = null
                     if (shouldExpand) {
                         onEvent(CapsuleEvent.ExpandToFull)
                     } else {
+                        skipNextCollapseStaging = true
                         onEvent(CapsuleEvent.CollapseCapsule)
                     }
                 },
                 onOpenNotification = onOpenNotification,
                 onTriggerNotificationAction = onTriggerNotificationAction,
                 onDismissNotification = onDismissNotification,
-                onReplyFocusChanged = { _ -> },
+                onReplyFocusChanged = { focused -> onEvent(CapsuleEvent.ReplyFocusChanged(focused)) },
                 onOpenMediaApp = { _ -> onOpenMediaApp() },
+                onSelectMediaSession = onSelectMediaSession,
+                onOpenAudioOutput = onOpenAudioOutput,
                 onTogglePlayPause = onTogglePlayPause,
                 onSkipNext = onSkipNext,
                 onSkipPrevious = onSkipPrevious,
@@ -375,8 +516,15 @@ fun CapsulePhoneMockup(
                 onSetRingerMode = onSetRingerMode,
                 onSetBrightnessPercent = onSetBrightnessPercent,
                 onToggleAutoBrightness = onToggleAutoBrightness,
+                onAnswerCall = onAnswerCall,
+                onDeclineCall = onDeclineCall,
+                onOpenCallApp = onOpenCallApp,
+                onOpenLiveActivityApp = onOpenLiveActivityApp,
+                onOpenSystemStatusSettings = onOpenSystemStatusSettings,
+                onOpenBluetoothSettings = onOpenBluetoothSettings,
+                onOpenHotspotSettings = onOpenHotspotSettings,
                 onLockScreen = onLockScreenButton,
-                onDoubleTapLock = onDoubleTapLock,
+                onOpenNotificationShade = onOpenNotificationShade,
                 onOpenClock = onOpenClock,
                 modifier = Modifier.fillMaxSize(),
             )
@@ -427,8 +575,10 @@ fun CapsulePhoneMockup(
 private data class MockupScrubSession(
     val compactUiState: CapsuleUiState,
     val compactSpec: CapsuleLayoutDpSpec,
+    val compactBaseSpec: CapsuleLayoutDpSpec,
     val expandedUiState: CapsuleUiState,
     val expandedSpec: CapsuleLayoutDpSpec,
+    val isCollapsing: Boolean,
 )
 
 private fun lerpFloat(start: Float, end: Float, fraction: Float): Float =

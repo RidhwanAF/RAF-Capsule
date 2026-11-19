@@ -1,10 +1,15 @@
 package com.raf.capsuleos.presentation.setup
 
+import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -25,15 +30,20 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.raf.capsuleos.domain.model.CameraAnchorPosition
 import com.raf.capsuleos.presentation.R
 import com.raf.capsuleos.presentation.capsule.service.CapsuleTestAction
+import com.raf.capsuleos.presentation.navigation.CustomizationSection
 import kotlinx.coroutines.launch
 
 /**
- * Stateful setup and calibration container binding [SetupViewModel] and Android system settings.
+ * Stateful home setup container binding [SetupViewModel] and Android system settings.
  */
 @Composable
 fun SetupScreen(
     modifier: Modifier = Modifier,
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
+    onOpenCustomizationSection: (CustomizationSection) -> Unit = {},
     onOpenSimulation: () -> Unit = {},
+    onOpenAppSettings: () -> Unit = {},
     viewModel: SetupViewModel = hiltViewModel(),
 ) {
     val context = LocalContext.current
@@ -42,6 +52,11 @@ fun SetupScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
+    val bluetoothPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+    ) {
+        viewModel.refreshPermissions()
+    }
 
     val adbCommand = remember(context.packageName) {
         "adb shell pm grant ${context.packageName} android.permission.WRITE_SECURE_SETTINGS"
@@ -86,6 +101,8 @@ fun SetupScreen(
         uiState = uiState,
         adbCommand = adbCommand,
         snackbarHostState = snackbarHostState,
+        sharedTransitionScope = sharedTransitionScope,
+        animatedVisibilityScope = animatedVisibilityScope,
         onGrantAccessibility = {
             context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         },
@@ -101,6 +118,9 @@ fun SetupScreen(
         onGrantDndPolicyAccess = {
             context.startActivity(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS))
         },
+        onGrantBluetoothPermission = {
+            bluetoothPermissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
+        },
         onCopyAdbCommand = {
             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
             clipboard.setPrimaryClip(ClipData.newPlainText("ADB Command", adbCommand))
@@ -109,7 +129,9 @@ fun SetupScreen(
             }
         },
         onToggleStartPause = viewModel::toggleUserPause,
+        onOpenCustomizationSection = onOpenCustomizationSection,
         onOpenSimulation = onOpenSimulation,
+        onOpenAppSettings = onOpenAppSettings,
         onAutoDetectCamera = { viewModel.autoDetectCameraPosition(context) },
         onUpdatePreferences = viewModel::updatePreferences,
         onTestVolume = { viewModel.triggerTestAction(CapsuleTestAction.VOLUME) },

@@ -41,10 +41,15 @@ fun SimulationControlsSection(
     modifier: Modifier = Modifier,
     uiState: SimulationUiState,
     onToggleMedia: () -> Unit,
+    onToggleMultiMedia: () -> Unit = {},
     onPostNotification: () -> Unit,
     onVolumeUp: () -> Unit,
     onVolumeDown: () -> Unit,
     onToggleTorch: () -> Unit,
+    onToggleHotspot: () -> Unit = {},
+    onToggleLiveActivity: () -> Unit = {},
+    onTriggerBluetooth: () -> Unit = {},
+    onTriggerCall: () -> Unit = {},
     onTriggerAlarm: () -> Unit,
     onToggleCharging: () -> Unit,
     onTriggerUnlock: () -> Unit,
@@ -201,6 +206,58 @@ fun SimulationControlsSection(
                         onClick = {
                             haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
                             onResetRing()
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    SandboxTriggerButton(
+                        label = stringResource(R.string.label_sim_bluetooth),
+                        onClick = {
+                            haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                            onTriggerBluetooth()
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                    SandboxTriggerButton(
+                        label = stringResource(R.string.label_sim_hotspot),
+                        onClick = {
+                            haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                            onToggleHotspot()
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                    SandboxTriggerButton(
+                        label = stringResource(R.string.label_sim_live_activity),
+                        onClick = {
+                            haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                            onToggleLiveActivity()
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    SandboxTriggerButton(
+                        label = stringResource(R.string.label_sim_multi_media),
+                        onClick = {
+                            haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                            onToggleMultiMedia()
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                    SandboxTriggerButton(
+                        label = stringResource(R.string.label_sim_call),
+                        onClick = {
+                            haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                            onTriggerCall()
                         },
                         modifier = Modifier.weight(1f),
                     )

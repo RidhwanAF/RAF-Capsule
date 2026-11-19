@@ -1,22 +1,26 @@
 package com.raf.capsuleos.data.system
 
 import android.app.AlarmManager
-import android.app.KeyguardManager
+import android.app.NotificationManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.content.pm.PackageManager
-import android.hardware.biometrics.BiometricManager
-import android.hardware.camera2.CameraCharacteristics
-import android.hardware.camera2.CameraManager
+import android.media.AudioManager
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
+import android.net.wifi.WifiManager
 import android.os.BatteryManager
-import android.os.SystemClock
+import android.os.PowerManager
+import android.provider.Settings
 import android.text.format.DateFormat
 import androidx.core.content.ContextCompat
 import com.raf.capsuleos.data.media.CapsuleNotificationListenerService
 import com.raf.capsuleos.domain.model.CapsuleContent
 import com.raf.capsuleos.domain.model.CapsuleEvent
+import com.raf.capsuleos.domain.model.SystemStatusKind
 import com.raf.capsuleos.domain.model.UnlockMethod
 import com.raf.capsuleos.domain.model.WeatherConditionKind
 import com.raf.capsuleos.domain.model.WeatherSummary
@@ -43,8 +47,7 @@ import kotlin.time.Duration.Companion.minutes
 
 /**
  * Observes system battery level, charging state, ongoing live activities,
- * device unlock (`ACTION_USER_PRESENT` + unprivileged biometric/camera unlock signals),
- * and alarm schedule changes.
+ * device unlock (`ACTION_USER_PRESENT`), and alarm schedule changes.
  */
 @Singleton
 class SystemEventsRepositoryImpl @Inject constructor(
@@ -53,48 +56,73 @@ class SystemEventsRepositoryImpl @Inject constructor(
 
     private val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
     private val batteryManager = context.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
-    private val keyguardManager = context.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
-    private val biometricManager = context.getSystemService(BiometricManager::class.java)
-    private val cameraManager = context.getSystemService(CameraManager::class.java)
-
-    private val hasFingerprintFeature: Boolean =
-        context.packageManager.hasSystemFeature(PackageManager.FEATURE_FINGERPRINT)
-    private val hasFaceFeature: Boolean =
-        context.packageManager.hasSystemFeature(PackageManager.FEATURE_FACE)
+    private val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+    private val powerManager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
+    private val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+    private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+    private val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
 
     override fun observeSystemEvents(): Flow<CapsuleEvent> = callbackFlow {
         val (initialPercent, initialCharging) = currentBatteryState()
         trySend(CapsuleEvent.BatteryUpdated(initialPercent, initialCharging))
+        trySend(CapsuleEvent.HotspotUpdated(currentHotspotState()))
+        trySend(CapsuleEvent.SystemStatusUpdated(readAirplaneModeStatus()))
+        trySend(CapsuleEvent.SystemStatusUpdated(readDndStatus()))
+        trySend(CapsuleEvent.SystemStatusUpdated(readBatterySaverStatus()))
+        trySend(CapsuleEvent.SystemStatusUpdated(readRingerMutedStatus()))
+        trySend(CapsuleEvent.SystemStatusUpdated(readDataSaverStatus()))
 
-        val frontCameraIds = resolveFrontCameraIds()
-        var lastScreenOnElapsedMs = 0L
-        var lastScreenOffElapsedMs = 0L
-        var isFrontCamHeldForKeyguard = false
-        var lockscreenFrontCamOpenElapsedMs = 0L
-        var lockscreenFrontCamCloseElapsedMs = 0L
-
-        val cameraAvailabilityCallback = object : CameraManager.AvailabilityCallback() {
-            override fun onCameraUnavailable(cameraId: String) {
-                if (cameraId in frontCameraIds && keyguardManager.isKeyguardLocked) {
-                    isFrontCamHeldForKeyguard = true
-                    lockscreenFrontCamOpenElapsedMs = SystemClock.elapsedRealtime()
-                    lockscreenFrontCamCloseElapsedMs = 0L
+        val activeVpnNetworks = LinkedHashSet<Network>()
+        val vpnCallback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                synchronized(activeVpnNetworks) {
+                    activeVpnNetworks.add(network)
                 }
+                trySend(
+                    CapsuleEvent.SystemStatusUpdated(
+                        CapsuleContent.SystemStatus(
+                            kind = SystemStatusKind.VPN,
+                            isActive = true,
+                        ),
+                    ),
+                )
             }
 
-            override fun onCameraAvailable(cameraId: String) {
-                if (cameraId in frontCameraIds && isFrontCamHeldForKeyguard) {
-                    isFrontCamHeldForKeyguard = false
-                    lockscreenFrontCamCloseElapsedMs = SystemClock.elapsedRealtime()
+            override fun onLost(network: Network) {
+                val stillActive = synchronized(activeVpnNetworks) {
+                    activeVpnNetworks.remove(network)
+                    activeVpnNetworks.isNotEmpty()
                 }
+                trySend(
+                    CapsuleEvent.SystemStatusUpdated(
+                        CapsuleContent.SystemStatus(
+                            kind = SystemStatusKind.VPN,
+                            isActive = stillActive,
+                        ),
+                    ),
+                )
             }
         }
-
-        if (frontCameraIds.isNotEmpty()) {
-            runCatching {
-                cameraManager?.registerAvailabilityCallback(context.mainExecutor, cameraAvailabilityCallback)
-            }
-        }
+        val vpnRequest = NetworkRequest.Builder()
+            .addTransportType(NetworkCapabilities.TRANSPORT_VPN)
+            .removeCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
+            .build()
+        val vpnRegistered = runCatching {
+            connectivityManager?.registerNetworkCallback(vpnRequest, vpnCallback)
+            true
+        }.getOrDefault(false)
+        val initialVpn = runCatching {
+            connectivityManager?.getNetworkCapabilities(connectivityManager.activeNetwork)
+                ?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true
+        }.getOrDefault(false)
+        trySend(
+            CapsuleEvent.SystemStatusUpdated(
+                CapsuleContent.SystemStatus(
+                    kind = SystemStatusKind.VPN,
+                    isActive = initialVpn,
+                ),
+            ),
+        )
 
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
@@ -106,33 +134,51 @@ class SystemEventsRepositoryImpl @Inject constructor(
                         val (percent, charging) = currentBatteryState()
                         trySend(CapsuleEvent.BatteryUpdated(percent, charging))
                     }
-                    Intent.ACTION_SCREEN_OFF -> {
-                        lastScreenOffElapsedMs = SystemClock.elapsedRealtime()
-                        lastScreenOnElapsedMs = 0L
-                        isFrontCamHeldForKeyguard = false
-                        lockscreenFrontCamOpenElapsedMs = 0L
-                        lockscreenFrontCamCloseElapsedMs = 0L
-                    }
-                    Intent.ACTION_SCREEN_ON -> {
-                        lastScreenOnElapsedMs = SystemClock.elapsedRealtime()
-                    }
                     Intent.ACTION_USER_PRESENT -> {
-                        val nowMs = SystemClock.elapsedRealtime()
-                        val unlockMethod = inferUnlockMethod(
-                            nowMs = nowMs,
-                            lastScreenOnElapsedMs = lastScreenOnElapsedMs,
-                            lastScreenOffElapsedMs = lastScreenOffElapsedMs,
-                            isFrontCamHeldForKeyguard = isFrontCamHeldForKeyguard,
-                            lockscreenFrontCamOpenElapsedMs = lockscreenFrontCamOpenElapsedMs,
-                            lockscreenFrontCamCloseElapsedMs = lockscreenFrontCamCloseElapsedMs,
-                        )
-                        isFrontCamHeldForKeyguard = false
-                        lockscreenFrontCamOpenElapsedMs = 0L
-                        lockscreenFrontCamCloseElapsedMs = 0L
-                        trySend(CapsuleEvent.DeviceUnlocked(readUnlockSummary(unlockMethod)))
+                        trySend(CapsuleEvent.DeviceUnlocked(readUnlockSummary(UnlockMethod.GENERIC)))
                     }
                     AlarmManager.ACTION_NEXT_ALARM_CLOCK_CHANGED -> {
                         trySend(CapsuleEvent.AlarmUpdated(readAlarmState()))
+                    }
+                    Intent.ACTION_AIRPLANE_MODE_CHANGED -> {
+                        trySend(CapsuleEvent.SystemStatusUpdated(readAirplaneModeStatus()))
+                    }
+                    NotificationManager.ACTION_INTERRUPTION_FILTER_CHANGED -> {
+                        trySend(CapsuleEvent.SystemStatusUpdated(readDndStatus()))
+                    }
+                    PowerManager.ACTION_POWER_SAVE_MODE_CHANGED -> {
+                        trySend(CapsuleEvent.SystemStatusUpdated(readBatterySaverStatus()))
+                    }
+                    AudioManager.RINGER_MODE_CHANGED_ACTION -> {
+                        trySend(CapsuleEvent.SystemStatusUpdated(readRingerMutedStatus()))
+                    }
+                    ConnectivityManager.ACTION_RESTRICT_BACKGROUND_CHANGED -> {
+                        trySend(CapsuleEvent.SystemStatusUpdated(readDataSaverStatus()))
+                    }
+                    ACTION_WIFI_AP_STATE_CHANGED -> {
+                        val apState = intent.getIntExtra(EXTRA_WIFI_AP_STATE, -1)
+                        if (apState == WIFI_AP_STATE_ENABLED || apState == WIFI_AP_STATE_DISABLED) {
+                            trySend(
+                                CapsuleEvent.HotspotUpdated(
+                                    CapsuleContent.Hotspot(isEnabled = apState == WIFI_AP_STATE_ENABLED),
+                                ),
+                            )
+                        }
+                    }
+                    ACTION_TETHER_STATE_CHANGED -> {
+                        val activeIfaces = intent.getStringArrayListExtra(EXTRA_ACTIVE_TETHER).orEmpty()
+                        val hasWifiApTether = activeIfaces.any { iface ->
+                            iface.contains("wlan", ignoreCase = true) ||
+                                iface.contains("ap", ignoreCase = true) ||
+                                iface.contains("softap", ignoreCase = true)
+                        }
+                        trySend(
+                            CapsuleEvent.HotspotUpdated(
+                                CapsuleContent.Hotspot(
+                                    isEnabled = hasWifiApTether || currentHotspotState().isEnabled,
+                                ),
+                            ),
+                        )
                     }
                 }
             }
@@ -142,19 +188,84 @@ class SystemEventsRepositoryImpl @Inject constructor(
             addAction(Intent.ACTION_BATTERY_CHANGED)
             addAction(Intent.ACTION_POWER_CONNECTED)
             addAction(Intent.ACTION_POWER_DISCONNECTED)
-            addAction(Intent.ACTION_SCREEN_ON)
-            addAction(Intent.ACTION_SCREEN_OFF)
             addAction(Intent.ACTION_USER_PRESENT)
             addAction(AlarmManager.ACTION_NEXT_ALARM_CLOCK_CHANGED)
+            addAction(Intent.ACTION_AIRPLANE_MODE_CHANGED)
+            addAction(NotificationManager.ACTION_INTERRUPTION_FILTER_CHANGED)
+            addAction(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED)
+            addAction(AudioManager.RINGER_MODE_CHANGED_ACTION)
+            addAction(ConnectivityManager.ACTION_RESTRICT_BACKGROUND_CHANGED)
+            addAction(ACTION_WIFI_AP_STATE_CHANGED)
+            addAction(ACTION_TETHER_STATE_CHANGED)
         }
         ContextCompat.registerReceiver(context, receiver, filter, ContextCompat.RECEIVER_EXPORTED)
 
         awaitClose {
             runCatching { context.unregisterReceiver(receiver) }
-            if (frontCameraIds.isNotEmpty()) {
-                runCatching { cameraManager?.unregisterAvailabilityCallback(cameraAvailabilityCallback) }
+            if (vpnRegistered) {
+                runCatching { connectivityManager?.unregisterNetworkCallback(vpnCallback) }
             }
         }
+    }
+
+    private fun readAirplaneModeStatus(): CapsuleContent.SystemStatus {
+        val enabled = runCatching {
+            Settings.Global.getInt(context.contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0) != 0
+        }.getOrDefault(false)
+        return CapsuleContent.SystemStatus(
+            kind = SystemStatusKind.AIRPLANE_MODE,
+            isActive = enabled,
+        )
+    }
+
+    private fun readDndStatus(): CapsuleContent.SystemStatus {
+        val filter = runCatching {
+            notificationManager?.currentInterruptionFilter ?: NotificationManager.INTERRUPTION_FILTER_ALL
+        }.getOrDefault(NotificationManager.INTERRUPTION_FILTER_ALL)
+        val active = filter != NotificationManager.INTERRUPTION_FILTER_ALL &&
+            filter != NotificationManager.INTERRUPTION_FILTER_UNKNOWN
+        return CapsuleContent.SystemStatus(
+            kind = SystemStatusKind.DO_NOT_DISTURB,
+            isActive = active,
+        )
+    }
+
+    private fun readBatterySaverStatus(): CapsuleContent.SystemStatus =
+        CapsuleContent.SystemStatus(
+            kind = SystemStatusKind.BATTERY_SAVER,
+            isActive = runCatching { powerManager?.isPowerSaveMode == true }.getOrDefault(false),
+        )
+
+    private fun readRingerMutedStatus(): CapsuleContent.SystemStatus {
+        val mode = runCatching { audioManager?.ringerMode ?: AudioManager.RINGER_MODE_NORMAL }
+            .getOrDefault(AudioManager.RINGER_MODE_NORMAL)
+        return when (mode) {
+            AudioManager.RINGER_MODE_SILENT -> CapsuleContent.SystemStatus(
+                kind = SystemStatusKind.RINGER_MUTED,
+                isActive = true,
+                detailLabel = "Silent",
+            )
+            AudioManager.RINGER_MODE_VIBRATE -> CapsuleContent.SystemStatus(
+                kind = SystemStatusKind.RINGER_MUTED,
+                isActive = true,
+                detailLabel = "Vibrate",
+            )
+            else -> CapsuleContent.SystemStatus(
+                kind = SystemStatusKind.RINGER_MUTED,
+                isActive = false,
+            )
+        }
+    }
+
+    private fun readDataSaverStatus(): CapsuleContent.SystemStatus {
+        val restricted = runCatching {
+            connectivityManager?.restrictBackgroundStatus ==
+                ConnectivityManager.RESTRICT_BACKGROUND_STATUS_ENABLED
+        }.getOrDefault(false)
+        return CapsuleContent.SystemStatus(
+            kind = SystemStatusKind.DATA_SAVER,
+            isActive = restricted,
+        )
     }
 
     override fun currentNextAlarmLabel(): String? {
@@ -166,6 +277,14 @@ class SystemEventsRepositoryImpl @Inject constructor(
         val percent = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
             .coerceIn(0, 100)
         return percent to batteryManager.isCharging
+    }
+
+    override fun currentHotspotState(): CapsuleContent.Hotspot {
+        val enabled = runCatching {
+            val method = WifiManager::class.java.getMethod("isWifiApEnabled")
+            method.invoke(wifiManager) as? Boolean ?: false
+        }.getOrDefault(false)
+        return CapsuleContent.Hotspot(isEnabled = enabled)
     }
 
     @Volatile
@@ -194,51 +313,6 @@ class SystemEventsRepositoryImpl @Inject constructor(
             delay(waitMinutes.minutes)
         }
     }.distinctUntilChanged().flowOn(Dispatchers.IO)
-
-    private fun resolveFrontCameraIds(): Set<String> =
-        runCatching {
-            val manager = cameraManager ?: return emptySet()
-            manager.cameraIdList.filterTo(mutableSetOf()) { id ->
-                manager.getCameraCharacteristics(id)
-                    .get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_FRONT
-            }
-        }.getOrDefault(emptySet())
-
-    private fun canAuthenticate(authenticators: Int): Boolean =
-        runCatching {
-            biometricManager?.canAuthenticate(authenticators) == BiometricManager.BIOMETRIC_SUCCESS
-        }.getOrDefault(false)
-
-    private fun inferUnlockMethod(
-        nowMs: Long,
-        lastScreenOnElapsedMs: Long,
-        lastScreenOffElapsedMs: Long,
-        isFrontCamHeldForKeyguard: Boolean,
-        lockscreenFrontCamOpenElapsedMs: Long,
-        lockscreenFrontCamCloseElapsedMs: Long,
-    ): UnlockMethod {
-        val faceAuthActiveOrRecent = hasFaceFeature &&
-            canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_WEAK) &&
-            (
-                (isFrontCamHeldForKeyguard && nowMs - lockscreenFrontCamOpenElapsedMs <= FACE_HOLD_WINDOW_MS) ||
-                    (lockscreenFrontCamCloseElapsedMs > 0L && nowMs - lockscreenFrontCamCloseElapsedMs <= FACE_CLOSE_WINDOW_MS) ||
-                    (lockscreenFrontCamOpenElapsedMs > 0L && lockscreenFrontCamCloseElapsedMs == 0L &&
-                        nowMs - lockscreenFrontCamOpenElapsedMs <= FACE_OPEN_UNCLOSED_WINDOW_MS)
-                )
-        if (faceAuthActiveOrRecent) return UnlockMethod.FACE
-
-        val quickFingerprintWake = hasFingerprintFeature &&
-            keyguardManager.isKeyguardSecure &&
-            canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG) &&
-            lockscreenFrontCamOpenElapsedMs == 0L &&
-            (
-                (lastScreenOnElapsedMs > 0L && nowMs - lastScreenOnElapsedMs <= FAST_FINGERPRINT_WAKE_WINDOW_MS) ||
-                    (lastScreenOnElapsedMs == 0L && lastScreenOffElapsedMs > 0L)
-                )
-        if (quickFingerprintWake) return UnlockMethod.FINGERPRINT
-
-        return UnlockMethod.GENERIC
-    }
 
     private fun readUnlockSummary(unlockMethod: UnlockMethod): CapsuleContent.Unlock {
         val alarm = readAlarmState()
@@ -320,10 +394,12 @@ class SystemEventsRepositoryImpl @Inject constructor(
     }
 
     private companion object {
-        const val FACE_HOLD_WINDOW_MS = 3_500L
-        const val FACE_CLOSE_WINDOW_MS = 1_200L
-        const val FACE_OPEN_UNCLOSED_WINDOW_MS = 1_800L
-        const val FAST_FINGERPRINT_WAKE_WINDOW_MS = 1_600L
+        const val ACTION_WIFI_AP_STATE_CHANGED = "android.net.wifi.WIFI_AP_STATE_CHANGED"
+        const val EXTRA_WIFI_AP_STATE = "wifi_state"
+        const val WIFI_AP_STATE_DISABLED = 11
+        const val WIFI_AP_STATE_ENABLED = 13
+        const val ACTION_TETHER_STATE_CHANGED = "android.net.conn.TETHER_STATE_CHANGED"
+        const val EXTRA_ACTIVE_TETHER = "tetherArray"
         const val HTTP_TIMEOUT_MS = 5_000
         const val WEATHER_REFRESH_MINUTES = 30
         const val WEATHER_RETRY_MINUTES = 2

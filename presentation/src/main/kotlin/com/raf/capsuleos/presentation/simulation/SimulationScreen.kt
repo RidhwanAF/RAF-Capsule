@@ -1,5 +1,7 @@
 package com.raf.capsuleos.presentation.simulation
 
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -13,6 +15,8 @@ import com.raf.capsuleos.domain.model.CapsuleEvent
 @Composable
 fun SimulationScreen(
     modifier: Modifier = Modifier,
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
     onBack: () -> Unit,
     viewModel: SimulationViewModel = hiltViewModel(),
 ) {
@@ -20,17 +24,24 @@ fun SimulationScreen(
 
     SimulationContent(
         uiState = uiState,
+        sharedTransitionScope = sharedTransitionScope,
+        animatedVisibilityScope = animatedVisibilityScope,
         onBack = onBack,
         onMockupWidthMeasured = viewModel::syncMockupWidthDp,
         onResolveExpandTarget = viewModel::resolveExpandTarget,
         onResolveCollapseTarget = viewModel::resolveCollapseTarget,
         onEvent = viewModel::dispatchCoordinatorEvent,
-        onToggleMedia = viewModel::toggleMediaPlaying,
+        onToggleMedia = { viewModel.toggleMediaPlaying() },
+        onToggleMultiMedia = viewModel::toggleMultiMediaSimulation,
         onPostNotification = viewModel::triggerMockNotification,
         onVolumeUp = { viewModel.stepVolumeEvent(1) },
         onVolumeDown = { viewModel.stepVolumeEvent(-1) },
         onToggleTorch = viewModel::setTorchEnabled,
         onSetTorchStrength = viewModel::setTorchStrength,
+        onToggleHotspot = viewModel::toggleMockHotspot,
+        onToggleLiveActivity = viewModel::toggleMockLiveActivity,
+        onTriggerBluetooth = viewModel::triggerMockBluetooth,
+        onTriggerCall = viewModel::triggerMockCall,
         onSetStreamVolume = viewModel::setStreamVolume,
         onCycleRingerMode = viewModel::cycleRingerMode,
         onSetRingerMode = viewModel::setRingerMode,
@@ -44,11 +55,41 @@ fun SimulationScreen(
             viewModel.updateSandboxPreferences { it.copy(cameraPosition = pos) }
         },
         onTogglePlayPause = viewModel::toggleMediaPlaying,
-        onSkipNext = { viewModel.skipTrack(1) },
-        onSkipPrevious = { viewModel.skipTrack(-1) },
-        onSeekTo = viewModel::seekMediaTo,
+        onSkipNext = { key -> viewModel.skipTrack(1, key) },
+        onSkipPrevious = { key -> viewModel.skipTrack(-1, key) },
+        onSeekTo = { key, ms -> viewModel.seekMediaTo(ms, key) },
+        onSelectMediaSession = viewModel::selectMediaSession,
+        onOpenAudioOutput = {
+            viewModel.recordSandboxAction("Sandbox Audio Output Switcher opened")
+            viewModel.dispatchCoordinatorEvent(CapsuleEvent.CollapseCapsule)
+        },
+        onAnswerCall = { viewModel.answerMockCall() },
+        onDeclineCall = { viewModel.declineMockCall() },
+        onOpenCallApp = { call ->
+            viewModel.recordSandboxAction("Sandbox Open Call App (${call.appName})")
+            viewModel.dispatchCoordinatorEvent(CapsuleEvent.CollapseCapsule)
+        },
+        onOpenLiveActivityApp = { live ->
+            viewModel.recordSandboxAction("Sandbox Open Live Activity (${live.title})")
+            viewModel.dispatchCoordinatorEvent(CapsuleEvent.CollapseCapsule)
+        },
+        onOpenSystemStatusSettings = { kind ->
+            viewModel.recordSandboxAction("Sandbox Open Settings (${kind.name})")
+            viewModel.dispatchCoordinatorEvent(CapsuleEvent.CollapseCapsule)
+        },
+        onOpenBluetoothSettings = {
+            viewModel.recordSandboxAction("Sandbox Open Bluetooth Settings")
+            viewModel.dispatchCoordinatorEvent(CapsuleEvent.CollapseCapsule)
+        },
+        onOpenHotspotSettings = {
+            viewModel.recordSandboxAction("Sandbox Open Hotspot Settings")
+            viewModel.dispatchCoordinatorEvent(CapsuleEvent.CollapseCapsule)
+        },
         onLockScreenButton = { viewModel.triggerSandboxLockScreen("Now Brief Lock button") },
-        onDoubleTapLock = { viewModel.triggerSandboxLockScreen("Double-tap gesture") },
+        onOpenNotificationShade = {
+            viewModel.recordSandboxAction("Sandbox Open Notification Shade")
+            viewModel.dispatchCoordinatorEvent(CapsuleEvent.CollapseCapsule)
+        },
         onWakeFromLock = viewModel::wakeFromSandboxLock,
         onOpenNotification = { alert ->
             viewModel.recordSandboxAction("Sandbox Open Notification (${alert.appName})")
