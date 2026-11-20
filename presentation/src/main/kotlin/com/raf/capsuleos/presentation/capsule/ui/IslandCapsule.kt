@@ -40,6 +40,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -70,6 +71,7 @@ import com.raf.capsuleos.domain.model.CapsuleUiState
 import com.raf.capsuleos.domain.model.CapsuleVisualState
 import com.raf.capsuleos.domain.model.ExpandedMediaGlowEffect
 import com.raf.capsuleos.domain.model.HorizontalMediaGlowStyle
+import com.raf.capsuleos.domain.model.MediaAnimationColorMode
 import com.raf.capsuleos.domain.model.RingerModeState
 import com.raf.capsuleos.domain.model.SystemStatusKind
 import com.raf.capsuleos.presentation.capsule.ui.components.LeftSatelliteBubbleIcon
@@ -83,6 +85,7 @@ import com.raf.capsuleos.presentation.shader.NeuralBorderShader
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.hypot
@@ -155,14 +158,16 @@ fun IslandCapsule(
     onCycleContent: (Int) -> Unit,
     onVerticalScrubStart: () -> Pair<Float, Float>,
     onVerticalScrubProgress: (Float) -> Unit,
-    onVerticalScrubEnd: (commitExpanded: Boolean, velocityYPxPerSec: Float) -> Unit,
+    onVerticalScrubEnd: (commitExpanded: Boolean, velocityYPxPerSec: Float, isFastDirectSwipe: Boolean) -> Unit,
     onOpenNotification: (CapsuleContent.NotificationAlert) -> Unit,
     onTriggerNotificationAction: (CapsuleContent.NotificationAlert, Int, String?) -> Unit,
     onDismissNotification: (CapsuleContent.NotificationAlert) -> Unit,
+    onNotificationSwipeChanged: (offsetXDp: Float, pullFraction: Float) -> Unit = { _, _ -> },
     onReplyFocusChanged: (Boolean) -> Unit,
     onOpenMediaApp: (String) -> Unit,
     onSelectMediaSession: (Int) -> Unit = {},
     onOpenAudioOutput: () -> Unit = {},
+    onLyricsActiveChanged: (Boolean) -> Unit = {},
     onTogglePlayPause: (String) -> Unit,
     onSkipNext: (String) -> Unit,
     onSkipPrevious: (String) -> Unit,
@@ -178,6 +183,7 @@ fun IslandCapsule(
     onDeclineCall: (CapsuleContent.CallAlert) -> Unit = {},
     onOpenCallApp: (CapsuleContent.CallAlert) -> Unit = {},
     onOpenLiveActivityApp: (CapsuleContent.LiveActivity) -> Unit = {},
+    onTriggerLiveActivityAction: (CapsuleContent.LiveActivity, Int) -> Unit = { _, _ -> },
     onOpenSystemStatusSettings: (SystemStatusKind) -> Unit = {},
     onOpenBluetoothSettings: () -> Unit = {},
     onOpenHotspotSettings: () -> Unit = {},
@@ -337,13 +343,22 @@ fun IslandCapsule(
             isExpandedCard &&
             isMediaContext &&
             prefs.keepExpandedMediaGlowAlways
+        val usePrimaryMediaColor = prefs.mediaAnimationColorMode == MediaAnimationColorMode.PRIMARY_COLOR
         val animatedMediaPrimary by animateColorAsState(
-            targetValue = borderMedia?.let { Color(it.primaryColorArgb) } ?: primaryColor,
+            targetValue = if (usePrimaryMediaColor) {
+                primaryColor
+            } else {
+                borderMedia?.let { Color(it.primaryColorArgb) } ?: primaryColor
+            },
             animationSpec = tween(durationMillis = 360),
             label = "mediaGlowPrimary",
         )
         val animatedMediaSecondary by animateColorAsState(
-            targetValue = borderMedia?.let { Color(it.secondaryColorArgb) } ?: tertiaryColor,
+            targetValue = if (usePrimaryMediaColor) {
+                tertiaryColor
+            } else {
+                borderMedia?.let { Color(it.secondaryColorArgb) } ?: tertiaryColor
+            },
             animationSpec = tween(durationMillis = 360),
             label = "mediaGlowSecondary",
         )
@@ -481,10 +496,14 @@ fun IslandCapsule(
             label = "topClearanceDp",
         )
 
+        val notifSwipeOffsetDp = remember { Animatable(0f) }
+        val notifSwipeScale = remember { Animatable(1f) }
         val bgProgress = scrubFractionClamped ?: if (isExpandedCard) 1f else 0f
         val expandedBottomAlpha = if (isBlurSupported) 0.25f else 0.72f
+        val swipeOpaqueBoost = (abs(notifSwipeOffsetDp.value) / 3.5f).coerceIn(0f, 1f)
+        val effectiveExpandedBottomAlpha = lerpCapsuleFloat(expandedBottomAlpha, 0.80f, swipeOpaqueBoost)
         val midAlpha = 1f - 0.30f * bgProgress
-        val bottomAlpha = 1f - (1f - expandedBottomAlpha) * bgProgress
+        val bottomAlpha = 1f - (1f - effectiveExpandedBottomAlpha) * bgProgress
 
         val cardBackgroundModifier = if (bgProgress > 0.01f) {
             Modifier.background(
@@ -508,12 +527,17 @@ fun IslandCapsule(
         val latestDoubleTapGesture by rememberUpdatedState(onDoubleTapGesture)
         val latestLongHoldGesture by rememberUpdatedState(onLongHoldGesture)
         val latestDismissNotification by rememberUpdatedState(onDismissNotification)
+        val latestNotificationSwipeChanged by rememberUpdatedState(onNotificationSwipeChanged)
         val latestReplyFocusChanged by rememberUpdatedState(onReplyFocusChanged)
         var lastCompactTapUpMs by remember { mutableLongStateOf(0L) }
         var pendingCompactTapJob by remember { mutableStateOf<Job?>(null) }
 
-        val notifSwipeOffsetDp = remember { Animatable(0f) }
-        val notifSwipeScale = remember { Animatable(1f) }
+        LaunchedEffect(Unit) {
+            snapshotFlow { notifSwipeOffsetDp.value }.collect { offsetDp ->
+                val pullFraction = (abs(offsetDp) / 11f).coerceIn(0f, 1f)
+                latestNotificationSwipeChanged(offsetDp, pullFraction)
+            }
+        }
         val activeNotifKey = (uiState.content as? CapsuleContent.NotificationAlert)?.key
         LaunchedEffect(isExpandedCard, activeNotifKey) {
             if (!isExpandedCard) {
@@ -556,10 +580,24 @@ fun IslandCapsule(
                         val swipeScale = notifSwipeScale.value
                         if (abs(swipeDp) > 0.01f || abs(swipeScale - 1f) > 0.001f) {
                             val pullFraction = (abs(swipeDp) / 11f).coerceIn(0f, 1f)
-                            translationX = swipeDp * density.density
-                            rotationZ = (swipeDp / 6.2f).coerceIn(-2.2f, 2.2f)
-                            scaleX = swipeScale
-                            scaleY = 1f - (1f - swipeScale) * 0.45f
+                            val effScale = swipeScale.coerceIn(0.86f, 1f)
+                            // Pivot at top-center camera cutout so the card swings like a roller below the camera
+                            val angleDeg = -(swipeDp / 3.8f).coerceIn(-3.0f, 3.0f)
+                            val angleRad = abs(angleDeg) * (PI / 180.0)
+                            val sinA = sin(angleRad).toFloat()
+                            val cosA = cos(angleRad).toFloat()
+                            val topLiftPx = size.width * 0.5f * effScale * sinA
+                            val halfMarginPx = size.width * 0.5f * (1f - effScale * cosA)
+                            val bottomSwingPx = size.height * effScale * sinA
+                            val maxSafeTxPx = (halfMarginPx - bottomSwingPx * 0.55f).coerceAtLeast(0f)
+                            val desiredTxPx = swipeDp * density.density * 0.65f
+
+                            transformOrigin = TransformOrigin(0.5f, 0f)
+                            translationX = if (isBlurSupported) 0f else desiredTxPx.coerceIn(-maxSafeTxPx, maxSafeTxPx)
+                            translationY = topLiftPx
+                            rotationZ = angleDeg
+                            scaleX = effScale
+                            scaleY = effScale
                             alpha = 1f - pullFraction * 0.14f
                         }
                     }
@@ -642,7 +680,7 @@ fun IslandCapsule(
                                                         val sign = if (latestDxDp < 0f) -1f else 1f
                                                         val normalizedPull = (abs(latestDxDp) / 110f).coerceIn(0f, 1f)
                                                         val rubberDp = sign * (normalizedPull * 10.5f)
-                                                        val targetScale = 1f - normalizedPull * 0.055f
+                                                        val targetScale = 1f - normalizedPull * 0.11f
 
                                                         if (!crossedDismissDetent && abs(latestDxDp) >= 68f) {
                                                             crossedDismissDetent = true
@@ -651,6 +689,7 @@ fun IslandCapsule(
                                                             crossedDismissDetent = false
                                                         }
 
+                                                        latestNotificationSwipeChanged(rubberDp, normalizedPull)
                                                         coroutineScope.launch {
                                                             notifSwipeOffsetDp.snapTo(rubberDp)
                                                             notifSwipeScale.snapTo(targetScale)
@@ -665,8 +704,8 @@ fun IslandCapsule(
                                                     val dir = if (latestDxDp < 0f) -1f else 1f
                                                     composeHaptics.performHapticFeedback(HapticFeedbackType.Confirm)
                                                     coroutineScope.launch {
-                                                        launch { notifSwipeScale.animateTo(0.92f, tween(durationMillis = 75)) }
-                                                        notifSwipeOffsetDp.animateTo(dir * 12.5f, tween(durationMillis = 75))
+                                                        launch { notifSwipeScale.animateTo(0.88f, tween(durationMillis = 75)) }
+                                                        notifSwipeOffsetDp.animateTo(dir * 11.5f, tween(durationMillis = 75))
                                                         latestReplyFocusChanged(false)
                                                         latestDismissNotification(activeNotif)
                                                         launch {
@@ -708,9 +747,10 @@ fun IslandCapsule(
                                                     screenLoc = screenLoc,
                                                     onProgress = latestScrubProgress,
                                                     onInteractionPulse = latestUserInteraction,
-                                                    onComplete = { commitExpanded, velocityY, isFastDirectSwipe ->
-                                                        suppressAlbumSharedAfterDrag = !isFastDirectSwipe
-                                                        latestScrubEnd(commitExpanded, velocityY)
+                                                    onComplete = { commitExpanded, velocityY, _ ->
+                                                        // Always use smooth scrub-to-coast on swipe-up collapse so album art never blinks
+                                                        suppressAlbumSharedAfterDrag = true
+                                                        latestScrubEnd(commitExpanded, velocityY, false)
                                                     },
                                                 )
                                                 return@awaitEachGesture
@@ -803,7 +843,7 @@ fun IslandCapsule(
                                             onInteractionPulse = latestUserInteraction,
                                             onComplete = { commitExpanded, velocityY, isFastDirectSwipe ->
                                                 suppressAlbumSharedAfterDrag = !isFastDirectSwipe
-                                                latestScrubEnd(commitExpanded, velocityY)
+                                                latestScrubEnd(commitExpanded, velocityY, isFastDirectSwipe)
                                             },
                                         )
                                         return@awaitEachGesture
@@ -926,6 +966,7 @@ fun IslandCapsule(
                     MediaBackdropLayer(
                         media = scrubMedia,
                         timeSeconds = shaderTime,
+                        mediaAnimationColorMode = prefs.mediaAnimationColorMode,
                         modifier = Modifier
                             .fillMaxSize()
                             .graphicsLayer { alpha = expandedAlpha },
@@ -999,6 +1040,7 @@ fun IslandCapsule(
                                         anchorPosition = prefs.cameraPosition,
                                         circleDiameterDp = uiState.circleDiameterDp,
                                         horizontalMediaGlowStyle = prefs.horizontalMediaGlowStyle,
+                                        mediaAnimationColorMode = prefs.mediaAnimationColorMode,
                                         swipeDirection = uiState.swipeDirection,
                                         manualSwipeSeq = uiState.manualSwipeSeq,
                                         enableAlbumSharedTransition = enableAlbumSharedTransition,
@@ -1025,6 +1067,7 @@ fun IslandCapsule(
                                         mediaSessions = uiState.mediaSessions,
                                         selectedMediaIndex = uiState.selectedMediaIndex,
                                         expandedMediaGlowEffects = prefs.expandedMediaGlowEffects,
+                                        mediaAnimationColorMode = prefs.mediaAnimationColorMode,
                                         topClearanceDp = topClearanceDp,
                                         contentPaddingDp = contentPaddingDp,
                                         timeSeconds = shaderTime,
@@ -1041,6 +1084,7 @@ fun IslandCapsule(
                                         onOpenMediaApp = onOpenMediaApp,
                                         onSelectMediaSession = onSelectMediaSession,
                                         onOpenAudioOutput = onOpenAudioOutput,
+                                        onLyricsActiveChanged = onLyricsActiveChanged,
                                         onTogglePlayPause = onTogglePlayPause,
                                         onSkipNext = onSkipNext,
                                         onSkipPrevious = onSkipPrevious,
@@ -1056,6 +1100,7 @@ fun IslandCapsule(
                                         onDeclineCall = onDeclineCall,
                                         onOpenCallApp = onOpenCallApp,
                                         onOpenLiveActivityApp = onOpenLiveActivityApp,
+                                        onTriggerLiveActivityAction = onTriggerLiveActivityAction,
                                         onOpenSystemStatusSettings = onOpenSystemStatusSettings,
                                         onOpenBluetoothSettings = onOpenBluetoothSettings,
                                         onOpenHotspotSettings = onOpenHotspotSettings,
@@ -1098,6 +1143,7 @@ fun IslandCapsule(
                                     anchorPosition = prefs.cameraPosition,
                                     circleDiameterDp = uiState.circleDiameterDp,
                                     horizontalMediaGlowStyle = prefs.horizontalMediaGlowStyle,
+                                    mediaAnimationColorMode = prefs.mediaAnimationColorMode,
                                     swipeDirection = uiState.swipeDirection,
                                     manualSwipeSeq = uiState.manualSwipeSeq,
                                     enableAlbumSharedTransition = false,
@@ -1127,6 +1173,7 @@ fun IslandCapsule(
                                     mediaSessions = uiState.mediaSessions,
                                     selectedMediaIndex = uiState.selectedMediaIndex,
                                     expandedMediaGlowEffects = prefs.expandedMediaGlowEffects,
+                                    mediaAnimationColorMode = prefs.mediaAnimationColorMode,
                                     topClearanceDp = topClearanceDp,
                                     contentPaddingDp = contentPaddingDp,
                                     timeSeconds = shaderTime,
@@ -1143,6 +1190,7 @@ fun IslandCapsule(
                                     onOpenMediaApp = onOpenMediaApp,
                                     onSelectMediaSession = onSelectMediaSession,
                                     onOpenAudioOutput = onOpenAudioOutput,
+                                    onLyricsActiveChanged = onLyricsActiveChanged,
                                     onTogglePlayPause = onTogglePlayPause,
                                     onSkipNext = onSkipNext,
                                     onSkipPrevious = onSkipPrevious,
@@ -1158,6 +1206,7 @@ fun IslandCapsule(
                                     onDeclineCall = onDeclineCall,
                                     onOpenCallApp = onOpenCallApp,
                                     onOpenLiveActivityApp = onOpenLiveActivityApp,
+                                    onTriggerLiveActivityAction = onTriggerLiveActivityAction,
                                     onOpenSystemStatusSettings = onOpenSystemStatusSettings,
                                     onOpenBluetoothSettings = onOpenBluetoothSettings,
                                     onOpenHotspotSettings = onOpenHotspotSettings,
@@ -1583,7 +1632,8 @@ private suspend fun AwaitPointerEventScope.trackVerticalScrub(
     } while (event.changes.any { it.pressed })
 
     val gestureDurationMs = SystemClock.uptimeMillis() - scrubStartedAtMs
-    val isFastDirectSwipe = abs(smoothedVy) >= 900f && gestureDurationMs <= 240L
+    val isFastDirectSwipe = (abs(smoothedVy) >= 560f && gestureDurationMs <= 340L) ||
+        (gestureDurationMs <= 180L && abs(smoothedVy) >= 340f)
     val commitExpanded = if (initiallyFromExpanded) {
         (currentFraction >= 0.75f && smoothedVy > -600f) || smoothedVy > 380f
     } else {

@@ -3,6 +3,7 @@ package com.raf.capsuleos.data.media
 import android.app.Notification
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.app.Person
 import android.app.RemoteInput
 import android.content.Context
 import android.content.Intent
@@ -128,6 +129,12 @@ class CapsuleNotificationListenerService : NotificationListenerService() {
             candidate.notification.contentIntent?.let { pi ->
                 pendingIntents[candidate.key] = pi
             }
+            val liveRawActions = candidate.notification.actions?.toList().orEmpty()
+            if (liveRawActions.isNotEmpty()) {
+                cachedActions[candidate.key] = liveRawActions
+            } else {
+                cachedActions.remove(candidate.key)
+            }
         }
         _activeLiveActivity.value = live
     }
@@ -162,8 +169,13 @@ class CapsuleNotificationListenerService : NotificationListenerService() {
             ?.joinToString(separator = "\n")
             .orEmpty()
         val messagingLines = extras.getParcelableArray(Notification.EXTRA_MESSAGES, Bundle::class.java)
+            ?.sortedBy { it.getLong("time", 0L) }
             ?.mapNotNull { bundle ->
-                val sender = bundle.getCharSequence("sender")?.toString()?.trim().orEmpty()
+                val personSender = bundle.getParcelable("sender_person", Person::class.java)
+                    ?.name?.toString()?.trim().orEmpty()
+                val sender = personSender.ifBlank {
+                    bundle.getCharSequence("sender")?.toString()?.trim().orEmpty()
+                }
                 val msg = bundle.getCharSequence("text")?.toString()?.trim().orEmpty()
                 when {
                     msg.isBlank() -> null
@@ -471,6 +483,24 @@ class CapsuleNotificationListenerService : NotificationListenerService() {
             .firstOrNull { it.isNotBlank() && it != badge }
             .orEmpty()
 
+        val rawActions = notification.actions?.toList().orEmpty()
+        val actionItems = rawActions.mapIndexedNotNull { idx, action ->
+            val label = action.title?.toString()?.trim().orEmpty()
+            if (label.isBlank() || action.actionIntent == null) return@mapIndexedNotNull null
+            val firstRemoteInput = action.remoteInputs?.firstOrNull { !it.isDataOnly }
+            CapsuleContent.NotificationActionItem(
+                actionId = idx,
+                label = label,
+                supportsInlineReply = firstRemoteInput != null,
+                replyHint = firstRemoteInput?.label?.toString()?.trim()?.takeIf { it.isNotEmpty() },
+            )
+        }.take(3)
+
+        val progressMax = extras.getInt(Notification.EXTRA_PROGRESS_MAX, 0)
+        val rawProgress = extras.getInt(Notification.EXTRA_PROGRESS, -1)
+        val isIndeterminate = extras.getBoolean(Notification.EXTRA_PROGRESS_INDETERMINATE, false)
+        val validProgress = !isIndeterminate && progressMax > 0 && rawProgress in 0..progressMax
+
         return CapsuleContent.LiveActivity(
             key = key,
             title = title,
@@ -481,6 +511,9 @@ class CapsuleNotificationListenerService : NotificationListenerService() {
             showChronometer = hasLiveChrono,
             chronometerBaseEpochMs = if (hasLiveChrono) effectiveWhenMs else 0L,
             isCountdown = isCountdown,
+            actions = actionItems,
+            progress = if (validProgress) rawProgress else -1,
+            progressMax = if (validProgress) progressMax else 0,
         )
     }
 

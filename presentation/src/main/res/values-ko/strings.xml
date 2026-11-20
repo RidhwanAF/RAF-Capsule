@@ -136,6 +136,8 @@
     <string name="msg_dnd_policy_desc">Now Brief에서 벨소리 전환 시 완전 무음 모드를 포함하기 위한 선택 권한입니다.</string>
     <string name="label_bluetooth_permission">Bluetooth 기기 연결 알림</string>
     <string name="msg_bluetooth_permission_desc">헤드폰, 스피커 또는 액세서리 연결을 감지하고 배터리 잔량을 표시합니다.</string>
+    <string name="label_location_permission">날씨 위치 (선택)</string>
+    <string name="msg_location_permission_desc">Now Brief에서 정확한 현지 날씨를 표시하기 위해 대략적인 위치와 Open-Meteo를 사용합니다.</string>
     <string name="label_bluetooth_connected">연결됨</string>
     <string name="label_bluetooth_battery">배터리 %1$d%%</string>
     <string name="action_open_bluetooth_settings">Bluetooth 설정</string>
@@ -237,4 +239,7 @@
     </plurals>
     <string name="label_satellite_position">버블 위치</string>
     <string name="desc_notification_attachment">알림 첨부 파일</string>
+    <string name="label_media_animation_color">애니메이션 색상</string>
+    <string name="label_media_color_album">앨범 색상</string>
+    <string name="label_media_color_primary">기본 색상</string>
 </resources>

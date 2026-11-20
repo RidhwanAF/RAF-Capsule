@@ -501,17 +501,8 @@ private fun AtAGlanceSummaryRow(
         isCharging = brief.isCharging,
         primaryColor = primary,
     )
-    val baseStatus = buildString {
-        append("${brief.batteryPercent}%")
-        if (brief.isCharging) {
-            append(" • ")
-            append(stringResource(R.string.label_charging))
-        }
-        brief.liveActivity?.let { live ->
-            append(" • ")
-            append(live.title)
-        }
-    }
+    val batteryLabel = "${brief.batteryPercent}%"
+    val liveTitle = brief.liveActivity?.title?.takeIf { it.isNotBlank() }
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -537,7 +528,7 @@ private fun AtAGlanceSummaryRow(
                 )
             }
             Text(
-                text = baseStatus,
+                text = batteryLabel,
                 color = if (brief.isCharging) batteryColor else Color.White.copy(alpha = 0.84f),
                 fontSize = 12.sp,
                 fontWeight = if (brief.isCharging) FontWeight.SemiBold else FontWeight.Medium,
@@ -561,6 +552,15 @@ private fun AtAGlanceSummaryRow(
                     maxLines = 1,
                 )
             }
+        }
+
+        if (liveTitle != null) {
+            Text(
+                text = "• $liveTitle",
+                color = Color.White.copy(alpha = 0.72f),
+                fontSize = 12.sp,
+                maxLines = 1,
+            )
         }
 
         if (brief.activeNotificationCount > 0) {

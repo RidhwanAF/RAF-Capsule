@@ -10,6 +10,7 @@ import com.raf.capsuleos.domain.repository.BluetoothRepository
 import com.raf.capsuleos.domain.repository.BrightnessRepository
 import com.raf.capsuleos.domain.repository.CapsuleSettingsRepository
 import com.raf.capsuleos.domain.repository.StatusBarIconController
+import com.raf.capsuleos.domain.repository.SystemEventsRepository
 import com.raf.capsuleos.domain.repository.VolumeRepository
 import com.raf.capsuleos.presentation.capsule.service.CapsuleOverlayController
 import com.raf.capsuleos.presentation.capsule.service.CapsuleTestAction
@@ -51,6 +52,7 @@ class SetupViewModel @Inject constructor(
     private val brightnessRepository: BrightnessRepository,
     private val volumeRepository: VolumeRepository,
     private val bluetoothRepository: BluetoothRepository,
+    private val systemEventsRepository: SystemEventsRepository,
     private val overlayController: CapsuleOverlayController,
 ) : ViewModel() {
 
@@ -89,6 +91,7 @@ class SetupViewModel @Inject constructor(
             hasWriteSettings = brightnessRepository.currentSnapshot().canWrite,
             hasDndPolicyAccess = volumeRepository.canChangeSilentMode(),
             hasBluetoothPermission = bluetoothRepository.hasBluetoothPermission(),
+            hasLocationPermission = systemEventsRepository.hasLocationPermission(),
             isUserPaused = paused,
             cutoutGeometry = effectiveCutout,
             detectedPosition = initialDetect.detectedPosition,
@@ -104,6 +107,9 @@ class SetupViewModel @Inject constructor(
     /** Re-evaluates all system permission checks after returning from Settings. */
     fun refreshPermissions() {
         permissionRefreshTrigger.value += 1
+        if (systemEventsRepository.hasLocationPermission()) {
+            systemEventsRepository.refreshWeatherNow()
+        }
     }
 
     /** Updates persisted cutout tuning and marks manual calibration active so initial detect stays overridden. */

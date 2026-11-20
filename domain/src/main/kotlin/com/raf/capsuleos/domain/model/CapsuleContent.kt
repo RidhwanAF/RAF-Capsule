@@ -50,6 +50,9 @@ sealed interface CapsuleContent {
         val showChronometer: Boolean = false,
         val chronometerBaseEpochMs: Long = 0L,
         val isCountdown: Boolean = false,
+        val actions: List<NotificationActionItem> = emptyList(),
+        val progress: Int = -1,
+        val progressMax: Int = 0,
     ) : CapsuleContent {
         /**
          * Resolves live formatted duration (`MM:SS` or `H:MM:SS`) against [nowEpochMs] when backed
@@ -81,7 +84,10 @@ sealed interface CapsuleContent {
                 iconBytes.contentEquals(other.iconBytes) &&
                 showChronometer == other.showChronometer &&
                 chronometerBaseEpochMs == other.chronometerBaseEpochMs &&
-                isCountdown == other.isCountdown
+                isCountdown == other.isCountdown &&
+                actions == other.actions &&
+                progress == other.progress &&
+                progressMax == other.progressMax
         }
 
         override fun hashCode(): Int {
@@ -94,6 +100,9 @@ sealed interface CapsuleContent {
             result = 31 * result + showChronometer.hashCode()
             result = 31 * result + chronometerBaseEpochMs.hashCode()
             result = 31 * result + isCountdown.hashCode()
+            result = 31 * result + actions.hashCode()
+            result = 31 * result + progress
+            result = 31 * result + progressMax
             return result
         }
     }

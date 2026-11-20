@@ -136,6 +136,10 @@ class CapsuleOverlayController @Inject constructor(
         scope = scope,
         nowBriefProvider = {
             val (percent, charging) = systemEventsRepository.currentBatteryState()
+            val cachedWeather = systemEventsRepository.currentWeatherSummary()
+            if (cachedWeather == null && systemEventsRepository.hasLocationPermission()) {
+                systemEventsRepository.refreshWeatherNow()
+            }
             CapsuleContent.NowBrief(
                 batteryPercent = percent,
                 isCharging = charging,
@@ -144,7 +148,7 @@ class CapsuleOverlayController @Inject constructor(
                 nextAlarmLabel = systemEventsRepository.currentNextAlarmLabel(),
                 liveActivity = notificationRepository.currentLiveActivity(),
                 brightness = brightnessRepository.currentSnapshot(),
-                weather = systemEventsRepository.currentWeatherSummary(),
+                weather = cachedWeather,
                 activeNotificationCount = notificationRepository.currentActiveNotificationCount(),
             )
         },
@@ -182,6 +186,8 @@ class CapsuleOverlayController @Inject constructor(
     private val holdPillBeforeRingState = mutableStateOf<CapsuleUiState?>(null)
     private var skipNextCollapseStaging = false
     private var jiggleUntilMs = 0L
+    private var notifSwipeOffsetXPx = 0f
+    private var notifSwipePullFraction = 0f
     private val scrubPresentationState = mutableStateOf<CapsuleScrubPresentation?>(null)
     private var activeScrubSession: ScrubSession? = null
 
@@ -462,6 +468,14 @@ class CapsuleOverlayController @Inject constructor(
                             notificationRepository.dismissNotification(alert.key)
                             coordinator.onEvent(CapsuleEvent.NotificationRemoved(alert.key))
                         },
+                        onNotificationSwipeChanged = { offsetXDp, pullFraction ->
+                            val density = hostContext.resources.displayMetrics.density.coerceAtLeast(1f)
+                            notifSwipeOffsetXPx = offsetXDp * density * 1.15f
+                            notifSwipePullFraction = pullFraction
+                            activeDialog?.window?.let { win ->
+                                applySpringsToWindow(hostContext, win)
+                            }
+                        },
                         onReplyFocusChanged = ::setOverlayKeyboardFocus,
                         onOpenMediaApp = { pkg ->
                             notificationRepository.openNotificationOrApp(null, pkg)
@@ -479,6 +493,9 @@ class CapsuleOverlayController @Inject constructor(
                             if (!shown) {
                                 launchSystemIntent(Intent(Settings.Panel.ACTION_VOLUME))
                             }
+                        },
+                        onLyricsActiveChanged = { active ->
+                            coordinator.onEvent(CapsuleEvent.MediaLyricsExpandedChanged(active))
                         },
                         onTogglePlayPause = { tokenKey ->
                             coordinator.onEvent(CapsuleEvent.UserInteractedInCard)
@@ -566,10 +583,12 @@ class CapsuleOverlayController @Inject constructor(
                             coordinator.onEvent(CapsuleEvent.CollapseCapsule)
                         },
                         onOpenLiveActivityApp = { live ->
-                            val pkg = live.packageName
-                            if (!pkg.isNullOrBlank()) {
-                                notificationRepository.openNotificationOrApp(live.key, pkg)
-                            }
+                            notificationRepository.openNotificationOrApp(live.key, live.packageName.orEmpty())
+                            coordinator.onEvent(CapsuleEvent.CollapseCapsule)
+                        },
+                        onTriggerLiveActivityAction = { live, actionId ->
+                            coordinator.onEvent(CapsuleEvent.UserInteractedInCard)
+                            notificationRepository.executeNotificationAction(live.key, actionId, null)
                             coordinator.onEvent(CapsuleEvent.CollapseCapsule)
                         },
                         onOpenSystemStatusSettings = { kind ->
@@ -784,6 +803,8 @@ class CapsuleOverlayController @Inject constructor(
         holdPillBeforeRingState.value = null
         isHoldingCapsuleState.value = false
         isReplyInputFocused = false
+        notifSwipeOffsetXPx = 0f
+        notifSwipePullFraction = 0f
         windowObserverJob?.cancel()
         windowObserverJob = null
         statusBarIconController.restoreIcons()
@@ -1263,13 +1284,23 @@ class CapsuleOverlayController @Inject constructor(
         applyScrubFrame(session, fraction, host, activeDialog?.window)
     }
 
-    private fun endVerticalScrub(commitExpanded: Boolean, velocityYPxPerSec: Float) {
+    private fun endVerticalScrub(
+        commitExpanded: Boolean,
+        velocityYPxPerSec: Float,
+        isFastDirectSwipe: Boolean,
+    ) {
         val session = activeScrubSession ?: return
         session.isFingerDown = false
         session.expectedCoastVisualState = if (commitExpanded) {
             CapsuleVisualState.STATE3_FULL_EXPANDED
         } else {
             session.compactUiState.visualState
+        }
+
+        if (isFastDirectSwipe) {
+            // Release scrub crossfade immediately on fast flick so SharedTransitionLayout album morph runs
+            activeScrubSession = null
+            scrubPresentationState.value = null
         }
 
         if (commitExpanded) {
@@ -1435,11 +1466,12 @@ class CapsuleOverlayController @Inject constructor(
         val density = context.resources.displayMetrics.density.coerceAtLeast(1f)
         val clampedW = widthSpring.value.coerceAtLeast(minClampWPx).roundToInt().coerceAtLeast(1)
         val clampedH = heightSpring.value.coerceAtLeast(minClampHPx).roundToInt().coerceAtLeast(1)
-        val targetX = offsetXSpring.value.roundToInt()
+        val targetX = (offsetXSpring.value + notifSwipeOffsetXPx).roundToInt()
         val targetY = topYSpring.value.roundToInt()
         val cornerDp = cornerDpSpring.value.coerceAtLeast(8f)
         val cornerPx = cornerDp * density
-        val blurPx = blurRadiusSpring.value.roundToInt().coerceIn(0, 80)
+        val blurScale = (1f - notifSwipePullFraction * 4.5f).coerceIn(0f, 1f)
+        val blurPx = (blurRadiusSpring.value * blurScale).roundToInt().coerceIn(0, 80)
 
         animatedCornerDpState.floatValue = cornerDp
         cardBlurDrawable?.setCornerRadiusPx(cornerPx)

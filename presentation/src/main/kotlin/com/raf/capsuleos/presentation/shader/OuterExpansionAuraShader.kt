@@ -22,6 +22,7 @@ import com.raf.capsuleos.domain.model.CapsuleContent
 import com.raf.capsuleos.domain.model.CapsuleUiState
 import com.raf.capsuleos.domain.model.CapsuleVisualState
 import com.raf.capsuleos.domain.model.ExpandedMediaGlowEffect
+import com.raf.capsuleos.domain.model.MediaAnimationColorMode
 import com.raf.capsuleos.presentation.capsule.ui.components.capsuleBatteryAccentColor
 import kotlinx.coroutines.isActive
 
@@ -167,7 +168,8 @@ object OuterExpansionAuraShader {
 
 /**
  * Resolves the primary/secondary outer aura colors for [state]:
- * - [CapsuleContent.Media]: active session's album primary & secondary palette colors.
+ * - [CapsuleContent.Media]: Material 3 [primaryColor]/[tertiaryColor] when [MediaAnimationColorMode.PRIMARY_COLOR]
+ *   is selected, or active session's album primary & secondary palette colors by default.
  * - [CapsuleContent.Charging]: battery-level accent color.
  * - All other expanded cards: Material 3 [primaryColor] and [tertiaryColor].
  */
@@ -177,11 +179,15 @@ fun resolveOuterExpansionAuraColors(
     tertiaryColor: Color,
 ): Pair<Color, Color> = when (val content = state.content) {
     is CapsuleContent.Media -> {
-        val colorSession = state.mediaSessions.firstOrNull { it.isPlaying }
-            ?: state.mediaSessions.getOrNull(state.selectedMediaIndex)
-            ?: content
-        Color(colorSession.primaryColorArgb.toLong() and 0xFFFFFFFFL) to
-            Color(colorSession.secondaryColorArgb.toLong() and 0xFFFFFFFFL)
+        if (state.preferences.mediaAnimationColorMode == MediaAnimationColorMode.PRIMARY_COLOR) {
+            primaryColor to tertiaryColor
+        } else {
+            val colorSession = state.mediaSessions.firstOrNull { it.isPlaying }
+                ?: state.mediaSessions.getOrNull(state.selectedMediaIndex)
+                ?: content
+            Color(colorSession.primaryColorArgb.toLong() and 0xFFFFFFFFL) to
+                Color(colorSession.secondaryColorArgb.toLong() and 0xFFFFFFFFL)
+        }
     }
     is CapsuleContent.Charging -> {
         val batteryCol = capsuleBatteryAccentColor(

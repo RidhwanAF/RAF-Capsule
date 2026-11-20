@@ -3,16 +3,21 @@ package com.raf.capsuleos.presentation.capsule.ui.components
 import android.graphics.BitmapFactory
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -89,7 +94,8 @@ internal fun rememberLiveActivityStatusText(
 
 /**
  * State 3 expanded Live Activity card showing its ongoing app icon, title, live status readout,
- * optional detail subtitle, and quick button to open the source activity.
+ * detail subtitle, optional progress track, replicated notification action buttons, and direct
+ * open-notification trigger.
  */
 @Composable
 fun LiveActivityExpandedContent(
@@ -97,10 +103,12 @@ fun LiveActivityExpandedContent(
     liveActivity: CapsuleContent.LiveActivity,
     topClearanceDp: Float,
     contentPaddingDp: Float = 18f,
+    interactionsEnabled: Boolean = true,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
     onUserInteraction: () -> Unit,
     onOpenLiveActivityApp: () -> Unit,
+    onTriggerLiveActivityAction: (Int) -> Unit = {},
 ) {
     val haptics = rememberCapsuleHaptics()
     val primary = MaterialTheme.colorScheme.primary
@@ -110,6 +118,16 @@ fun LiveActivityExpandedContent(
             BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
         }
     }
+    val hasProgress = liveActivity.progressMax > 0 && liveActivity.progress >= 0
+    val animatedProgress by animateFloatAsState(
+        targetValue = if (hasProgress) {
+            (liveActivity.progress.toFloat() / liveActivity.progressMax.toFloat()).coerceIn(0f, 1f)
+        } else {
+            0f
+        },
+        animationSpec = tween(durationMillis = 260),
+        label = "liveActivityProgress",
+    )
 
     with(sharedTransitionScope) {
         Column(
@@ -120,104 +138,202 @@ fun LiveActivityExpandedContent(
                     start = contentPaddingDp.dp,
                     end = contentPaddingDp.dp,
                     top = topClearanceDp.dp,
-                    bottom = (contentPaddingDp * 0.85f).coerceAtLeast(12f).dp,
+                    bottom = (contentPaddingDp * 0.85f).coerceAtLeast(14f).dp,
                 ),
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier.fillMaxWidth(),
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .clickable(enabled = interactionsEnabled) {
+                        haptics.click()
+                        onUserInteraction()
+                        onOpenLiveActivityApp()
+                    },
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .sharedElement(
-                                sharedContentState = rememberSharedContentState(key = "capsule_icon"),
-                                animatedVisibilityScope = animatedVisibilityScope,
-                                boundsTransform = { _, _ -> spring(dampingRatio = 0.86f, stiffness = 420f) },
-                            )
-                            .size(42.dp)
-                            .clip(CircleShape)
-                            .background(primary.copy(alpha = 0.22f)),
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f),
                     ) {
-                        if (iconBitmap != null) {
-                            Image(
-                                bitmap = iconBitmap,
-                                contentDescription = liveActivity.title,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize(),
-                            )
-                        } else {
-                            Icon(
-                                imageVector = Icons.Rounded.Timer,
-                                contentDescription = liveActivity.title,
-                                tint = primary,
-                                modifier = Modifier.size(22.dp),
-                            )
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .sharedElement(
+                                    sharedContentState = rememberSharedContentState(key = "capsule_icon"),
+                                    animatedVisibilityScope = animatedVisibilityScope,
+                                    boundsTransform = { _, _ -> spring(dampingRatio = 0.86f, stiffness = 420f) },
+                                )
+                                .size(42.dp)
+                                .clip(CircleShape)
+                                .background(primary.copy(alpha = 0.22f)),
+                        ) {
+                            if (iconBitmap != null) {
+                                Image(
+                                    bitmap = iconBitmap,
+                                    contentDescription = liveActivity.title,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Rounded.Timer,
+                                    contentDescription = liveActivity.title,
+                                    tint = primary,
+                                    modifier = Modifier.size(22.dp),
+                                )
+                            }
                         }
-                    }
 
-                    Spacer(modifier = Modifier.width(12.dp))
+                        Spacer(modifier = Modifier.width(12.dp))
 
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = stringResource(R.string.label_live_activity),
-                            color = primary,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            text = liveActivity.title,
-                            color = Color.White,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.sharedElement(
-                                sharedContentState = rememberSharedContentState(key = "capsule_title"),
-                                animatedVisibilityScope = animatedVisibilityScope,
-                                boundsTransform = { _, _ -> spring(dampingRatio = 0.86f, stiffness = 420f) },
-                            ),
-                        )
-                        if (liveActivity.subtitle.isNotBlank()) {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = liveActivity.subtitle,
-                                color = Color.White.copy(alpha = 0.72f),
-                                fontSize = 12.sp,
+                                text = stringResource(R.string.label_live_activity),
+                                color = primary,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
+                            Text(
+                                text = liveActivity.title,
+                                color = Color.White,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.sharedElement(
+                                    sharedContentState = rememberSharedContentState(key = "capsule_title"),
+                                    animatedVisibilityScope = animatedVisibilityScope,
+                                    boundsTransform = { _, _ -> spring(dampingRatio = 0.86f, stiffness = 420f) },
+                                ),
+                            )
+                            if (liveActivity.subtitle.isNotBlank()) {
+                                Text(
+                                    text = liveActivity.subtitle,
+                                    color = Color.White.copy(alpha = 0.76f),
+                                    fontSize = 12.sp,
+                                    lineHeight = 16.sp,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
                         }
+                    }
+
+                    Spacer(modifier = Modifier.width(10.dp))
+
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(primary.copy(alpha = 0.2f))
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                    ) {
+                        Text(
+                            text = liveStatusText,
+                            color = Color.White,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                        )
                     }
                 }
 
-                Spacer(modifier = Modifier.width(10.dp))
-
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(primary.copy(alpha = 0.2f))
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                ) {
-                    Text(
-                        text = liveStatusText,
-                        color = Color.White,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                    )
+                if (hasProgress) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(5.dp)
+                            .clip(CircleShape)
+                            .background(Color.White.copy(alpha = 0.14f)),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(animatedProgress.coerceAtLeast(0.02f))
+                                .fillMaxHeight()
+                                .clip(CircleShape)
+                                .background(primary),
+                        )
+                    }
                 }
             }
 
-            if (!liveActivity.packageName.isNullOrBlank()) {
+            Spacer(modifier = Modifier.height(10.dp))
+
+            if (liveActivity.actions.isNotEmpty()) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    liveActivity.actions.take(2).forEach { action ->
+                        CapsuleExpressiveSurface(
+                            enabled = interactionsEnabled,
+                            onClick = {
+                                haptics.click()
+                                onUserInteraction()
+                                onTriggerLiveActivityAction(action.actionId)
+                            },
+                            restCornerDp = 16f,
+                            pressedCornerDp = 8f,
+                            backgroundColor = Color.White.copy(alpha = 0.14f),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(38.dp),
+                        ) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(horizontal = 10.dp),
+                            ) {
+                                Text(
+                                    text = action.label,
+                                    color = Color.White,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    }
+
+                    CapsuleExpressiveSurface(
+                        enabled = interactionsEnabled,
+                        onClick = {
+                            haptics.click()
+                            onUserInteraction()
+                            onOpenLiveActivityApp()
+                        },
+                        restCornerDp = 16f,
+                        pressedCornerDp = 8f,
+                        backgroundColor = primary.copy(alpha = 0.22f),
+                        modifier = Modifier.size(38.dp),
+                    ) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier.fillMaxSize(),
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Rounded.OpenInNew,
+                                contentDescription = stringResource(R.string.action_open),
+                                tint = primary,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
+                    }
+                }
+            } else {
                 CapsuleExpressiveSurface(
+                    enabled = interactionsEnabled,
                     onClick = {
                         haptics.click()
                         onUserInteraction()
@@ -226,14 +342,14 @@ fun LiveActivityExpandedContent(
                     restCornerDp = 16f,
                     pressedCornerDp = 8f,
                     backgroundColor = primary.copy(alpha = 0.22f),
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(38.dp),
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 8.dp),
+                        modifier = Modifier.fillMaxSize(),
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Rounded.OpenInNew,

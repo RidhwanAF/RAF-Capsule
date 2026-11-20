@@ -171,16 +171,16 @@ internal fun computeCapsuleLayoutDpSpec(
                 }
                 val w = (state.cutout.screenWidthDp - sidePaddingDp * 2f).coerceAtLeast(300f)
                 val baseH = when (content) {
-                    is CapsuleContent.Media -> 252f
-                    is CapsuleContent.CallAlert -> 196f
-                    is CapsuleContent.BluetoothDevice -> 142f
-                    is CapsuleContent.Hotspot -> 142f
-                    is CapsuleContent.LiveActivity -> 158f
-                    is CapsuleContent.SystemStatus -> 150f
-                    is CapsuleContent.Volume -> 262f
-                    is CapsuleContent.NowBrief -> 288f
+                    is CapsuleContent.Media -> 256f
+                    is CapsuleContent.CallAlert -> 206f
+                    is CapsuleContent.BluetoothDevice -> 154f
+                    is CapsuleContent.Hotspot -> 154f
+                    is CapsuleContent.LiveActivity -> computeLiveActivityExpandedHeightDp(content)
+                    is CapsuleContent.SystemStatus -> 176f
+                    is CapsuleContent.Volume -> 276f
+                    is CapsuleContent.NowBrief -> 298f
                     is CapsuleContent.NotificationAlert -> computeNotificationExpandedHeightDp(content)
-                    else -> 148f
+                    else -> 154f
                 }
                 val h = baseH + extraContentPadDp * 1.4f
                 val outsidePad = if (state.preferences.belowStatusBar) {
@@ -213,11 +213,17 @@ internal fun computeCapsuleLayoutDpSpec(
     }
 }
 
+private fun computeLiveActivityExpandedHeightDp(live: CapsuleContent.LiveActivity): Float {
+    val hasTwoLineSubtitle = live.subtitle.length > 34
+    val hasProgress = live.progressMax > 0 && live.progress >= 0
+    return 186f + (if (hasTwoLineSubtitle) 18f else 0f) + (if (hasProgress) 14f else 0f)
+}
+
 private fun computeNotificationExpandedHeightDp(notification: CapsuleContent.NotificationAlert): Float {
     val lines = estimateNotificationLineCount(notification.text)
-    val textAreaDp = (lines.coerceIn(2, 10) * 18.5f).coerceIn(44f, 188f)
+    val textAreaDp = (lines.coerceIn(2, 10) * 18.5f).coerceIn(48f, 192f)
     val attachmentBonusDp = if (notification.attachmentImageBytes != null) 116f else 0f
-    return (152f + textAreaDp + attachmentBonusDp).coerceIn(220f, 384f)
+    return (176f + textAreaDp + attachmentBonusDp).coerceIn(232f, 396f)
 }
 
 private fun estimateNotificationLineCount(text: String): Int {

@@ -164,6 +164,8 @@
     <string name="msg_dnd_policy_desc">Optional permission to include full Silent mode when cycling Ringer in Now Brief.</string>
     <string name="label_bluetooth_permission">Bluetooth Device Connection Alerts</string>
     <string name="msg_bluetooth_permission_desc">Detects when headphones, speakers, or accessories connect and reads reported battery level.</string>
+    <string name="label_location_permission">Weather Location (Optional)</string>
+    <string name="msg_location_permission_desc">Uses coarse device location with Open-Meteo for accurate local weather in Now Brief.</string>
     <string name="label_bluetooth_connected">Connected</string>
     <string name="label_bluetooth_battery">Battery %1$d%%</string>
     <string name="action_open_bluetooth_settings">Bluetooth Settings</string>
@@ -267,4 +269,7 @@
     </plurals>
     <string name="label_satellite_position">Bubble Position</string>
     <string name="desc_notification_attachment">Notification attachment</string>
+    <string name="label_media_animation_color">Animation Color</string>
+    <string name="label_media_color_album">Album Color</string>
+    <string name="label_media_color_primary">Primary Color</string>
 </resources>

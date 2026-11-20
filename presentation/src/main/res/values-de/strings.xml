@@ -136,6 +136,8 @@
     <string name="msg_dnd_policy_desc">Optionale Berechtigung für vollständigen Lautlos-Modus in Now Brief.</string>
     <string name="label_bluetooth_permission">Bluetooth-Verbindungshinweise</string>
     <string name="msg_bluetooth_permission_desc">Erkennt verbundene Kopfhörer, Lautsprecher oder Zubehör samt Akkustand.</string>
+    <string name="label_location_permission">Wetter-Standort (Optional)</string>
+    <string name="msg_location_permission_desc">Nutzt den ungefähren Gerätestandort mit Open-Meteo für genaues lokales Wetter in Now Brief.</string>
     <string name="label_bluetooth_connected">Verbunden</string>
     <string name="label_bluetooth_battery">Akku %1$d%%</string>
     <string name="action_open_bluetooth_settings">Bluetooth-Einstellungen</string>
@@ -239,4 +241,7 @@
     </plurals>
     <string name="label_satellite_position">Blasenposition</string>
     <string name="desc_notification_attachment">Benachrichtigungsanhang</string>
+    <string name="label_media_animation_color">Animationsfarbe</string>
+    <string name="label_media_color_album">Albumfarbe</string>
+    <string name="label_media_color_primary">Primärfarbe</string>
 </resources>

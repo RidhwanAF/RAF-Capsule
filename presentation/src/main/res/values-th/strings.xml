@@ -136,6 +136,8 @@
     <string name="msg_dnd_policy_desc">สิทธิ์เสริมเพื่อให้สลับเป็นโหมดเงียบสนิทใน Now Brief ได้</string>
     <string name="label_bluetooth_permission">การแจ้งเตือนการเชื่อมต่อ Bluetooth</string>
     <string name="msg_bluetooth_permission_desc">ตรวจจับเมื่อหูฟัง ลำโพง หรืออุปกรณ์เสริมเชื่อมต่อและแสดงระดับแบตเตอรี่</string>
+    <string name="label_location_permission">ตำแหน่งสภาพอากาศ (ไม่บังคับ)</string>
+    <string name="msg_location_permission_desc">ใช้ตำแหน่งคร่าวๆ ของอุปกรณ์ร่วมกับ Open-Meteo เพื่อแสดงสภาพอากาศท้องถิ่นที่แม่นยำใน Now Brief</string>
     <string name="label_bluetooth_connected">เชื่อมต่อแล้ว</string>
     <string name="label_bluetooth_battery">แบตเตอรี่ %1$d%%</string>
     <string name="action_open_bluetooth_settings">การตั้งค่า Bluetooth</string>
@@ -237,4 +239,7 @@
     </plurals>
     <string name="label_satellite_position">ตำแหน่งฟองสถานะ</string>
     <string name="desc_notification_attachment">ไฟล์แนบการแจ้งเตือน</string>
+    <string name="label_media_animation_color">สีแอนิเมชัน</string>
+    <string name="label_media_color_album">สีอัลบั้ม</string>
+    <string name="label_media_color_primary">สีหลัก</string>
 </resources>

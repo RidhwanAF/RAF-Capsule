@@ -379,13 +379,23 @@ internal class CapsuleMockupSpringHost(
         applyScrubFrame(session, fraction)
     }
 
-    fun endVerticalScrub(commitExpanded: Boolean, velocityYPxPerSec: Float) {
+    fun endVerticalScrub(
+        commitExpanded: Boolean,
+        velocityYPxPerSec: Float,
+        isFastDirectSwipe: Boolean,
+    ) {
         val session = activeScrubSession ?: return
         session.isFingerDown = false
         session.expectedCoastVisualState = if (commitExpanded) {
             CapsuleVisualState.STATE3_FULL_EXPANDED
         } else {
             session.compactUiState.visualState
+        }
+
+        if (isFastDirectSwipe) {
+            // Release scrub crossfade immediately on fast flick so SharedTransitionLayout album morph runs
+            activeScrubSession = null
+            scrubPresentation = null
         }
 
         if (commitExpanded) {

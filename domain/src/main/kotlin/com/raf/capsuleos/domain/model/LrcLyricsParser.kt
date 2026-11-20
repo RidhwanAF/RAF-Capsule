@@ -1,5 +1,7 @@
 package com.raf.capsuleos.domain.model
 
+import kotlin.math.abs
+
 /**
  * Pure Kotlin parser and playback-position resolver for synced LRC (`[mm:ss.xx]`) and plain
  * multi-line lyrics strings extracted from media session metadata.
@@ -50,13 +52,87 @@ object LrcLyricsParser {
         }
 
         if (foundAnyTimestamp) {
-            return timedLines.sortedBy { it.timestampMs }
+            return splitLongTimedLines(timedLines.sortedBy { it.timestampMs })
         }
 
         val plainLines = rawLines
             .filterNot { METADATA_TAG_REGEX.matches(it) }
             .map { LyricLine(timestampMs = -1L, text = it) }
         return if (plainLines.size >= 2) plainLines else emptyList()
+    }
+
+    /**
+     * Splits overly long single-timestamp lyric lines (> 56 chars) into balanced timed sub-lines
+     * so tall multi-line captions never overflow the compact expanded media lyrics viewport.
+     */
+    private fun splitLongTimedLines(sorted: List<LyricLine>): List<LyricLine> {
+        if (sorted.isEmpty()) return sorted
+        val result = ArrayList<LyricLine>(sorted.size)
+        sorted.forEachIndexed { idx, line ->
+            val text = line.text
+            if (text.length <= 56) {
+                result.add(line)
+                return@forEachIndexed
+            }
+            val nextTs = sorted.getOrNull(idx + 1)?.timestampMs
+            val spanMs = if (nextTs != null && nextTs > line.timestampMs) {
+                (nextTs - line.timestampMs).coerceAtMost(9_000L)
+            } else {
+                4_000L
+            }
+            val splitPos = findBalancedSplitIndex(text)
+            if (splitPos <= 0 || splitPos >= text.length - 4 || spanMs < 1_800L) {
+                result.add(line)
+            } else {
+                val firstPart = text.substring(0, splitPos).trim()
+                val secondPart = text.substring(splitPos).trim()
+                if (firstPart.isEmpty() || secondPart.isEmpty()) {
+                    result.add(line)
+                } else {
+                    val ratio = firstPart.length.toFloat() / (firstPart.length + secondPart.length).toFloat()
+                    val secondTs = line.timestampMs + (spanMs * ratio).toLong().coerceAtLeast(800L)
+                    result.add(LyricLine(timestampMs = line.timestampMs, text = firstPart))
+                    result.add(LyricLine(timestampMs = secondTs, text = secondPart))
+                }
+            }
+        }
+        return result
+    }
+
+    private fun findBalancedSplitIndex(text: String): Int {
+        val mid = text.length / 2
+        val minIdx = (text.length * 0.30f).toInt().coerceAtLeast(12)
+        val maxIdx = (text.length * 0.72f).toInt().coerceAtMost(text.length - 8)
+        if (minIdx >= maxIdx) return -1
+
+        // Prefer natural clause punctuation near the midpoint
+        var bestPunct = -1
+        var bestPunctDist = Int.MAX_VALUE
+        for (i in minIdx..maxIdx) {
+            val ch = text[i]
+            if ((ch == ',' || ch == ';' || ch == '/' || ch == '—') && i + 1 < text.length) {
+                val dist = abs(i - mid)
+                if (dist < bestPunctDist) {
+                    bestPunctDist = dist
+                    bestPunct = i + 1
+                }
+            }
+        }
+        if (bestPunct > 0) return bestPunct
+
+        // Fall back to nearest whitespace around the midpoint
+        var bestSpace = -1
+        var bestSpaceDist = Int.MAX_VALUE
+        for (i in minIdx..maxIdx) {
+            if (text[i] == ' ') {
+                val dist = abs(i - mid)
+                if (dist < bestSpaceDist) {
+                    bestSpaceDist = dist
+                    bestSpace = i
+                }
+            }
+        }
+        return bestSpace
     }
 
     /**

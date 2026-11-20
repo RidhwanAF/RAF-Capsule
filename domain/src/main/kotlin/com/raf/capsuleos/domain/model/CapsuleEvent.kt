@@ -82,6 +82,9 @@ sealed interface CapsuleEvent {
     /** User opened or closed the inline reply keyboard/field inside an expanded notification card. */
     data class ReplyFocusChanged(val isReplying: Boolean) : CapsuleEvent
 
+    /** User toggled the synced lyrics viewport inside the expanded Media Player card. */
+    data class MediaLyricsExpandedChanged(val isLyricsVisible: Boolean) : CapsuleEvent
+
     /** User slid horizontally across the capsule to rotate active stack content (-1 prev, +1 next). */
     data class CycleContent(val direction: Int) : CapsuleEvent
 

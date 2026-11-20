@@ -60,6 +60,7 @@ import androidx.compose.ui.unit.sp
 import com.raf.capsuleos.domain.model.CapsulePreferences
 import com.raf.capsuleos.domain.model.ExpandedMediaGlowEffect
 import com.raf.capsuleos.domain.model.HorizontalMediaGlowStyle
+import com.raf.capsuleos.domain.model.MediaAnimationColorMode
 import com.raf.capsuleos.domain.model.SatellitePosition
 import com.raf.capsuleos.presentation.R
 import kotlin.math.roundToInt
@@ -403,6 +404,44 @@ fun IndicatorsAndMediaCard(
             Spacer(modifier = Modifier.height(6.dp))
 
             SettingsNestedInsetBox {
+                Text(
+                    text = stringResource(R.string.label_media_animation_color),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.basicMarquee(),
+                )
+                val colorModeOptions = listOf(
+                    MediaAnimationColorMode.ALBUM_COLOR to stringResource(R.string.label_media_color_album),
+                    MediaAnimationColorMode.PRIMARY_COLOR to stringResource(R.string.label_media_color_primary),
+                )
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    colorModeOptions.forEachIndexed { index, (colorMode, label) ->
+                        SegmentedButton(
+                            selected = preferences.mediaAnimationColorMode == colorMode,
+                            onClick = {
+                                haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                                onUpdatePreferences { it.copy(mediaAnimationColorMode = colorMode) }
+                            },
+                            shape = SegmentedButtonDefaults.itemShape(index = index, count = colorModeOptions.size),
+                            label = {
+                                Text(
+                                    text = label,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.basicMarquee(),
+                                )
+                            },
+                        )
+                    }
+                }
+
+                HorizontalDivider(
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                    modifier = Modifier.padding(vertical = 6.dp),
+                )
+
                 AdaptiveSubItemFlowRow { itemMod ->
                     IndicatorSwitchRow(
                         label = stringResource(R.string.label_keep_expanded_media_glow),

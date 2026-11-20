@@ -121,6 +121,7 @@ class IslandStateCoordinator(
     private var hasInteractedInCurrentState3: Boolean = false
     private var hasInteractedNotificationInCard: Boolean = false
     private var isReplyingInCard: Boolean = false
+    private var isMediaLyricsActive: Boolean = false
 
     /** Updates measured device camera cutout and screen geometry when changed. */
     fun updateCutoutGeometry(cutout: CutoutGeometry) {
@@ -237,6 +238,7 @@ class IslandStateCoordinator(
             CapsuleEvent.ExpandNowBrief -> handleExpandNowBrief()
             CapsuleEvent.UserInteractedInCard -> handleCardInteraction()
             is CapsuleEvent.ReplyFocusChanged -> handleReplyFocusChanged(event.isReplying)
+            is CapsuleEvent.MediaLyricsExpandedChanged -> handleMediaLyricsExpandedChanged(event.isLyricsVisible)
             is CapsuleEvent.CycleContent -> handleCycleContent(event.direction)
             CapsuleEvent.TapCapsule -> handleTapInteraction()
             CapsuleEvent.CollapseCapsule -> collapseToBaseState()
@@ -276,6 +278,7 @@ class IslandStateCoordinator(
         if (isRestrictedToRingByQs) {
             isHoldFromRingActive = false
             isReplyingInCard = false
+            isMediaLyricsActive = false
             state3AutoCollapseJob?.cancel()
             state3AutoCollapseJob = null
             stackScheduleJob?.cancel()
@@ -436,12 +439,17 @@ class IslandStateCoordinator(
         if (currentState.visualState == CapsuleVisualState.STATE3_FULL_EXPANDED) {
             val shown = currentState.content
             if (shown is CapsuleContent.NotificationAlert) {
-                val userPinnedThisNotification = hasInteractedInCurrentState3 ||
-                    isReplyingInCard ||
-                    hasInteractedNotificationInCard ||
-                    manualOverrideStackId == "notif:${shown.key}"
-                if (!userPinnedThisNotification) {
-                    enterState3Expanded(notification)
+                if (shown.key == notification.key) {
+                    // Same conversation updated with a newer unread message: refresh in-place immediately
+                    _uiState.update { it.copy(content = notification) }
+                } else {
+                    val userPinnedThisNotification = hasInteractedInCurrentState3 ||
+                        isReplyingInCard ||
+                        hasInteractedNotificationInCard ||
+                        manualOverrideStackId == "notif:${shown.key}"
+                    if (!userPinnedThisNotification) {
+                        enterState3Expanded(notification)
+                    }
                 }
             }
             return
@@ -808,7 +816,7 @@ class IslandStateCoordinator(
             stackId = STACK_NOTIF_SUMMARY,
             content = CapsuleContent.NotificationSummary(count = count),
             priority = PRIORITY_NOTIF_SUMMARY,
-            durationMs = effectiveAutoCollapseMs(),
+            durationMs = NOTIF_SUMMARY_VISIBLE_DURATION_MS,
             allowBurst = false,
         )
     }
@@ -818,7 +826,7 @@ class IslandStateCoordinator(
         notifSummaryPeriodicJob = scope.launch {
             while ((activeNotificationCount ?: 0) > 0) {
                 if (viewStack.any { it.stackId == STACK_NOTIF_SUMMARY }) {
-                    delay(effectiveAutoCollapseMs().milliseconds)
+                    delay(NOTIF_SUMMARY_VISIBLE_DURATION_MS.milliseconds)
                 }
                 delay(NOTIF_SUMMARY_REAPPEAR_INTERVAL_MS.milliseconds)
                 val latestCount = activeNotificationCount ?: 0
@@ -1377,6 +1385,17 @@ class IslandStateCoordinator(
         }
     }
 
+    private fun handleMediaLyricsExpandedChanged(isLyricsVisible: Boolean) {
+        isMediaLyricsActive = isLyricsVisible
+        if (isLyricsVisible) {
+            hasInteractedInCurrentState3 = true
+            state3AutoCollapseJob?.cancel()
+            state3AutoCollapseJob = null
+        } else if (_uiState.value.visualState == CapsuleVisualState.STATE3_FULL_EXPANDED) {
+            scheduleState3AutoCollapse()
+        }
+    }
+
     private fun handleCardInteraction() {
         val now = clockMillis()
         hasInteractedInCurrentState3 = true
@@ -1407,6 +1426,7 @@ class IslandStateCoordinator(
         hasInteractedInCurrentState3 = false
         hasInteractedNotificationInCard = false
         isReplyingInCard = false
+        isMediaLyricsActive = false
         _uiState.update { current ->
             current.copy(
                 visualState = CapsuleVisualState.STATE3_FULL_EXPANDED,
@@ -1432,6 +1452,7 @@ class IslandStateCoordinator(
         hasInteractedInCurrentState3 = false
         hasInteractedNotificationInCard = false
         isReplyingInCard = false
+        isMediaLyricsActive = false
         state3AutoCollapseJob?.cancel()
         state3AutoCollapseJob = null
         neuralPulseJob?.cancel()
@@ -1860,7 +1881,10 @@ class IslandStateCoordinator(
 
     private fun scheduleState3AutoCollapse() {
         state3AutoCollapseJob?.cancel()
-        if (_uiState.value.content is CapsuleContent.CallAlert || isReplyingInCard) {
+        if (_uiState.value.content is CapsuleContent.CallAlert ||
+            isReplyingInCard ||
+            (isMediaLyricsActive && _uiState.value.content is CapsuleContent.Media)
+        ) {
             state3AutoCollapseJob = null
             return
         }
@@ -1962,7 +1986,8 @@ class IslandStateCoordinator(
         private const val STACK_CHARGING_PEEK = "charging_peek"
         private const val STACK_BATTERY_PEEK = "battery_peek"
         private const val STACK_NOTIF_SUMMARY = "notif_summary"
-        private const val NOTIF_SUMMARY_REAPPEAR_INTERVAL_MS = 30_000L
+        private const val NOTIF_SUMMARY_REAPPEAR_INTERVAL_MS = 60_000L
+        private const val NOTIF_SUMMARY_VISIBLE_DURATION_MS = 3_000L
 
         // Resting canonical priority order: Call > Notification > Media > LiveActivity > Bluetooth > Other > Volume > NotifSummary
         private const val PRIORITY_BATTERY_IDLE = 10

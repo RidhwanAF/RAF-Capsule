@@ -136,6 +136,8 @@
     <string name="msg_dnd_policy_desc">Quyền tùy chọn để chuyển sang chế độ im lặng hoàn toàn trong Now Brief.</string>
     <string name="label_bluetooth_permission">Cảnh báo kết nối Bluetooth</string>
     <string name="msg_bluetooth_permission_desc">Phát hiện khi tai nghe, loa hoặc phụ kiện kết nối và đọc mức pin.</string>
+    <string name="label_location_permission">Vị trí thời tiết (Tùy chọn)</string>
+    <string name="msg_location_permission_desc">Sử dụng vị trí gần đúng của thiết bị với Open-Meteo để hiển thị thời tiết chính xác trong Now Brief.</string>
     <string name="label_bluetooth_connected">Đã kết nối</string>
     <string name="label_bluetooth_battery">Pin %1$d%%</string>
     <string name="action_open_bluetooth_settings">Cài đặt Bluetooth</string>
@@ -237,4 +239,7 @@
     </plurals>
     <string name="label_satellite_position">Vị trí bong bóng</string>
     <string name="desc_notification_attachment">Tệp đính kèm thông báo</string>
+    <string name="label_media_animation_color">Màu hiệu ứng</string>
+    <string name="label_media_color_album">Màu album</string>
+    <string name="label_media_color_primary">Màu chính</string>
 </resources>

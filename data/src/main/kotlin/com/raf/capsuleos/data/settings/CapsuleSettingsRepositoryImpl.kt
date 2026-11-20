@@ -18,6 +18,7 @@ import com.raf.capsuleos.domain.model.ExpandedMediaGlowEffect
 import com.raf.capsuleos.domain.model.GestureActionBinding
 import com.raf.capsuleos.domain.model.GestureCardTarget
 import com.raf.capsuleos.domain.model.HorizontalMediaGlowStyle
+import com.raf.capsuleos.domain.model.MediaAnimationColorMode
 import com.raf.capsuleos.domain.model.SatellitePosition
 import com.raf.capsuleos.domain.repository.CapsuleSettingsRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -62,6 +63,7 @@ class CapsuleSettingsRepositoryImpl @Inject constructor(
             prefs[KEY_EXPANDED_MEDIA_GLOW_EFFECTS] = updated.expandedMediaGlowEffects
                 .joinToString(separator = ",") { it.name }
             prefs[KEY_HORIZONTAL_MEDIA_GLOW_STYLE] = updated.horizontalMediaGlowStyle.name
+            prefs[KEY_MEDIA_ANIMATION_COLOR_MODE] = updated.mediaAnimationColorMode.name
             prefs[KEY_KEEP_EXPANDED_MEDIA_GLOW_ALWAYS] = updated.keepExpandedMediaGlowAlways
             prefs[KEY_KEEP_OUTER_MEDIA_GLOW_ALWAYS] = updated.keepOuterMediaGlowAlways
             prefs[KEY_SHOW_BATTERY_ON_RING] = updated.showBatteryOnCameraRing
@@ -119,6 +121,9 @@ class CapsuleSettingsRepositoryImpl @Inject constructor(
         horizontalMediaGlowStyle = prefs[KEY_HORIZONTAL_MEDIA_GLOW_STYLE]
             ?.let { raw -> runCatching { HorizontalMediaGlowStyle.valueOf(raw) }.getOrNull() }
             ?: migrateLegacyHorizontalGlow(prefs[KEY_MEDIA_GLOW_STYLE]),
+        mediaAnimationColorMode = prefs[KEY_MEDIA_ANIMATION_COLOR_MODE]
+            ?.let { raw -> runCatching { MediaAnimationColorMode.valueOf(raw) }.getOrNull() }
+            ?: DEFAULT_PREFS.mediaAnimationColorMode,
         keepExpandedMediaGlowAlways = prefs[KEY_KEEP_EXPANDED_MEDIA_GLOW_ALWAYS]
             ?: DEFAULT_PREFS.keepExpandedMediaGlowAlways,
         keepOuterMediaGlowAlways = prefs[KEY_KEEP_OUTER_MEDIA_GLOW_ALWAYS]
@@ -221,6 +226,7 @@ class CapsuleSettingsRepositoryImpl @Inject constructor(
         val KEY_MEDIA_GLOW_STYLE = stringPreferencesKey("v5_media_glow_style")
         val KEY_EXPANDED_MEDIA_GLOW_EFFECTS = stringPreferencesKey("v11_expanded_media_glow_effects")
         val KEY_HORIZONTAL_MEDIA_GLOW_STYLE = stringPreferencesKey("v11_horizontal_media_glow_style")
+        val KEY_MEDIA_ANIMATION_COLOR_MODE = stringPreferencesKey("v16_media_animation_color_mode")
         val KEY_KEEP_EXPANDED_MEDIA_GLOW_ALWAYS = booleanPreferencesKey("v7_keep_expanded_media_glow_always")
         val KEY_KEEP_OUTER_MEDIA_GLOW_ALWAYS = booleanPreferencesKey("v12_keep_outer_media_glow_always")
         val KEY_SHOW_BATTERY_ON_RING = booleanPreferencesKey("v5_show_battery_on_ring")

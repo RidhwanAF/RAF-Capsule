@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import com.raf.capsuleos.domain.model.AudioStreamType
 import com.raf.capsuleos.domain.model.CapsuleContent
 import com.raf.capsuleos.domain.model.ExpandedMediaGlowEffect
+import com.raf.capsuleos.domain.model.MediaAnimationColorMode
 import com.raf.capsuleos.domain.model.RingerModeState
 import com.raf.capsuleos.domain.model.SystemStatusKind
 
@@ -33,6 +34,7 @@ fun State3ExpandedCard(
         ExpandedMediaGlowEffect.OUTER_SCREEN_GLOW,
         ExpandedMediaGlowEffect.ALBUM_ART_RING,
     ),
+    mediaAnimationColorMode: MediaAnimationColorMode = MediaAnimationColorMode.ALBUM_COLOR,
     topClearanceDp: Float,
     contentPaddingDp: Float = 18f,
     timeSeconds: Float,
@@ -49,6 +51,7 @@ fun State3ExpandedCard(
     onOpenMediaApp: (String) -> Unit,
     onSelectMediaSession: (Int) -> Unit = {},
     onOpenAudioOutput: () -> Unit = {},
+    onLyricsActiveChanged: (Boolean) -> Unit = {},
     onTogglePlayPause: (String) -> Unit,
     onSkipNext: (String) -> Unit,
     onSkipPrevious: (String) -> Unit,
@@ -64,6 +67,7 @@ fun State3ExpandedCard(
     onDeclineCall: (CapsuleContent.CallAlert) -> Unit = {},
     onOpenCallApp: (CapsuleContent.CallAlert) -> Unit = {},
     onOpenLiveActivityApp: (CapsuleContent.LiveActivity) -> Unit = {},
+    onTriggerLiveActivityAction: (CapsuleContent.LiveActivity, Int) -> Unit = { _, _ -> },
     onOpenSystemStatusSettings: (SystemStatusKind) -> Unit = {},
     onOpenBluetoothSettings: () -> Unit = {},
     onOpenHotspotSettings: () -> Unit = {},
@@ -87,6 +91,7 @@ fun State3ExpandedCard(
                     mediaSessions = mediaSessions,
                     selectedMediaIndex = selectedMediaIndex,
                     expandedMediaGlowEffects = expandedMediaGlowEffects,
+                    mediaAnimationColorMode = mediaAnimationColorMode,
                     topClearanceDp = topClearanceDp,
                     contentPaddingDp = contentPaddingDp,
                     timeSeconds = timeSeconds,
@@ -98,6 +103,7 @@ fun State3ExpandedCard(
                     onOpenMediaApp = onOpenMediaApp,
                     onSelectMediaSession = onSelectMediaSession,
                     onOpenAudioOutput = onOpenAudioOutput,
+                    onLyricsActiveChanged = onLyricsActiveChanged,
                     onUserInteraction = onUserInteraction,
                     onTogglePlayPause = onTogglePlayPause,
                     onSkipNext = onSkipNext,
@@ -195,10 +201,14 @@ fun State3ExpandedCard(
                     liveActivity = active,
                     topClearanceDp = topClearanceDp,
                     contentPaddingDp = contentPaddingDp,
+                    interactionsEnabled = interactionsEnabled,
                     sharedTransitionScope = sharedTransitionScope,
                     animatedVisibilityScope = animatedVisibilityScope,
                     onUserInteraction = onUserInteraction,
                     onOpenLiveActivityApp = { if (interactionsEnabled) onOpenLiveActivityApp(active) },
+                    onTriggerLiveActivityAction = { actionId ->
+                        if (interactionsEnabled) onTriggerLiveActivityAction(active, actionId)
+                    },
                 )
                 is CapsuleContent.SystemStatus -> SystemStatusExpandedContent(
                     status = active,

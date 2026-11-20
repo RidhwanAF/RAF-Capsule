@@ -136,6 +136,8 @@
     <string name="msg_dnd_policy_desc">可选权限，用于在 Now Brief 切换响铃模式时支持完全静音。</string>
     <string name="label_bluetooth_permission">蓝牙设备连接提醒</string>
     <string name="msg_bluetooth_permission_desc">检测耳机、音箱或配件连接并读取电量信息。</string>
+    <string name="label_location_permission">天气位置（可选）</string>
+    <string name="msg_location_permission_desc">使用设备粗略位置和 Open-Meteo 在 Now Brief 中显示准确的当地天气。</string>
     <string name="label_bluetooth_connected">已连接</string>
     <string name="label_bluetooth_battery">电量 %1$d%%</string>
     <string name="action_open_bluetooth_settings">蓝牙设置</string>
@@ -237,4 +239,7 @@
     </plurals>
     <string name="label_satellite_position">气泡位置</string>
     <string name="desc_notification_attachment">通知附件</string>
+    <string name="label_media_animation_color">动画颜色</string>
+    <string name="label_media_color_album">专辑颜色</string>
+    <string name="label_media_color_primary">主题主色</string>
 </resources>

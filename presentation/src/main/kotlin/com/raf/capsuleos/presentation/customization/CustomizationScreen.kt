@@ -138,6 +138,7 @@ fun CustomizationScreen(
                         simulationViewModel.recordSandboxAction("Sandbox Open Live Activity (${live.title})")
                         simulationViewModel.dispatchCoordinatorEvent(CapsuleEvent.CollapseCapsule)
                     },
+                    onTriggerLiveActivityAction = simulationViewModel::handleSandboxLiveActivityAction,
                     onOpenSystemStatusSettings = { kind ->
                         simulationViewModel.recordSandboxAction("Sandbox Open Settings (${kind.name})")
                         simulationViewModel.dispatchCoordinatorEvent(CapsuleEvent.CollapseCapsule)

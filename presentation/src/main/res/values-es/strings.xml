@@ -136,6 +136,8 @@
     <string name="msg_dnd_policy_desc">Permiso opcional para incluir silencio total al cambiar el tono en Now Brief.</string>
     <string name="label_bluetooth_permission">Alertas de conexión Bluetooth</string>
     <string name="msg_bluetooth_permission_desc">Detecta auriculares, altavoces o accesorios conectados y lee la batería.</string>
+    <string name="label_location_permission">Ubicación del clima (Opcional)</string>
+    <string name="msg_location_permission_desc">Usa la ubicación aproximada del dispositivo con Open-Meteo para mostrar el clima local en Now Brief.</string>
     <string name="label_bluetooth_connected">Conectado</string>
     <string name="label_bluetooth_battery">Batería %1$d%%</string>
     <string name="action_open_bluetooth_settings">Ajustes Bluetooth</string>
@@ -241,4 +243,7 @@
     </plurals>
     <string name="label_satellite_position">Posición de la burbuja</string>
     <string name="desc_notification_attachment">Adjunto de notificación</string>
+    <string name="label_media_animation_color">Color de animación</string>
+    <string name="label_media_color_album">Color del álbum</string>
+    <string name="label_media_color_primary">Color primario</string>
 </resources>

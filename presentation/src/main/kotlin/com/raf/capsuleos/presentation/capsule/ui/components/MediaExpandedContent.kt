@@ -2,6 +2,7 @@ package com.raf.capsuleos.presentation.capsule.ui.components
 
 import android.graphics.Matrix
 import android.graphics.SweepGradient
+import android.os.SystemClock
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.SharedTransitionScope
@@ -59,9 +60,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -93,6 +96,7 @@ import com.raf.capsuleos.domain.model.CapsuleContent
 import com.raf.capsuleos.domain.model.ExpandedMediaGlowEffect
 import com.raf.capsuleos.domain.model.LrcLyricsParser
 import com.raf.capsuleos.domain.model.LyricLine
+import com.raf.capsuleos.domain.model.MediaAnimationColorMode
 import com.raf.capsuleos.domain.model.MediaOutputKind
 import com.raf.capsuleos.presentation.R
 import com.raf.capsuleos.presentation.common.CapsuleExpressiveSurface
@@ -104,8 +108,10 @@ import com.raf.capsuleos.presentation.common.rememberCachedImageBitmap
 import com.raf.capsuleos.presentation.common.rememberCapsuleHaptics
 import com.raf.capsuleos.presentation.common.rememberCookieToCircleMorph
 import com.raf.capsuleos.presentation.shader.MusicWaveShader
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import java.util.Locale
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Full-bleed cropped & blurred media backdrop with crossfade, horizontal parallax on multi-session
@@ -117,12 +123,15 @@ fun MediaBackdropLayer(
     modifier: Modifier = Modifier,
     media: CapsuleContent.Media,
     timeSeconds: Float,
+    mediaAnimationColorMode: MediaAnimationColorMode = MediaAnimationColorMode.ALBUM_COLOR,
     parallaxOffsetProvider: () -> Float = { 0f },
 ) {
+    val themePrimary = MaterialTheme.colorScheme.primary
+    val themeTertiary = MaterialTheme.colorScheme.tertiary
     Box(modifier = modifier.fillMaxSize()) {
         AnimatedContent(
             targetState = media,
-            contentKey = { "${it.sessionTokenKey}:${it.title}:${it.artist}:${it.primaryColorArgb}" },
+            contentKey = { "${it.sessionTokenKey}:${it.title}:${it.artist}:${it.primaryColorArgb}:${mediaAnimationColorMode.name}" },
             transitionSpec = {
                 fadeIn(animationSpec = tween(durationMillis = 360)) togetherWith
                     fadeOut(animationSpec = tween(durationMillis = 280))
@@ -130,8 +139,12 @@ fun MediaBackdropLayer(
             label = "mediaBackdropCrossfade",
             modifier = Modifier.fillMaxSize(),
         ) { targetMedia ->
-            val targetPrimary = Color(targetMedia.primaryColorArgb)
-            val targetSecondary = Color(targetMedia.secondaryColorArgb)
+            val (targetPrimary, targetSecondary) = resolveMediaAnimationColors(
+                media = targetMedia,
+                colorMode = mediaAnimationColorMode,
+                themePrimary = themePrimary,
+                themeTertiary = themeTertiary,
+            )
             val blurredBitmap = rememberCachedBlurredImageBitmap(targetMedia.artworkBytes)
             if (blurredBitmap != null) {
                 Image(
@@ -173,6 +186,7 @@ fun MediaBackdropLayer(
         MediaWaveShimmerOverlay(
             media = media,
             initialTimeSeconds = timeSeconds,
+            mediaAnimationColorMode = mediaAnimationColorMode,
             modifier = Modifier.fillMaxSize(),
         )
     }
@@ -183,14 +197,21 @@ private fun MediaWaveShimmerOverlay(
     modifier: Modifier = Modifier,
     media: CapsuleContent.Media,
     initialTimeSeconds: Float,
+    mediaAnimationColorMode: MediaAnimationColorMode,
 ) {
+    val (resolvedPrimary, resolvedSecondary) = resolveMediaAnimationColors(
+        media = media,
+        colorMode = mediaAnimationColorMode,
+        themePrimary = MaterialTheme.colorScheme.primary,
+        themeTertiary = MaterialTheme.colorScheme.tertiary,
+    )
     val primaryColor by animateColorAsState(
-        targetValue = Color(media.primaryColorArgb),
+        targetValue = resolvedPrimary,
         animationSpec = tween(durationMillis = 380),
         label = "mediaBackdropPrimary",
     )
     val secondaryColor by animateColorAsState(
-        targetValue = Color(media.secondaryColorArgb),
+        targetValue = resolvedSecondary,
         animationSpec = tween(durationMillis = 380),
         label = "mediaBackdropSecondary",
     )
@@ -266,6 +287,7 @@ fun MediaExpandedContent(
         ExpandedMediaGlowEffect.OUTER_SCREEN_GLOW,
         ExpandedMediaGlowEffect.ALBUM_ART_RING,
     ),
+    mediaAnimationColorMode: MediaAnimationColorMode = MediaAnimationColorMode.ALBUM_COLOR,
     topClearanceDp: Float,
     contentPaddingDp: Float = 18f,
     timeSeconds: Float,
@@ -277,6 +299,7 @@ fun MediaExpandedContent(
     onOpenMediaApp: (String) -> Unit,
     onSelectMediaSession: (Int) -> Unit = {},
     onOpenAudioOutput: () -> Unit = {},
+    onLyricsActiveChanged: (Boolean) -> Unit = {},
     onUserInteraction: () -> Unit,
     onTogglePlayPause: (String) -> Unit,
     onSkipNext: (String) -> Unit,
@@ -304,12 +327,6 @@ fun MediaExpandedContent(
     }
 
     val activePageMedia = sessions.getOrNull(pagerState.currentPage) ?: media
-    val primaryColor by animateColorAsState(
-        targetValue = Color(activePageMedia.primaryColorArgb),
-        animationSpec = tween(durationMillis = 360),
-        label = "mediaPrimaryColor",
-    )
-
     val cookieAngularSpeed by animateFloatAsState(
         targetValue = if (activePageMedia.isPlaying) 26f else 0f,
         animationSpec = tween(durationMillis = 480),
@@ -352,6 +369,7 @@ fun MediaExpandedContent(
             MediaBackdropLayer(
                 media = activePageMedia,
                 timeSeconds = timeSeconds,
+                mediaAnimationColorMode = mediaAnimationColorMode,
                 parallaxOffsetProvider = { -pagerState.currentPageOffsetFraction * maxParallaxPx },
                 modifier = Modifier.fillMaxSize(),
             )
@@ -376,6 +394,7 @@ fun MediaExpandedContent(
                 MediaPlayerPage(
                     media = pageMedia,
                     expandedMediaGlowEffects = expandedMediaGlowEffects,
+                    mediaAnimationColorMode = mediaAnimationColorMode,
                     contentPaddingDp = contentPaddingDp,
                     albumGlowRotationProvider = { albumGlowRotationDeg.floatValue },
                     albumBeatPhaseProvider = { albumBeatPhase.floatValue },
@@ -387,6 +406,11 @@ fun MediaExpandedContent(
                     animatedVisibilityScope = animatedVisibilityScope,
                     onOpenMediaApp = { onOpenMediaApp(pageMedia.packageName) },
                     onOpenAudioOutput = onOpenAudioOutput,
+                    onLyricsActiveChanged = { active ->
+                        if (pageIndex == pagerState.currentPage) {
+                            onLyricsActiveChanged(active)
+                        }
+                    },
                     onUserInteraction = onUserInteraction,
                     onTogglePlayPause = { onTogglePlayPause(pageMedia.sessionTokenKey) },
                     onSkipNext = { onSkipNext(pageMedia.sessionTokenKey) },
@@ -444,6 +468,7 @@ private fun MediaPlayerPage(
     modifier: Modifier = Modifier,
     media: CapsuleContent.Media,
     expandedMediaGlowEffects: Set<ExpandedMediaGlowEffect>,
+    mediaAnimationColorMode: MediaAnimationColorMode,
     contentPaddingDp: Float,
     albumGlowRotationProvider: () -> Float,
     albumBeatPhaseProvider: () -> Float,
@@ -455,6 +480,7 @@ private fun MediaPlayerPage(
     animatedVisibilityScope: AnimatedVisibilityScope,
     onOpenMediaApp: () -> Unit,
     onOpenAudioOutput: () -> Unit,
+    onLyricsActiveChanged: (Boolean) -> Unit,
     onUserInteraction: () -> Unit,
     onTogglePlayPause: () -> Unit,
     onSkipNext: () -> Unit,
@@ -462,8 +488,22 @@ private fun MediaPlayerPage(
     onSeekTo: (Long) -> Unit,
 ) {
     val haptics = rememberCapsuleHaptics()
-    val primaryColor = Color(media.primaryColorArgb)
-    val secondaryColor = Color(media.secondaryColorArgb)
+    val (resolvedPrimary, resolvedSecondary) = resolveMediaAnimationColors(
+        media = media,
+        colorMode = mediaAnimationColorMode,
+        themePrimary = MaterialTheme.colorScheme.primary,
+        themeTertiary = MaterialTheme.colorScheme.tertiary,
+    )
+    val primaryColor by animateColorAsState(
+        targetValue = resolvedPrimary,
+        animationSpec = tween(durationMillis = 360),
+        label = "mediaPagePrimary",
+    )
+    val secondaryColor by animateColorAsState(
+        targetValue = resolvedSecondary,
+        animationSpec = tween(durationMillis = 360),
+        label = "mediaPageSecondary",
+    )
     val artworkBitmap = rememberCachedImageBitmap(media.artworkBytes)
     val appIconBitmap = rememberCachedImageBitmap(media.appIconBytes)
     val albumRotMatrix = remember { Matrix() }
@@ -474,6 +514,14 @@ private fun MediaPlayerPage(
     val hasLyrics = media.lyrics.isNotEmpty()
     LaunchedEffect(hasLyrics) {
         if (!hasLyrics) showLyrics = false
+    }
+    LaunchedEffect(showLyrics, hasLyrics) {
+        onLyricsActiveChanged(showLyrics && hasLyrics)
+    }
+    DisposableEffect(Unit) {
+        onDispose {
+            onLyricsActiveChanged(false)
+        }
     }
 
     val durationMs = media.durationMs.coerceAtLeast(1L)
@@ -763,6 +811,8 @@ private fun MediaPlayerPage(
                     SyncedLyricsPane(
                         lyrics = media.lyrics,
                         positionMs = media.positionMs,
+                        durationMs = durationMs,
+                        isPlaying = media.isPlaying,
                         primaryColor = primaryColor,
                         interactionsEnabled = interactionsEnabled,
                         onUserInteraction = onUserInteraction,
@@ -930,26 +980,56 @@ private fun SyncedLyricsPane(
     modifier: Modifier = Modifier,
     lyrics: List<LyricLine>,
     positionMs: Long,
+    durationMs: Long,
+    isPlaying: Boolean,
     primaryColor: Color,
     interactionsEnabled: Boolean,
     onUserInteraction: () -> Unit,
     onSeekTo: (Long) -> Unit,
 ) {
     val listState = rememberLazyListState()
-    val activeIdx = remember(lyrics, positionMs) {
-        LrcLyricsParser.activeLineIndex(lyrics, positionMs)
+    val density = LocalDensity.current
+    val topPeekPx = remember(density) { with(density) { 26.dp.roundToPx() } }
+    var livePositionMs by remember(lyrics) { mutableLongStateOf(positionMs) }
+    var hasInitialSynced by remember(lyrics) { mutableStateOf(false) }
+    var isManualBrowsePaused by remember(lyrics) { mutableStateOf(false) }
+
+    LaunchedEffect(positionMs, durationMs, isPlaying) {
+        livePositionMs = positionMs
+        if (!isPlaying) return@LaunchedEffect
+        val anchorElapsedMs = SystemClock.elapsedRealtime()
+        while (true) {
+            delay(100.milliseconds)
+            val delta = SystemClock.elapsedRealtime() - anchorElapsedMs
+            livePositionMs = (positionMs + delta).coerceAtMost(durationMs)
+        }
+    }
+
+    val activeIdx = remember(lyrics, livePositionMs) {
+        LrcLyricsParser.activeLineIndex(lyrics, livePositionMs + 220L)
     }
 
     LaunchedEffect(listState.isScrollInProgress) {
         if (listState.isScrollInProgress) {
+            isManualBrowsePaused = true
             onUserInteraction()
+        } else if (isManualBrowsePaused) {
+            // Re-lock to live synced lyric line smoothly after user finishes manual browsing
+            delay(2_200.milliseconds)
+            isManualBrowsePaused = false
+            if (activeIdx >= 0) {
+                listState.animateScrollToItem(index = activeIdx, scrollOffset = -topPeekPx)
+            }
         }
     }
 
-    LaunchedEffect(activeIdx) {
-        if (activeIdx >= 0 && !listState.isScrollInProgress) {
-            val targetIdx = (activeIdx - 1).coerceAtLeast(0)
-            listState.animateScrollToItem(index = targetIdx)
+    LaunchedEffect(activeIdx, isManualBrowsePaused) {
+        if (activeIdx < 0) return@LaunchedEffect
+        if (!hasInitialSynced) {
+            hasInitialSynced = true
+            listState.scrollToItem(index = activeIdx, scrollOffset = -topPeekPx)
+        } else if (!isManualBrowsePaused && !listState.isScrollInProgress) {
+            listState.animateScrollToItem(index = activeIdx, scrollOffset = -topPeekPx)
         }
     }
 
@@ -978,8 +1058,8 @@ private fun SyncedLyricsPane(
             Text(
                 text = line.text,
                 color = textColor,
-                fontSize = if (isActive) 15.sp else 12.5.sp,
-                lineHeight = if (isActive) 20.sp else 17.sp,
+                fontSize = if (isActive) 14.sp else 12.sp,
+                lineHeight = if (isActive) 19.sp else 16.sp,
                 fontWeight = if (isActive) FontWeight.Bold else FontWeight.Medium,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -987,6 +1067,8 @@ private fun SyncedLyricsPane(
                     .let { base ->
                         if (isSynced && interactionsEnabled) {
                             base.clickable {
+                                isManualBrowsePaused = false
+                                livePositionMs = line.timestampMs
                                 onUserInteraction()
                                 onSeekTo(line.timestampMs)
                             }
@@ -999,6 +1081,16 @@ private fun SyncedLyricsPane(
             )
         }
     }
+}
+
+private fun resolveMediaAnimationColors(
+    media: CapsuleContent.Media,
+    colorMode: MediaAnimationColorMode,
+    themePrimary: Color,
+    themeTertiary: Color,
+): Pair<Color, Color> = when (colorMode) {
+    MediaAnimationColorMode.ALBUM_COLOR -> Color(media.primaryColorArgb) to Color(media.secondaryColorArgb)
+    MediaAnimationColorMode.PRIMARY_COLOR -> themePrimary to themeTertiary
 }
 
 private fun outputIconForKind(kind: MediaOutputKind): ImageVector = when (kind) {

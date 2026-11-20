@@ -136,6 +136,8 @@
     <string name="msg_dnd_policy_desc">Autorisation facultative pour inclure le mode Silencieux complet dans Now Brief.</string>
     <string name="label_bluetooth_permission">Alertes de connexion Bluetooth</string>
     <string name="msg_bluetooth_permission_desc">Détecte la connexion des écouteurs, enceintes ou accessoires et lit la batterie.</string>
+    <string name="label_location_permission">Localisation météo (Facultatif)</string>
+    <string name="msg_location_permission_desc">Utilise la position approximative avec Open-Meteo pour afficher une météo locale précise dans Now Brief.</string>
     <string name="label_bluetooth_connected">Connecté</string>
     <string name="label_bluetooth_battery">Batterie %1$d%%</string>
     <string name="action_open_bluetooth_settings">Paramètres Bluetooth</string>
@@ -241,4 +243,7 @@
     </plurals>
     <string name="label_satellite_position">Position de la bulle</string>
     <string name="desc_notification_attachment">Pièce jointe de notification</string>
+    <string name="label_media_animation_color">Couleur d\'animation</string>
+    <string name="label_media_color_album">Couleur de l\'album</string>
+    <string name="label_media_color_primary">Couleur principale</string>
 </resources>

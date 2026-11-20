@@ -100,6 +100,7 @@ import com.raf.capsuleos.domain.model.CameraAnchorPosition
 import com.raf.capsuleos.domain.model.CapsuleContent
 import com.raf.capsuleos.domain.model.CutoutGeometry
 import com.raf.capsuleos.domain.model.HorizontalMediaGlowStyle
+import com.raf.capsuleos.domain.model.MediaAnimationColorMode
 import com.raf.capsuleos.domain.model.SatelliteSource
 import com.raf.capsuleos.domain.model.SystemStatusKind
 import com.raf.capsuleos.domain.model.UnlockMethod
@@ -232,6 +233,7 @@ fun State2HorizontalPill(
     anchorPosition: CameraAnchorPosition = CameraAnchorPosition.CENTER,
     circleDiameterDp: Float = cutout.holeWidthDp + 12f,
     horizontalMediaGlowStyle: HorizontalMediaGlowStyle = HorizontalMediaGlowStyle.OFF,
+    mediaAnimationColorMode: MediaAnimationColorMode = MediaAnimationColorMode.ALBUM_COLOR,
     swipeDirection: Int,
     manualSwipeSeq: Int,
     enableAlbumSharedTransition: Boolean = true,
@@ -239,6 +241,7 @@ fun State2HorizontalPill(
     animatedVisibilityScope: AnimatedVisibilityScope,
 ) {
     val primaryColor = MaterialTheme.colorScheme.primary
+    val tertiaryColor = MaterialTheme.colorScheme.tertiary
     val geom = computeSidePillGeometry(
         content = content,
         cutout = cutout,
@@ -282,7 +285,9 @@ fun State2HorizontalPill(
                 content = active.content,
                 geom = active.geom,
                 primaryColor = primaryColor,
+                tertiaryColor = tertiaryColor,
                 horizontalMediaGlowStyle = horizontalMediaGlowStyle,
+                mediaAnimationColorMode = mediaAnimationColorMode,
                 enableAlbumSharedTransition = enableAlbumSharedTransition,
                 sharedTransitionScope = sharedTransitionScope,
                 animatedVisibilityScope = animatedVisibilityScope,
@@ -303,7 +308,9 @@ private fun SymmetricSingleIconPillRow(
     content: CapsuleContent,
     geom: SidePillGeometry,
     primaryColor: Color,
+    tertiaryColor: Color,
     horizontalMediaGlowStyle: HorizontalMediaGlowStyle,
+    mediaAnimationColorMode: MediaAnimationColorMode,
     enableAlbumSharedTransition: Boolean,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
@@ -345,7 +352,9 @@ private fun SymmetricSingleIconPillRow(
                     PrimaryLeftIcon(
                         active = active,
                         primaryColor = primaryColor,
+                        tertiaryColor = tertiaryColor,
                         horizontalMediaGlowStyle = horizontalMediaGlowStyle,
+                        mediaAnimationColorMode = mediaAnimationColorMode,
                         enableAlbumSharedTransition = enableAlbumSharedTransition,
                         sharedTransitionScope = this@with,
                         animatedVisibilityScope = animatedVisibilityScope,
@@ -386,6 +395,7 @@ private fun SymmetricSingleIconPillRow(
                     RightWingContent(
                         active = activeRight,
                         primaryColor = primaryColor,
+                        mediaAnimationColorMode = mediaAnimationColorMode,
                         sharedTransitionScope = this@with,
                         animatedVisibilityScope = animatedVisibilityScope,
                     )
@@ -407,6 +417,9 @@ private fun SymmetricSingleIconPillRow(
                     CameraCutoutMediaGlowRing(
                         media = playingMedia,
                         ringDiameterDp = geom.circleDiameterDp.coerceAtMost(slotWidthDp + 4f),
+                        primaryColor = primaryColor,
+                        tertiaryColor = tertiaryColor,
+                        mediaAnimationColorMode = mediaAnimationColorMode,
                     )
                 }
             }
@@ -447,7 +460,9 @@ private fun PrimaryLeftIcon(
     modifier: Modifier = Modifier,
     active: CapsuleContent,
     primaryColor: Color,
+    tertiaryColor: Color,
     horizontalMediaGlowStyle: HorizontalMediaGlowStyle,
+    mediaAnimationColorMode: MediaAnimationColorMode,
     enableAlbumSharedTransition: Boolean,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
@@ -487,8 +502,16 @@ private fun PrimaryLeftIcon(
                         ),
                         label = "pillAlbumBeatPhase",
                     )
-                    val artA = Color(active.primaryColorArgb)
-                    val artB = Color(active.secondaryColorArgb)
+                    val artA = if (mediaAnimationColorMode == MediaAnimationColorMode.PRIMARY_COLOR) {
+                        primaryColor
+                    } else {
+                        Color(active.primaryColorArgb)
+                    }
+                    val artB = if (mediaAnimationColorMode == MediaAnimationColorMode.PRIMARY_COLOR) {
+                        tertiaryColor
+                    } else {
+                        Color(active.secondaryColorArgb)
+                    }
                     val rotMatrix = remember { Matrix() }
                     Modifier.drawBehind {
                         val baseRadius = size.minDimension * 0.5f
@@ -680,16 +703,24 @@ private fun RightWingContent(
     modifier: Modifier = Modifier,
     active: CapsuleContent,
     primaryColor: Color,
+    mediaAnimationColorMode: MediaAnimationColorMode,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
 ) {
     with(sharedTransitionScope) {
         when (active) {
-            is CapsuleContent.Media -> MiniEqualizerBars(
-                isPlaying = active.isPlaying,
-                tint = primaryColor,
-                modifier = modifier,
-            )
+            is CapsuleContent.Media -> {
+                val eqTint = if (mediaAnimationColorMode == MediaAnimationColorMode.PRIMARY_COLOR) {
+                    primaryColor
+                } else {
+                    Color(active.primaryColorArgb)
+                }
+                MiniEqualizerBars(
+                    isPlaying = active.isPlaying,
+                    tint = eqTint,
+                    modifier = modifier,
+                )
+            }
             is CapsuleContent.NotificationAlert -> {
                 val marqueeText = if (active.title.isNotBlank()) active.title else active.appName
                 MarqueeValueText(
@@ -1045,6 +1076,9 @@ private fun CameraCutoutMediaGlowRing(
     modifier: Modifier = Modifier,
     media: CapsuleContent.Media,
     ringDiameterDp: Float,
+    primaryColor: Color,
+    tertiaryColor: Color,
+    mediaAnimationColorMode: MediaAnimationColorMode,
 ) {
     val density = LocalDensity.current
     val strokePx = with(density) { 2.4.dp.toPx() }
@@ -1059,8 +1093,16 @@ private fun CameraCutoutMediaGlowRing(
         ),
         label = "cameraRingMediaTime",
     )
-    val artA = Color(media.primaryColorArgb)
-    val artB = Color(media.secondaryColorArgb)
+    val artA = if (mediaAnimationColorMode == MediaAnimationColorMode.PRIMARY_COLOR) {
+        primaryColor
+    } else {
+        Color(media.primaryColorArgb)
+    }
+    val artB = if (mediaAnimationColorMode == MediaAnimationColorMode.PRIMARY_COLOR) {
+        tertiaryColor
+    } else {
+        Color(media.secondaryColorArgb)
+    }
 
     Box(
         modifier = modifier

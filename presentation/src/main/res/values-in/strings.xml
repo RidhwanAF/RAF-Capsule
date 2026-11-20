@@ -136,6 +136,8 @@
     <string name="msg_dnd_policy_desc">Izin opsional untuk menyertakan mode Hening penuh saat mengganti mode dering.</string>
     <string name="label_bluetooth_permission">Notifikasi Perangkat Bluetooth</string>
     <string name="msg_bluetooth_permission_desc">Mendeteksi saat headphone atau perangkat Bluetooth terhubung beserta level baterainya.</string>
+    <string name="label_location_permission">Lokasi Cuaca (Opsional)</string>
+    <string name="msg_location_permission_desc">Menggunakan lokasi kasar perangkat dengan Open-Meteo untuk cuaca lokal akurat di Now Brief.</string>
     <string name="label_bluetooth_connected">Terhubung</string>
     <string name="label_bluetooth_battery">Baterai %1$d%%</string>
     <string name="action_open_bluetooth_settings">Pengaturan Bluetooth</string>
@@ -237,4 +239,7 @@
     </plurals>
     <string name="label_satellite_position">Posisi Gelembung</string>
     <string name="desc_notification_attachment">Lampiran notifikasi</string>
+    <string name="label_media_animation_color">Warna Animasi</string>
+    <string name="label_media_color_album">Warna Album</string>
+    <string name="label_media_color_primary">Warna Utama</string>
 </resources>

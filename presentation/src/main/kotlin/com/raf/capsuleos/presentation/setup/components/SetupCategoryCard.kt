@@ -73,6 +73,7 @@ fun SetupCategoryCard(
     onGrantWriteSettings: () -> Unit,
     onGrantDndPolicyAccess: () -> Unit,
     onGrantBluetoothPermission: () -> Unit = {},
+    onGrantLocationPermission: () -> Unit = {},
     onCopyAdbCommand: () -> Unit,
     onToggleStartPause: () -> Unit,
     onOpenSimulation: () -> Unit,
@@ -147,7 +148,21 @@ fun SetupCategoryCard(
                     )
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    AdaptiveSubItemFlowRow(verticalSpacing = 4.dp) { itemMod ->
+                    val remainingPermissionCount = listOf(
+                        !uiState.hasAccessibilityOverlay,
+                        !uiState.hasNotificationListener,
+                        !uiState.hasWriteSettings,
+                        !uiState.hasDndPolicyAccess,
+                        !uiState.hasBluetoothPermission,
+                        !uiState.hasLocationPermission,
+                        !uiState.hasWriteSecureSettings,
+                    ).count { it }
+
+                    AdaptiveSubItemFlowRow(
+                        minItemWidth = 340.dp,
+                        maxColumns = if (remainingPermissionCount <= 1) 1 else 2,
+                        verticalSpacing = 4.dp,
+                    ) { itemMod ->
                         AnimatedPermissionRow(
                             visible = !uiState.hasAccessibilityOverlay,
                             title = stringResource(R.string.label_accessibility_permission),
@@ -186,6 +201,14 @@ fun SetupCategoryCard(
                             description = stringResource(R.string.msg_bluetooth_permission_desc),
                             actionLabel = stringResource(R.string.action_grant),
                             onActionClick = onGrantBluetoothPermission,
+                            modifier = itemMod,
+                        )
+                        AnimatedPermissionRow(
+                            visible = !uiState.hasLocationPermission,
+                            title = stringResource(R.string.label_location_permission),
+                            description = stringResource(R.string.msg_location_permission_desc),
+                            actionLabel = stringResource(R.string.action_grant),
+                            onActionClick = onGrantLocationPermission,
                             modifier = itemMod,
                         )
                         AnimatedAdbPermissionRow(

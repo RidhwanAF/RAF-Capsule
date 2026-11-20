@@ -75,16 +75,17 @@ class SimulationViewModel @Inject constructor(
         """
         [00:00.00]Waiting in a car
         [00:15.00]Waiting for a ride in the dark
-        [00:30.00]The night city grows
+        [00:38.00]The night city grows
         [00:40.00]Look at the horizon glow
-        [00:48.00]Waiting in a car
-        [00:58.00]Waiting for a ride in the dark
-        [01:10.00]Drinking in the lounge
-        [01:22.00]Following the neon signs
-        [01:35.00]Waiting for a word
-        [01:48.00]Looking at the milky skyline
-        [02:02.00]The city is my church
-        [02:18.00]It wraps me in the sparkling twilight
+        [00:42.00]Waiting in a car
+        [00:44.00]Waiting for a ride in the dark
+        [00:46.00]Drinking in the lounge
+        [00:48.00]Following the neon signs
+        [00:50.00]Waiting for a word
+        [00:52.00]Looking at the milky skyline
+        [00:54.00]The city is my church
+        [00:56.00]It wraps me in the sparkling twilight
+        [01:00.00]Shining through the midnight haze
         """.trimIndent(),
     )
 
@@ -93,7 +94,7 @@ class SimulationViewModel @Inject constructor(
         title = "Midnight City (Sandbox)",
         artist = "M83",
         isPlaying = true,
-        positionMs = 42_000L,
+        positionMs = 40_000L,
         durationMs = 243_000L,
         artworkBytes = null,
         primaryColorArgb = 0xFF6C5CE7.toInt(),
@@ -322,7 +323,7 @@ class SimulationViewModel @Inject constructor(
                 title = "Midnight City (Sandbox)",
                 artist = "M83",
                 isPlaying = true,
-                positionMs = 15_000L,
+                positionMs = 40_000L,
                 durationMs = 243_000L,
                 artworkBytes = null,
                 primaryColorArgb = 0xFF6C5CE7.toInt(),
@@ -616,11 +617,17 @@ class SimulationViewModel @Inject constructor(
                 key = "sandbox:live:timer",
                 title = "Kitchen Timer",
                 statusText = "04:12",
-                subtitle = "Pasta timer • Running in background",
+                subtitle = "Pasta timer • Running in background with live action controls",
                 packageName = context.packageName,
                 showChronometer = true,
                 chronometerBaseEpochMs = System.currentTimeMillis() + 252_000L,
                 isCountdown = true,
+                actions = listOf(
+                    CapsuleContent.NotificationActionItem(actionId = 0, label = "Pause"),
+                    CapsuleContent.NotificationActionItem(actionId = 1, label = "Stop"),
+                ),
+                progress = 68,
+                progressMax = 100,
             )
         } else {
             null
@@ -631,6 +638,16 @@ class SimulationViewModel @Inject constructor(
             if (next != null) "Sandbox Live Activity -> ${next.title} (${next.statusText})"
             else "Sandbox Live Activity cleared",
         )
+    }
+
+    fun handleSandboxLiveActivityAction(live: CapsuleContent.LiveActivity, actionId: Int) {
+        val label = live.actions.firstOrNull { it.actionId == actionId }?.label ?: "Action"
+        if (actionId == 1) {
+            sandboxLiveActivity = null
+            sandboxCoordinator.onEvent(CapsuleEvent.LiveActivityUpdated(null))
+        }
+        sandboxCoordinator.onEvent(CapsuleEvent.CollapseCapsule)
+        recordSandboxAction("Sandbox Live Activity [$label] triggered")
     }
 
     fun triggerMockCall() {
@@ -747,6 +764,7 @@ class SimulationViewModel @Inject constructor(
 
         val expandedMediaStyle =
             preferences.expandedMediaGlowEffects != previousPreferences.expandedMediaGlowEffects ||
+                preferences.mediaAnimationColorMode != previousPreferences.mediaAnimationColorMode ||
                 preferences.keepOuterMediaGlowAlways != previousPreferences.keepOuterMediaGlowAlways ||
                 preferences.mediaFollowGlobalAutoCollapse != previousPreferences.mediaFollowGlobalAutoCollapse ||
                 preferences.mediaAutoCollapseDelayMs != previousPreferences.mediaAutoCollapseDelayMs

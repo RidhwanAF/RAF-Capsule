@@ -136,6 +136,8 @@
     <string name="msg_dnd_policy_desc">Now Brief में रिंगर बदलते समय पूर्ण साइलेंट मोड शामिल करने की वैकल्पिक अनुमति।</string>
     <string name="label_bluetooth_permission">Bluetooth डिवाइस कनेक्शन अलर्ट</string>
     <string name="msg_bluetooth_permission_desc">हेडफ़ोन, स्पीकर या एक्सेसरी कनेक्ट होने का पता लगाता है और बैटरी स्तर दिखाता है।</string>
+    <string name="label_location_permission">मौसम स्थान (वैकल्पिक)</string>
+    <string name="msg_location_permission_desc">Now Brief में सटीक स्थानीय मौसम के लिए Open-Meteo के साथ अनुमानित डिवाइस स्थान का उपयोग करता है।</string>
     <string name="label_bluetooth_connected">कनेक्टेड</string>
     <string name="label_bluetooth_battery">बैटरी %1$d%%</string>
     <string name="action_open_bluetooth_settings">Bluetooth सेटिंग्स</string>
@@ -239,4 +241,7 @@
     </plurals>
     <string name="label_satellite_position">बबल की स्थिति</string>
     <string name="desc_notification_attachment">नोटिफिकेशन अटैचमेंट</string>
+    <string name="label_media_animation_color">एनीमेशन रंग</string>
+    <string name="label_media_color_album">एल्बम रंग</string>
+    <string name="label_media_color_primary">प्राइमरी रंग</string>
 </resources>

@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-v1.1.0-1976D2" alt="Version v1.1.0" />
+  <img src="https://img.shields.io/badge/Version-v1.2.0-1976D2" alt="Version v1.2.0" />
   <img src="https://img.shields.io/badge/Min%20SDK-33%20(Android%2013)-3DDC84?logo=android&logoColor=white" alt="Min SDK 33" />
   <img src="https://img.shields.io/badge/Target%20SDK-37%20(Android%2017)-0078D7?logo=android&logoColor=white" alt="Target SDK 37" />
   <img src="https://img.shields.io/badge/UI-Jetpack%20Compose%20M3%20Expressive-4285F4?logo=jetpackcompose&logoColor=white" alt="Jetpack Compose" />
@@ -33,27 +33,31 @@
 <table>
   <tr>
     <td align="center" width="50%">
-      <img src="docs/media/media-player.gif" alt="Media Player, Visualizer & Synced Lyrics" width="100%" /><br/>
-      <strong>Media Player, Audio Switcher &amp; Synced Lyrics</strong>
+      <img src="docs/media/media-player.gif" alt="Media Player & Audio Output Switcher" width="100%" /><br/>
+      <strong>Media Player, Visualizer &amp; Audio Switcher</strong>
     </td>
+    <td align="center" width="50%">
+      <img src="docs/media/media-lyrics.gif" alt="Live Synced Lyrics (LRC)" width="100%" /><br/>
+      <strong>Live Synced Lyrics (LRC &amp; Online Fetch)</strong>
+    </td>
+  </tr>
+  <tr>
     <td align="center" width="50%">
       <img src="docs/media/separated-bubble.gif" alt="Separated Status Bubble & Liquid Morph" width="100%" /><br/>
       <strong>Separated Status Bubble &amp; Liquid Morph</strong>
     </td>
-  </tr>
-  <tr>
     <td align="center" width="50%">
       <img src="docs/media/notification-swipe.gif" alt="Scrollable Notifications & Swipe-to-Dismiss" width="100%" /><br/>
-      <strong>Scrollable Notifications &amp; Swipe-to-Dismiss</strong>
+      <strong>Rounded Notifications &amp; Swipe-to-Dismiss</strong>
     </td>
+  </tr>
+  <tr>
     <td align="center" width="50%">
       <img src="docs/media/now-brief.gif" alt="Now Brief Quick Hub" width="100%" /><br/>
       <strong>Now Brief Quick Hub</strong>
     </td>
-  </tr>
-  <tr>
-    <td align="center" colspan="2">
-      <img src="docs/media/incoming-call.gif" alt="Incoming Call Auto-Expand" width="50%" /><br/>
+    <td align="center" width="50%">
+      <img src="docs/media/incoming-call.gif" alt="Incoming Call Auto-Expand" width="100%" /><br/>
       <strong>Incoming Call Auto-Expand &amp; Neuron Border</strong>
     </td>
   </tr>
@@ -86,7 +90,7 @@
 
 ### 3-State Dynamic Cutout Capsule
 - **State 1 — Cutout Anchor Ring**: 1:1 hardware camera cutout ring with clockwise battery-level progress arc, charging particles, and automatic cutout calibration (`Left`, `Center`, `Right` + fine `dp` offset tuning).
-- **State 2 — Horizontal Pill**: Compact asymmetric pill for active media, notifications, volume, charging, timers, Bluetooth connections, and periodic 30-second notification summaries (with a 1-second bell jiggle).
+- **State 2 — Horizontal Pill**: Compact asymmetric pill for active media, notifications, volume, charging, timers, Bluetooth connections, and periodic 1-minute notification summaries (visible for 3 seconds with a 1-second bell jiggle).
 - **State 3 — Frosted Expanded Card**: Concentric display-corner rounded card with behind-window vertical blur, VSYNC spring physics, and 1:1 finger-tracked vertical scrub-to-expand/collapse.
 - **AGSL Shaders**: Hardware-accelerated [`NeuralBorderShader`](presentation/src/main/kotlin/com/raf/capsuleos/presentation/shader/NeuralBorderShader.kt) and [`OuterExpansionAuraShader`](presentation/src/main/kotlin/com/raf/capsuleos/presentation/shader/OuterExpansionAuraShader.kt) with independent toggles for inner card glow, outer screen-frame glow, and persistent playback aura.
 
@@ -97,9 +101,9 @@
 
 ### Media Player & Live Audio
 - Multi-session media carousel with album-art color extraction, animated waveform visualizer, and seekable timeline.
-- **Synced Lyrics (`LRC`)**: Toggleable line-by-line lyrics synced to playback position when supported by the active media session.
+- **Synced Lyrics (`LRC`)**: Toggleable line-by-line lyrics synced to playback position when supported by the active media session or fetched online via LRCLIB.
 - **Audio Output Switcher**: Launches Android's native blurred SystemUI volume/output panel directly from the expanded media card.
-- **Independent Media Customization**: Multi-select expanded animations (`Card Border`, `Outer Frame`, `Album Card`), separate horizontal-pill glow style, and dedicated auto-collapse timeout (`10s–60s` or follow global).
+- **Independent Media Customization**: Multi-select expanded animations (`Card Border`, `Outer Frame`, `Album Card`), **Animation Color** selector (`Album Color` default or `Primary Color`), separate horizontal-pill glow style, and dedicated auto-collapse timeout (`10s–60s` or follow global).
 
 ### Messaging & Smart Notifications
 - **Dynamic Tall Card & Inline Media**: Long messages automatically expand taller (~5–10 lines) and decode inline photos, animated GIFs, and animated WebP stickers natively via `ImageDecoder` / `AnimatedImageDrawable`.
@@ -205,6 +209,7 @@ RAF Capsule OS relies on official Android system APIs (`AccessibilityService` ov
 | **`WRITE_SETTINGS`** | Enables the Brightness slider and Adaptive Brightness toggle in Now Brief | Optional | In-app Setup or ADB |
 | **Do Not Disturb Policy** (`ACCESS_NOTIFICATION_POLICY`) | Allows cycling into full Silent mode from Now Brief | Optional | In-app Setup or ADB |
 | **`BLUETOOTH_CONNECT`** | Detects connected Bluetooth headphones/accessories and reads peripheral battery level | Optional | In-app Setup or ADB |
+| **`ACCESS_COARSE_LOCATION`** | Uses device coarse location with Open-Meteo for accurate local weather in Now Brief (omitted if not granted) | Optional | In-app Setup or ADB |
 
 #### Method A: Grant via In-App Setup Dashboard
 1. Open **RAF Capsule OS** on your phone.
@@ -220,6 +225,7 @@ RAF Capsule OS relies on official Android system APIs (`AccessibilityService` ov
    ```bash
    adb shell pm grant com.raf.capsuleos android.permission.WRITE_SECURE_SETTINGS && \
    adb shell pm grant com.raf.capsuleos android.permission.BLUETOOTH_CONNECT && \
+   adb shell pm grant com.raf.capsuleos android.permission.ACCESS_COARSE_LOCATION && \
    adb shell appops set com.raf.capsuleos WRITE_SETTINGS allow && \
    adb shell cmd notification allow_dnd com.raf.capsuleos && \
    adb shell cmd notification allow_listener \

@@ -57,6 +57,11 @@ fun SetupScreen(
     ) {
         viewModel.refreshPermissions()
     }
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+    ) {
+        viewModel.refreshPermissions()
+    }
 
     val adbCommand = remember(context.packageName) {
         "adb shell pm grant ${context.packageName} android.permission.WRITE_SECURE_SETTINGS"
@@ -120,6 +125,9 @@ fun SetupScreen(
         },
         onGrantBluetoothPermission = {
             bluetoothPermissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
+        },
+        onGrantLocationPermission = {
+            locationPermissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
         },
         onCopyAdbCommand = {
             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager

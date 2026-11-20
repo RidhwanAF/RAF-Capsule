@@ -136,6 +136,8 @@
     <string name="msg_dnd_policy_desc">Необязательное разрешение для режима «Без звука» при переключении звонка в Now Brief.</string>
     <string name="label_bluetooth_permission">Уведомления подключения Bluetooth</string>
     <string name="msg_bluetooth_permission_desc">Определяет подключение наушников, колонок и аксессуаров и показывает заряд.</string>
+    <string name="label_location_permission">Геолокация для погоды (Необязательно)</string>
+    <string name="msg_location_permission_desc">Использует приблизительное местоположение и Open-Meteo для точной погоды в Now Brief.</string>
     <string name="label_bluetooth_connected">Подключено</string>
     <string name="label_bluetooth_battery">Заряд %1$d%%</string>
     <string name="action_open_bluetooth_settings">Настройки Bluetooth</string>
@@ -243,4 +245,7 @@
     </plurals>
     <string name="label_satellite_position">Положение пузырька</string>
     <string name="desc_notification_attachment">Вложение уведомления</string>
+    <string name="label_media_animation_color">Цвет анимации</string>
+    <string name="label_media_color_album">Цвет альбома</string>
+    <string name="label_media_color_primary">Основной цвет</string>
 </resources>

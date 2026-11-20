@@ -26,6 +26,9 @@ import com.raf.capsuleos.domain.model.LyricLine
 import com.raf.capsuleos.domain.model.MediaOutputKind
 import com.raf.capsuleos.domain.repository.MediaSessionRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -71,6 +74,12 @@ class MediaSessionRepositoryImpl @Inject constructor(
 
     private val appIconBytesCache = ConcurrentHashMap<String, ByteArray>()
     private val artworkCache = ConcurrentHashMap<String, CachedArtwork>()
+    private val onlineLyricsCache = ConcurrentHashMap<String, List<LyricLine>>()
+    private val inFlightLyricsKeys = ConcurrentHashMap.newKeySet<String>()
+    private val lyricsScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    @Volatile
+    private var onLyricsReadyCallback: (() -> Unit)? = null
 
     private data class CachedArtwork(
         val artKey: String,
@@ -99,6 +108,7 @@ class MediaSessionRepositoryImpl @Inject constructor(
             mediaSessionsFlow.value = mapped
             trySend(mapped)
         }
+        onLyricsReadyCallback = ::emitAllSnapshots
 
         fun unregisterAll() {
             synchronized(sessionsLock) {
@@ -296,7 +306,29 @@ class MediaSessionRepositoryImpl @Inject constructor(
         val bitmap = meta.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
             ?: meta.getBitmap(MediaMetadata.METADATA_KEY_ART)
         val rawLyrics = extractRawLyrics(meta, extras)
-        val artKey = "$packageName|$title|$artist|${bitmap?.generationId ?: 0}|${rawLyrics?.hashCode() ?: 0}"
+        val localLyrics = LrcLyricsParser.parse(rawLyrics)
+        val lyricsKey = OnlineLyricsFetcher.cacheKey(title, artist)
+        val resolvedLyrics = if (localLyrics.isNotEmpty()) {
+            localLyrics
+        } else {
+            val cachedOnline = onlineLyricsCache[lyricsKey]
+            if (cachedOnline == null && title.isNotBlank() && inFlightLyricsKeys.add(lyricsKey)) {
+                lyricsScope.launch {
+                    try {
+                        val fetched = OnlineLyricsFetcher.fetch(title, artist, duration)
+                        onlineLyricsCache[lyricsKey] = fetched
+                        if (fetched.isNotEmpty()) {
+                            artworkCache.remove(tokenId)
+                            mainHandler.post { onLyricsReadyCallback?.invoke() }
+                        }
+                    } finally {
+                        inFlightLyricsKeys.remove(lyricsKey)
+                    }
+                }
+            }
+            cachedOnline.orEmpty()
+        }
+        val artKey = "$packageName|$title|$artist|${bitmap?.generationId ?: 0}|${resolvedLyrics.size}"
         val cachedArt = artworkCache[tokenId]?.takeIf { it.artKey == artKey } ?: run {
             val (primary, secondary) = BitmapColorExtractor.extractColors(bitmap)
             val created = CachedArtwork(
@@ -304,7 +336,7 @@ class MediaSessionRepositoryImpl @Inject constructor(
                 bytes = bitmap?.let { BitmapColorExtractor.toPngBytes(it) },
                 primaryArgb = primary,
                 secondaryArgb = secondary,
-                lyrics = LrcLyricsParser.parse(rawLyrics),
+                lyrics = resolvedLyrics,
             )
             artworkCache[tokenId] = created
             created

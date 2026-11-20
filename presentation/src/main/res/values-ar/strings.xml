@@ -136,6 +136,8 @@
     <string name="msg_dnd_policy_desc">إذن اختياري لتضمين الوضع الصامت الكامل عند تبديل الرنين في Now Brief.</string>
     <string name="label_bluetooth_permission">تنبيهات اتصال أجهزة Bluetooth</string>
     <string name="msg_bluetooth_permission_desc">يكتشف اتصال السماعات ومكبرات الصوت والملحقات ويقرأ مستوى البطارية المُبلغ عنه.</string>
+    <string name="label_location_permission">موقع الطقس (اختياري)</string>
+    <string name="msg_location_permission_desc">يستخدم الموقع التقريبي للجهاز مع Open-Meteo لعرض طقس محلي دقيق في Now Brief.</string>
     <string name="label_bluetooth_connected">متصل</string>
     <string name="label_bluetooth_battery">البطارية %1$d%%</string>
     <string name="action_open_bluetooth_settings">إعدادات Bluetooth</string>
@@ -247,4 +249,7 @@
     </plurals>
     <string name="label_satellite_position">موضع الفقاعة</string>
     <string name="desc_notification_attachment">مرفق الإشعار</string>
+    <string name="label_media_animation_color">لون الحركة</string>
+    <string name="label_media_color_album">لون الألبوم</string>
+    <string name="label_media_color_primary">اللون الأساسي</string>
 </resources>

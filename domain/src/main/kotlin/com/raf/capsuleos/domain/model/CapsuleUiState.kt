@@ -38,6 +38,12 @@ enum class HorizontalMediaGlowStyle {
     ALBUM_ART_RING,
 }
 
+/** Color source applied to media player animations (wave, outer aura, inner card border, album ring). */
+enum class MediaAnimationColorMode {
+    ALBUM_COLOR,
+    PRIMARY_COLOR,
+}
+
 /** Customizable action executed on double-tap or long-hold gestures. */
 enum class CapsuleGestureAction {
     NONE,
@@ -136,6 +142,7 @@ data class CapsulePreferences(
         ExpandedMediaGlowEffect.ALBUM_ART_RING,
     ),
     val horizontalMediaGlowStyle: HorizontalMediaGlowStyle = HorizontalMediaGlowStyle.OFF,
+    val mediaAnimationColorMode: MediaAnimationColorMode = MediaAnimationColorMode.ALBUM_COLOR,
     val keepExpandedMediaGlowAlways: Boolean = true,
     val keepOuterMediaGlowAlways: Boolean = true,
     val showBatteryOnCameraRing: Boolean = true,

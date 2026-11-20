@@ -24,9 +24,15 @@ interface SystemEventsRepository {
     /** Returns current mobile hotspot state if detectable. */
     fun currentHotspotState(): CapsuleContent.Hotspot
 
-    /** Emits periodically refreshed At-a-Glance weather summaries (cached / network best-effort). */
+    /** Emits periodically refreshed At-a-Glance weather summaries when coarse location is granted. */
     fun observeWeatherSummary(): Flow<WeatherSummary?>
 
     /** Returns the latest cached weather summary if available. */
     fun currentWeatherSummary(): WeatherSummary?
+
+    /** Returns true when optional coarse location permission (`ACCESS_COARSE_LOCATION`) is granted. */
+    fun hasLocationPermission(): Boolean
+
+    /** Immediately triggers a weather refresh (e.g. right after granting location permission). */
+    fun refreshWeatherNow()
 }

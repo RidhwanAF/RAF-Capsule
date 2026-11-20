@@ -91,6 +91,7 @@ fun PreviewHomeSetupDashboard() {
                 hasWriteSettings = true,
                 hasDndPolicyAccess = true,
                 hasBluetoothPermission = true,
+                hasLocationPermission = true,
                 cutoutGeometry = PREVIEW_CUTOUT,
                 detectedPosition = CameraAnchorPosition.CENTER,
                 hasHardwareCutout = true,

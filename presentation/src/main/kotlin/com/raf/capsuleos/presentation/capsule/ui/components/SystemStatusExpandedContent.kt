@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -127,39 +128,79 @@ fun SystemStatusExpandedContent(
                 }
             }
 
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                if (status.kind == SystemStatusKind.RINGER_MUTED) {
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    if (status.kind == SystemStatusKind.RINGER_MUTED) {
+                        CapsuleExpressiveSurface(
+                            enabled = interactionsEnabled,
+                            onClick = {
+                                haptics.click()
+                                onUserInteraction()
+                                onSetRingerMode(RingerModeState.NORMAL)
+                            },
+                            restCornerDp = 16f,
+                            pressedCornerDp = 8f,
+                            backgroundColor = primary.copy(alpha = 0.24f),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(38.dp),
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center,
+                                modifier = Modifier.fillMaxSize(),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.NotificationsActive,
+                                    contentDescription = null,
+                                    tint = primary,
+                                    modifier = Modifier.size(15.dp),
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = stringResource(R.string.action_restore_ring),
+                                    color = Color.White,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    }
+
                     CapsuleExpressiveSurface(
                         enabled = interactionsEnabled,
                         onClick = {
                             haptics.click()
                             onUserInteraction()
-                            onSetRingerMode(RingerModeState.NORMAL)
+                            onOpenSystemStatusSettings(status.kind)
                         },
                         restCornerDp = 16f,
                         pressedCornerDp = 8f,
-                        backgroundColor = primary.copy(alpha = 0.24f),
-                        modifier = Modifier.weight(1f),
+                        backgroundColor = Color.White.copy(alpha = 0.14f),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(38.dp),
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.Center,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 8.dp),
+                            modifier = Modifier.fillMaxSize(),
                         ) {
                             Icon(
-                                imageVector = Icons.Rounded.NotificationsActive,
+                                imageVector = Icons.Rounded.Settings,
                                 contentDescription = null,
-                                tint = primary,
+                                tint = Color.White,
                                 modifier = Modifier.size(15.dp),
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = stringResource(R.string.action_restore_ring),
+                                text = stringResource(R.string.action_open_settings),
                                 color = Color.White,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
@@ -169,44 +210,6 @@ fun SystemStatusExpandedContent(
                         }
                     }
                 }
-
-                CapsuleExpressiveSurface(
-                    enabled = interactionsEnabled,
-                    onClick = {
-                        haptics.click()
-                        onUserInteraction()
-                        onOpenSystemStatusSettings(status.kind)
-                    },
-                    restCornerDp = 16f,
-                    pressedCornerDp = 8f,
-                    backgroundColor = Color.White.copy(alpha = 0.14f),
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 8.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Settings,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(15.dp),
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = stringResource(R.string.action_open_settings),
-                            color = Color.White,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-            }
         }
     }
 }

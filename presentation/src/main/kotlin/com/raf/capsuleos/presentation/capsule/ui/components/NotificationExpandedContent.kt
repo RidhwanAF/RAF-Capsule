@@ -7,11 +7,10 @@ import android.graphics.drawable.BitmapDrawable
 import android.widget.ImageView
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.SharedTransitionScope
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,7 +42,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -53,7 +51,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
@@ -214,44 +211,45 @@ fun NotificationExpandedContent(
 
             if (notification.text.isNotBlank() || notification.attachmentImageBytes != null) {
                 val bodyScrollState = rememberScrollState()
-                val canScrollUp by remember {
-                    derivedStateOf { bodyScrollState.canScrollBackward }
-                }
-                val canScrollDown by remember {
-                    derivedStateOf { bodyScrollState.canScrollForward }
-                }
-                val topEdgeAlpha by animateFloatAsState(
-                    targetValue = if (canScrollUp) 1f else 0f,
-                    animationSpec = tween(durationMillis = 180),
-                    label = "notifTopScrollFade",
-                )
-                val bottomEdgeAlpha by animateFloatAsState(
-                    targetValue = if (canScrollDown) 1f else 0f,
-                    animationSpec = tween(durationMillis = 180),
-                    label = "notifBottomScrollFade",
-                )
+                val bodyContainerShape = RoundedCornerShape(16.dp)
+                val attachmentSize = notification.attachmentImageBytes?.size ?: 0
+                val currentSignature = "${notification.key}|${notification.text.hashCode()}|$attachmentSize"
+                var userScrolledManually by remember(currentSignature) { mutableStateOf(false) }
                 LaunchedEffect(bodyScrollState.isScrollInProgress) {
                     if (bodyScrollState.isScrollInProgress) {
+                        userScrolledManually = true
                         onUserInteraction()
+                    }
+                }
+                LaunchedEffect(currentSignature, bodyScrollState.maxValue) {
+                    if (!userScrolledManually && bodyScrollState.maxValue > 0) {
+                        bodyScrollState.scrollTo(bodyScrollState.maxValue)
                     }
                 }
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
-                        .padding(vertical = 4.dp),
+                        .padding(top = 10.dp, bottom = 10.dp)
+                        .clip(bodyContainerShape)
+                        .background(Color.White.copy(alpha = 0.08f))
+                        .border(
+                            width = 0.75.dp,
+                            color = Color.White.copy(alpha = 0.11f),
+                            shape = bodyContainerShape,
+                        ),
                 ) {
                     Column(
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier
                             .fillMaxSize()
                             .verticalScroll(bodyScrollState)
-                            .padding(vertical = 6.dp),
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
                     ) {
                         if (notification.text.isNotBlank()) {
                             Text(
                                 text = notification.text,
-                                color = Color.White.copy(alpha = 0.9f),
+                                color = Color.White.copy(alpha = 0.92f),
                                 fontSize = 13.sp,
                                 lineHeight = 18.sp,
                                 modifier = Modifier.fillMaxWidth(),
@@ -266,75 +264,9 @@ fun NotificationExpandedContent(
                             )
                         }
                     }
-
-                    if (topEdgeAlpha > 0.01f) {
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.TopCenter)
-                                .fillMaxWidth()
-                                .height(20.dp)
-                                .background(
-                                    Brush.verticalGradient(
-                                        colors = listOf(
-                                            primary.copy(alpha = 0.26f * topEdgeAlpha),
-                                            Color.Transparent,
-                                        ),
-                                    ),
-                                ),
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.TopCenter)
-                                    .fillMaxWidth()
-                                    .height(1.dp)
-                                    .background(
-                                        Brush.horizontalGradient(
-                                            colors = listOf(
-                                                Color.Transparent,
-                                                primary.copy(alpha = 0.85f * topEdgeAlpha),
-                                                Color.Transparent,
-                                            ),
-                                        ),
-                                    ),
-                            )
-                        }
-                    }
-
-                    if (bottomEdgeAlpha > 0.01f) {
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.BottomCenter)
-                                .fillMaxWidth()
-                                .height(20.dp)
-                                .background(
-                                    Brush.verticalGradient(
-                                        colors = listOf(
-                                            Color.Transparent,
-                                            primary.copy(alpha = 0.26f * bottomEdgeAlpha),
-                                        ),
-                                    ),
-                                ),
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.BottomCenter)
-                                    .fillMaxWidth()
-                                    .height(1.dp)
-                                    .background(
-                                        Brush.horizontalGradient(
-                                            colors = listOf(
-                                                Color.Transparent,
-                                                primary.copy(alpha = 0.85f * bottomEdgeAlpha),
-                                                Color.Transparent,
-                                            ),
-                                        ),
-                                    ),
-                            )
-                        }
-                    }
                 }
             } else {
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(10.dp))
             }
 
             val currentReplyAction = replyingAction
@@ -522,7 +454,7 @@ private fun NotificationAttachmentPreview(
                 },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 64.dp, max = 132.dp),
+                    .heightIn(min = 64.dp, max = 124.dp),
             )
         }
     } else if (fallbackBitmap != null) {
@@ -538,7 +470,7 @@ private fun NotificationAttachmentPreview(
                 contentScale = ContentScale.Fit,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 132.dp),
+                    .heightIn(max = 128.dp),
             )
         }
     }

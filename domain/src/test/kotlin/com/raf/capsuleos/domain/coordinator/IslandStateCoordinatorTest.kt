@@ -1577,26 +1577,35 @@ class IslandStateCoordinatorTest {
                 cancelAndIgnoreRemainingEvents()
             }
 
-            // Auto-collapses after configured horizontal auto-collapse timeout (4000ms)
-            advanceTimeBy(4_100L)
+            // Auto-collapses after fixed 3s peek duration
+            advanceTimeBy(2_900L)
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE2_HORIZONTAL_PILL, coordinator.uiState.value.visualState)
+
+            advanceTimeBy(200L)
             runCurrent()
             assertEquals(CapsuleVisualState.STATE1_CUTOUT_ANCHOR, coordinator.uiState.value.visualState)
 
-            // Reappears after 30s idle rolling interval while notifications remain active
-            advanceTimeBy(30_000L)
+            // Stays collapsed during the 1-minute idle interval (e.g. still idle at 35s)
+            advanceTimeBy(35_000L)
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE1_CUTOUT_ANCHOR, coordinator.uiState.value.visualState)
+
+            // Reappears after 1-minute (60s) idle rolling interval while notifications remain active
+            advanceTimeBy(25_000L)
             runCurrent()
             assertEquals(CapsuleVisualState.STATE2_HORIZONTAL_PILL, coordinator.uiState.value.visualState)
             assertEquals(CapsuleContent.NotificationSummary(count = 3), coordinator.uiState.value.content)
 
-            // Auto-collapses again after 4000ms
-            advanceTimeBy(4_100L)
+            // Auto-collapses again after 3000ms
+            advanceTimeBy(3_100L)
             runCurrent()
             assertEquals(CapsuleVisualState.STATE1_CUTOUT_ANCHOR, coordinator.uiState.value.visualState)
 
             // Clearing notifications cancels periodic reappearance
             coordinator.onEvent(CapsuleEvent.ActiveNotificationCountUpdated(0))
             runCurrent()
-            advanceTimeBy(35_000L)
+            advanceTimeBy(65_000L)
             runCurrent()
             assertEquals(CapsuleVisualState.STATE1_CUTOUT_ANCHOR, coordinator.uiState.value.visualState)
         }

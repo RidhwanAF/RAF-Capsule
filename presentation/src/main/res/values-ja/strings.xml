@@ -136,6 +136,8 @@
     <string name="msg_dnd_policy_desc">マナーモード切替で完全サイレントを含めるための任意権限です。</string>
     <string name="label_bluetooth_permission">Bluetooth 接続通知</string>
     <string name="msg_bluetooth_permission_desc">Bluetooth イヤホンやスピーカーの接続とバッテリー残量を検出します。</string>
+    <string name="label_location_permission">天気の位置情報（任意）</string>
+    <string name="msg_location_permission_desc">Now Brief で正確な現在地の天気を表示するため、おおよその位置情報と Open-Meteo を使用します。</string>
     <string name="label_bluetooth_connected">接続済み</string>
     <string name="label_bluetooth_battery">バッテリー %1$d%%</string>
     <string name="action_open_bluetooth_settings">Bluetooth 設定</string>
@@ -237,4 +239,7 @@
     </plurals>
     <string name="label_satellite_position">バブルの位置</string>
     <string name="desc_notification_attachment">通知の添付ファイル</string>
+    <string name="label_media_animation_color">アニメーションカラー</string>
+    <string name="label_media_color_album">アルバムカラー</string>
+    <string name="label_media_color_primary">プライマリカラー</string>
 </resources>
