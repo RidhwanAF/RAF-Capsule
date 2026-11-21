@@ -1649,6 +1649,47 @@ class IslandStateCoordinatorTest {
             assertTrue(coordinator.uiState.value.content is CapsuleContent.Media)
         }
 
+    @Test
+    fun `given separated satellite expanded to state3, when cycling satellite, then switches expanded card content in place`() =
+        testScope.runTest {
+            val coordinator = createCoordinator()
+            coordinator.onEvent(
+                CapsuleEvent.TorchUpdated(
+                    CapsuleContent.Torch(isEnabled = true, strengthLevel = 3, maxStrengthLevel = 5),
+                ),
+            )
+            coordinator.onEvent(
+                CapsuleEvent.HotspotUpdated(
+                    CapsuleContent.Hotspot(isEnabled = true, connectedClients = 2),
+                ),
+            )
+            runCurrent()
+
+            assertEquals(SatelliteSource.TORCH, coordinator.uiState.value.leftSatellite?.source)
+
+            // Expand separated satellite circle -> State 3 Torch
+            coordinator.onEvent(CapsuleEvent.ExpandLeftSatellite)
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE3_FULL_EXPANDED, coordinator.uiState.value.visualState)
+            assertTrue(coordinator.uiState.value.isExpandedFromSatellite)
+            assertTrue(coordinator.uiState.value.content is CapsuleContent.Torch)
+
+            // Swipe on expanded satellite card -> switches expanded card directly to Hotspot
+            coordinator.onEvent(CapsuleEvent.CycleLeftSatellite(direction = 1))
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE3_FULL_EXPANDED, coordinator.uiState.value.visualState)
+            assertTrue(coordinator.uiState.value.isExpandedFromSatellite)
+            assertTrue(coordinator.uiState.value.content is CapsuleContent.Hotspot)
+            assertEquals(SatelliteSource.HOTSPOT, coordinator.uiState.value.leftSatellite?.source)
+
+            // Swipe back -> returns to Torch while staying expanded from satellite
+            coordinator.onEvent(CapsuleEvent.CycleLeftSatellite(direction = -1))
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE3_FULL_EXPANDED, coordinator.uiState.value.visualState)
+            assertTrue(coordinator.uiState.value.isExpandedFromSatellite)
+            assertTrue(coordinator.uiState.value.content is CapsuleContent.Torch)
+        }
+
     private fun sampleMedia(): CapsuleContent.Media =
         CapsuleContent.Media(
             packageName = "com.spotify.music",

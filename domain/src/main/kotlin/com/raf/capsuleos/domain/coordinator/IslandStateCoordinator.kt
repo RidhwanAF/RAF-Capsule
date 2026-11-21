@@ -1169,12 +1169,19 @@ class IslandStateCoordinator(
         if (available.isEmpty()) return
 
         val dir = if (direction < 0) -1 else 1
+        val isSatelliteExpanded = _uiState.value.visualState == CapsuleVisualState.STATE3_FULL_EXPANDED &&
+            _uiState.value.isExpandedFromSatellite
         if (available.size <= 1) {
             satelliteJiggleSeq++
+            if (isSatelliteExpanded) {
+                swipeJiggleSeq++
+            }
             _uiState.update { current ->
                 current.copy(
                     satelliteSwipeDirection = dir,
                     satelliteJiggleSeq = satelliteJiggleSeq,
+                    swipeDirection = if (isSatelliteExpanded) dir else current.swipeDirection,
+                    swipeJiggleSeq = if (isSatelliteExpanded) swipeJiggleSeq else current.swipeJiggleSeq,
                 )
             }
             return
@@ -1186,12 +1193,34 @@ class IslandStateCoordinator(
         val target = available[nextIdx]
         selectedSatelliteSource = target.source
         satelliteSwipeSeq++
-        _uiState.update { current ->
-            current.copy(
-                leftSatellite = target,
-                satelliteSwipeSeq = satelliteSwipeSeq,
-                satelliteSwipeDirection = dir,
-            )
+        if (isSatelliteExpanded) {
+            manualSwipeSeq++
+            _uiState.update { current ->
+                current.copy(
+                    leftSatellite = target,
+                    satelliteSwipeSeq = satelliteSwipeSeq,
+                    satelliteSwipeDirection = dir,
+                    swipeDirection = dir,
+                    manualSwipeSeq = manualSwipeSeq,
+                )
+            }
+            val nextContent = when (val content = target.content) {
+                is CapsuleContent.Torch,
+                is CapsuleContent.Hotspot,
+                is CapsuleContent.LiveActivity,
+                is CapsuleContent.SystemStatus,
+                -> content
+                else -> buildNowBrief()
+            }
+            enterState3Expanded(nextContent, fromSatellite = true)
+        } else {
+            _uiState.update { current ->
+                current.copy(
+                    leftSatellite = target,
+                    satelliteSwipeSeq = satelliteSwipeSeq,
+                    satelliteSwipeDirection = dir,
+                )
+            }
         }
     }
 

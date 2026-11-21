@@ -176,6 +176,85 @@ fun SettingsSubSectionBox(
 }
 
 /**
+ * Collapsible Material 3 Expressive sub-section card whose clickable header and ripple span the
+ * entire collapsed card bounds, while keeping expanded body controls outside the toggle click target.
+ */
+@Composable
+fun ExpandableSubSectionBox(
+    modifier: Modifier = Modifier,
+    title: String,
+    expanded: Boolean,
+    onToggleExpand: () -> Unit,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val haptics = LocalHapticFeedback.current
+    val cardShape = RoundedCornerShape(18.dp)
+    val chevronRotation by animateFloatAsState(
+        targetValue = if (expanded) 180f else 0f,
+        animationSpec = spring(dampingRatio = 0.72f, stiffness = 380f),
+        label = "expandableSubSectionChevron",
+    )
+
+    Surface(
+        shape = cardShape,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        border = BorderStroke(
+            width = 1.dp,
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+        ),
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(cardShape)
+                    .clickable {
+                        haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                        onToggleExpand()
+                    }
+                    .padding(horizontal = 14.dp, vertical = 14.dp),
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .weight(1f)
+                        .basicMarquee(),
+                )
+                Icon(
+                    imageVector = Icons.Rounded.ExpandMore,
+                    contentDescription = stringResource(R.string.desc_expand_collapse_category),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .size(20.dp)
+                        .graphicsLayer { rotationZ = chevronRotation },
+                )
+            }
+
+            AnimatedVisibility(
+                visible = expanded,
+                enter = fadeIn(tween(180)) + expandVertically(spring(dampingRatio = 0.82f, stiffness = 380f)),
+                exit = fadeOut(tween(140)) + shrinkVertically(spring(dampingRatio = 0.86f, stiffness = 400f)),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 14.dp, end = 14.dp, bottom = 12.dp),
+                    content = content,
+                )
+            }
+        }
+    }
+}
+
+/**
  * Nested sub-item container box placed beneath a master toggle or expandable row to provide clean
  * visual indentation and tonal hierarchy instead of raw left-padding.
  */

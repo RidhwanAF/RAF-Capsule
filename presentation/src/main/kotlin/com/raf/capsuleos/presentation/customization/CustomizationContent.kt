@@ -2,26 +2,31 @@ package com.raf.capsuleos.presentation.customization
 
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -31,8 +36,14 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -166,6 +177,18 @@ fun CustomizationContent(
                     }
                 }
             } else {
+                val portraitScrollState = rememberScrollState()
+                val isPortraitScrolled by remember {
+                    derivedStateOf { portraitScrollState.value > 0 }
+                }
+                val topScrollShadowAlpha by animateFloatAsState(
+                    targetValue = if (isPortraitScrolled) 1f else 0f,
+                    animationSpec = tween(durationMillis = 180),
+                    label = "customizationTopScrollShadow",
+                )
+                val scrollViewportShape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp)
+                val scrimColor = MaterialTheme.colorScheme.scrim
+
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier.fillMaxSize(),
@@ -178,24 +201,46 @@ fun CustomizationContent(
                     ) {
                         livePreviewContent()
                     }
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Box(
                         modifier = Modifier
                             .weight(1f)
+                            .widthIn(max = 1040.dp)
                             .fillMaxWidth()
-                            .verticalScroll(rememberScrollState())
-                            .padding(start = startPad, end = endPad, top = 12.dp, bottom = bottomPad),
-                        horizontalAlignment = Alignment.CenterHorizontally,
+                            .padding(start = startPad, end = endPad)
+                            .clip(scrollViewportShape),
                     ) {
-                        CustomizationSectionCard(
-                            section = section,
-                            uiState = uiState,
-                            onAutoDetectCamera = onAutoDetectCamera,
-                            onUpdatePreferences = onUpdatePreferences,
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(14.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier
-                                .widthIn(max = 1040.dp)
-                                .fillMaxWidth(),
-                        )
+                                .fillMaxSize()
+                                .verticalScroll(portraitScrollState)
+                                .padding(bottom = bottomPad),
+                        ) {
+                            CustomizationSectionCard(
+                                section = section,
+                                uiState = uiState,
+                                onAutoDetectCamera = onAutoDetectCamera,
+                                onUpdatePreferences = onUpdatePreferences,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                        if (topScrollShadowAlpha > 0.01f) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .fillMaxWidth()
+                                    .height(22.dp)
+                                    .background(
+                                        Brush.verticalGradient(
+                                            0.0f to scrimColor.copy(alpha = 0.14f * topScrollShadowAlpha),
+                                            0.45f to scrimColor.copy(alpha = 0.05f * topScrollShadowAlpha),
+                                            1.0f to Color.Transparent,
+                                        ),
+                                    ),
+                            )
+                        }
                     }
                 }
             }

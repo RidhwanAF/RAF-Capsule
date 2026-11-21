@@ -528,6 +528,7 @@ fun IslandCapsule(
         val latestDismissNotification by rememberUpdatedState(onDismissNotification)
         val latestNotificationSwipeChanged by rememberUpdatedState(onNotificationSwipeChanged)
         val latestReplyFocusChanged by rememberUpdatedState(onReplyFocusChanged)
+        val latestCycleSatellite by rememberUpdatedState(onCycleSatellite)
         var lastCompactTapUpMs by remember { mutableLongStateOf(0L) }
         var pendingCompactTapJob by remember { mutableStateOf<Job?>(null) }
 
@@ -731,6 +732,16 @@ fun IslandCapsule(
                                                         )
                                                     }
                                                 }
+                                                return@awaitEachGesture
+                                            }
+                                            if (latestUiState.isExpandedFromSatellite && abs(dx) > 36f && abs(dx) > abs(dy) * 1.35f) {
+                                                change.consume()
+                                                composeHaptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                                                latestCycleSatellite(if (dx < 0f) 1 else -1)
+                                                do {
+                                                    val drain = awaitPointerEvent()
+                                                    drain.changes.forEach { it.consume() }
+                                                } while (drain.changes.any { it.pressed })
                                                 return@awaitEachGesture
                                             }
                                             if (dy < -22f && abs(dy) > abs(dx) * 1.35f) {

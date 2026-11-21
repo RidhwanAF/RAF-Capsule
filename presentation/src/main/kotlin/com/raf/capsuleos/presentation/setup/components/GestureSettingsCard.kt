@@ -2,14 +2,8 @@ package com.raf.capsuleos.presentation.setup.components
 
 import android.content.Intent
 import android.graphics.Bitmap
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
@@ -32,7 +26,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.ArrowDropDown
-import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.TouchApp
 import androidx.compose.material3.AlertDialog
@@ -108,11 +101,6 @@ fun GestureSettingsCard(
     var expanded by rememberSaveable { mutableStateOf(initiallyExpanded) }
     var perCardExpanded by rememberSaveable { mutableStateOf(!collapsible) }
     val isBodyVisible = !collapsible || expanded
-    val perCardChevronRotation by animateFloatAsState(
-        targetValue = if (perCardExpanded) 180f else 0f,
-        animationSpec = spring(dampingRatio = 0.72f, stiffness = 380f),
-        label = "perCardChevron",
-    )
 
     val resolveAppLabel: (String?) -> String? = remember(context) {
         { pkg ->
@@ -186,52 +174,17 @@ fun GestureSettingsCard(
             }
         }
 
-        SettingsSubSectionBox {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .clickable {
-                        haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                        perCardExpanded = !perCardExpanded
-                    }
-                    .padding(vertical = 2.dp),
-            ) {
-                Text(
-                    text = stringResource(R.string.label_per_card_gestures),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier
-                        .weight(1f)
-                        .basicMarquee(),
-                )
-                Icon(
-                    imageVector = Icons.Rounded.ExpandMore,
-                    contentDescription = stringResource(R.string.desc_expand_collapse_category),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier
-                        .size(20.dp)
-                        .graphicsLayer { rotationZ = perCardChevronRotation },
-                )
-            }
-
-            AnimatedVisibility(
-                visible = perCardExpanded,
-                enter = fadeIn(tween(180)) + expandVertically(spring(dampingRatio = 0.82f, stiffness = 380f)),
-                exit = fadeOut(tween(140)) + shrinkVertically(spring(dampingRatio = 0.86f, stiffness = 400f)),
-            ) {
-                AdaptiveSubItemFlowRow(
-                    verticalSpacing = 8.dp,
-                    modifier = Modifier.padding(top = 6.dp),
-                ) { itemMod ->
-                    GestureCardTarget.entries.forEach { target ->
-                        val cfg = preferences.cardGestures[target] ?: CardGestureConfig()
-                        SettingsNestedInsetBox(modifier = itemMod.padding(top = 0.dp)) {
+        ExpandableSubSectionBox(
+            title = stringResource(R.string.label_per_card_gestures),
+            expanded = perCardExpanded,
+            onToggleExpand = { perCardExpanded = !perCardExpanded },
+        ) {
+            AdaptiveSubItemFlowRow(
+                verticalSpacing = 8.dp,
+            ) { itemMod ->
+                GestureCardTarget.entries.forEach { target ->
+                    val cfg = preferences.cardGestures[target] ?: CardGestureConfig()
+                    SettingsNestedInsetBox(modifier = itemMod.padding(top = 0.dp)) {
                             Text(
                                 text = cardTargetLabel(target),
                                 style = MaterialTheme.typography.labelLarge,
@@ -295,7 +248,6 @@ fun GestureSettingsCard(
                         }
                     }
                 }
-            }
         }
     }
 
@@ -369,6 +321,11 @@ private fun GestureSelectorRow(
     onPickApp: () -> Unit,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
+    val arrowRotation by animateFloatAsState(
+        targetValue = if (menuExpanded) 180f else 0f,
+        animationSpec = spring(dampingRatio = 0.72f, stiffness = 380f),
+        label = "gestureDropdownArrowRotation",
+    )
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -422,7 +379,9 @@ private fun GestureSelectorRow(
                     Icon(
                         imageVector = Icons.Rounded.ArrowDropDown,
                         contentDescription = null,
-                        modifier = Modifier.size(18.dp),
+                        modifier = Modifier
+                            .size(18.dp)
+                            .graphicsLayer { rotationZ = arrowRotation },
                     )
                 }
                 DropdownMenu(
