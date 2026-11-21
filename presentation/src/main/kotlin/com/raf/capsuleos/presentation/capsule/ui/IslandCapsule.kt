@@ -683,7 +683,7 @@ fun IslandCapsule(
 
                                                         if (!crossedDismissDetent && abs(latestDxDp) >= 68f) {
                                                             crossedDismissDetent = true
-                                                            composeHaptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                                                            composeHaptics.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick)
                                                         } else if (crossedDismissDetent && abs(latestDxDp) < 52f) {
                                                             crossedDismissDetent = false
                                                         }
@@ -736,7 +736,7 @@ fun IslandCapsule(
                                             }
                                             if (latestUiState.isExpandedFromSatellite && abs(dx) > 36f && abs(dx) > abs(dy) * 1.35f) {
                                                 change.consume()
-                                                composeHaptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                                                composeHaptics.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick)
                                                 latestCycleSatellite(if (dx < 0f) 1 else -1)
                                                 do {
                                                     val drain = awaitPointerEvent()
@@ -745,7 +745,7 @@ fun IslandCapsule(
                                                 return@awaitEachGesture
                                             }
                                             if (dy < -22f && abs(dy) > abs(dx) * 1.35f) {
-                                                composeHaptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                                                composeHaptics.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick)
                                                 val (travelPx, initialFraction) = latestScrubStart()
                                                 trackVerticalScrub(
                                                     startFraction = initialFraction,
@@ -756,6 +756,9 @@ fun IslandCapsule(
                                                     screenLoc = screenLoc,
                                                     onProgress = latestScrubProgress,
                                                     onInteractionPulse = latestUserInteraction,
+                                                    onHapticTick = {
+                                                        composeHaptics.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick)
+                                                    },
                                                     onComplete = { commitExpanded, velocityY, _ ->
                                                         // Always use smooth scrub-to-coast on swipe-up collapse so album art never blinks
                                                         suppressAlbumSharedAfterDrag = true
@@ -839,7 +842,7 @@ fun IslandCapsule(
                                             haptics.cancelWave()
                                         }
                                         change.consume()
-                                        composeHaptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                                        composeHaptics.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick)
                                         val (travelPx, initialFraction) = latestScrubStart()
                                         trackVerticalScrub(
                                             startFraction = initialFraction,
@@ -850,6 +853,9 @@ fun IslandCapsule(
                                             screenLoc = screenLoc,
                                             onProgress = latestScrubProgress,
                                             onInteractionPulse = latestUserInteraction,
+                                            onHapticTick = {
+                                                composeHaptics.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick)
+                                            },
                                             onComplete = { commitExpanded, velocityY, isFastDirectSwipe ->
                                                 suppressAlbumSharedAfterDrag = !isFastDirectSwipe
                                                 latestScrubEnd(commitExpanded, velocityY, isFastDirectSwipe)
@@ -862,7 +868,7 @@ fun IslandCapsule(
                                         movedTooFar = true
                                         holdJob?.cancel()
                                         change.consume()
-                                        composeHaptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                                        composeHaptics.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick)
                                         onCycleContent(if (dx < 0f) 1 else -1)
                                     } else if (hypot(dx, dy) > 36f) {
                                         lastCompactTapUpMs = 0L
@@ -1555,7 +1561,7 @@ fun IslandCapsule(
                                             swiped = true
                                             holdJob.cancel()
                                             change.consume()
-                                            composeHaptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                                            composeHaptics.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick)
                                             onCycleSatellite(if (totalDx < 0f) 1 else -1)
                                         }
                                     }
@@ -1601,6 +1607,7 @@ private suspend fun AwaitPointerEventScope.trackVerticalScrub(
     screenLoc: IntArray,
     onProgress: (Float) -> Unit,
     onInteractionPulse: () -> Unit,
+    onHapticTick: () -> Unit = {},
     onComplete: (commitExpanded: Boolean, velocityYPxPerSec: Float, isFastDirectSwipe: Boolean) -> Unit,
 ) {
     val scrubStartedAtMs = SystemClock.uptimeMillis()
@@ -1609,6 +1616,7 @@ private suspend fun AwaitPointerEventScope.trackVerticalScrub(
     var lastSampleTimeMs = scrubStartedAtMs
     var smoothedVy = 0f
     var lastPulseTimeMs = lastSampleTimeMs
+    var lastHapticBucket = (startFraction * 20f).roundToInt()
 
     do {
         val event = awaitPointerEvent()
@@ -1620,6 +1628,11 @@ private suspend fun AwaitPointerEventScope.trackVerticalScrub(
             val effectiveDy = currentScreenY - engageScreenY
             val raw = startFraction + effectiveDy / travelPx
             currentFraction = applyScrubRubberBand(raw)
+            val bucket = (currentFraction * 20f).roundToInt()
+            if (bucket != lastHapticBucket) {
+                lastHapticBucket = bucket
+                onHapticTick()
+            }
             onProgress(currentFraction)
 
             val dtMs = change.uptimeMillis - lastSampleTimeMs
