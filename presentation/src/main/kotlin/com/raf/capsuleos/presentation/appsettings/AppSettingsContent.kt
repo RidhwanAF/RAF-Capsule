@@ -152,7 +152,6 @@ private val ALPHABETICAL_LANGUAGE_OPTIONS = listOf(
  * Uses edge-to-edge non-clipping Scaffold padding, max width per main card, and [AdaptiveSubItemFlowRow]
  * for language sub-items inside the Language card.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppSettingsContent(
     modifier: Modifier = Modifier,

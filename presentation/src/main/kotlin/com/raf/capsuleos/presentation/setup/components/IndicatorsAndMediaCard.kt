@@ -8,8 +8,6 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -70,7 +68,6 @@ import kotlin.math.roundToInt
  * battery ring display, Bluetooth/Call indicators, separated Left Satellite sources (9 system
  * states), independent Expanded (multi-select) & Horizontal Media Glow styles, and Media Auto-Collapse.
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun IndicatorsAndMediaCard(
     modifier: Modifier = Modifier,

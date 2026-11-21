@@ -51,7 +51,6 @@ import com.raf.capsuleos.presentation.simulation.components.SimulationControlsSe
  * Stateless Navigation 3 Simulation layout pinning [CapsulePhoneMockup] above (portrait) or beside
  * (landscape) the scrollable trigger panels with edge-to-edge non-clipping Scaffold padding.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SimulationContent(
     modifier: Modifier = Modifier,

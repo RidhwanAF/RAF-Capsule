@@ -24,7 +24,6 @@ import com.raf.capsuleos.presentation.common.capsuleExpressiveButtonShapes
  * Category card housing synthetic live-overlay trigger actions when the system overlay service
  * is running, flowing cleanly into 2 columns on compact widths and wider rows in landscape.
  */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun QuickTestTriggersCard(
     modifier: Modifier = Modifier,

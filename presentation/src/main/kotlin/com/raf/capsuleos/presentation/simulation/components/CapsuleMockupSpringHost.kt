@@ -25,12 +25,14 @@ import com.raf.capsuleos.presentation.capsule.ui.lerpCapsuleFloat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.coroutines.coroutineContext
 import kotlin.math.abs
 import kotlin.math.min
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Pixel-exact VSYNC spring controller for [CapsulePhoneMockup], mirroring
@@ -107,10 +109,10 @@ internal class CapsuleMockupSpringHost(
 
     /** Demand-driven VSYNC spring loop sleeping with zero CPU overhead once settled. */
     suspend fun runVsyncLoop() {
-        while (coroutineContext.isActive) {
+        while (currentCoroutineContext().isActive) {
             wakeChannel.receive()
             lastFrameNanos = 0L
-            while (coroutineContext.isActive && isSpringLoopRunning) {
+            while (currentCoroutineContext().isActive && isSpringLoopRunning) {
                 withFrameNanos { frameTimeNanos ->
                     stepSprings(frameTimeNanos)
                 }
@@ -209,7 +211,7 @@ internal class CapsuleMockupSpringHost(
                 collapseStageJob = scope.launch {
                     val startMs = SystemClock.uptimeMillis()
                     while (SystemClock.uptimeMillis() - startMs < 520L) {
-                        delay(16L)
+                        delay(16L.milliseconds)
                         val closeToMain = abs(widthSpring.value - mainOnlySpec.widthPx) <= 1.5f &&
                             abs(heightSpring.value - mainOnlySpec.heightPx) <= 1.5f &&
                             abs(offsetXSpring.value - mainOnlySpec.offsetXPx) <= 1.5f &&
@@ -217,7 +219,7 @@ internal class CapsuleMockupSpringHost(
                             abs(heightSpring.velocity) <= 12f
                         if (closeToMain) break
                     }
-                    delay(150L)
+                    delay(150L.milliseconds)
                     val finalState = latestState
                     if (finalState.visualState != CapsuleVisualState.STATE3_FULL_EXPANDED &&
                         finalState.visualState != CapsuleVisualState.HIDDEN_SYSTEM &&
@@ -248,12 +250,12 @@ internal class CapsuleMockupSpringHost(
             collapseStageJob = scope.launch {
                 val startMs = SystemClock.uptimeMillis()
                 while (SystemClock.uptimeMillis() - startMs < 250L) {
-                    delay(16L)
+                    delay(16L.milliseconds)
                     val closeToMain = abs(widthSpring.value - mainOnlySpec.widthPx) <= 3.5f &&
                         abs(offsetXSpring.value - mainOnlySpec.offsetXPx) <= 3.5f
                     if (closeToMain) break
                 }
-                delay(90L)
+                delay(90L.milliseconds)
                 val latest = latestState
                 if (!latest.isQsRingOnlyActive &&
                     latest.visualState != CapsuleVisualState.STATE3_FULL_EXPANDED &&
@@ -500,7 +502,7 @@ internal class CapsuleMockupSpringHost(
         if (wasCollapsingWithSat && suppressSatelliteStage) {
             collapseStageJob?.cancel()
             collapseStageJob = scope.launch {
-                delay(150L)
+                delay(150L.milliseconds)
                 val finalState = latestState
                 if (finalState.visualState != CapsuleVisualState.STATE3_FULL_EXPANDED &&
                     finalState.visualState != CapsuleVisualState.HIDDEN_SYSTEM &&

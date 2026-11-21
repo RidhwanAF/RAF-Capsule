@@ -87,7 +87,31 @@ class MediaSessionRepositoryImpl @Inject constructor(
         val primaryArgb: Int,
         val secondaryArgb: Int,
         val lyrics: List<LyricLine>,
-    )
+    ) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (javaClass != other?.javaClass) return false
+
+            other as CachedArtwork
+
+            if (primaryArgb != other.primaryArgb) return false
+            if (secondaryArgb != other.secondaryArgb) return false
+            if (artKey != other.artKey) return false
+            if (!bytes.contentEquals(other.bytes)) return false
+            if (lyrics != other.lyrics) return false
+
+            return true
+        }
+
+        override fun hashCode(): Int {
+            var result = primaryArgb
+            result = 31 * result + secondaryArgb
+            result = 31 * result + artKey.hashCode()
+            result = 31 * result + (bytes?.contentHashCode() ?: 0)
+            result = 31 * result + lyrics.hashCode()
+            return result
+        }
+    }
 
     override fun observeActiveMedia(): Flow<CapsuleContent.Media?> =
         observeMediaSessions()

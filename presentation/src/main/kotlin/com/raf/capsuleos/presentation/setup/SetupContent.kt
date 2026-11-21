@@ -53,7 +53,6 @@ private val MAIN_MENU_MAX_WIDTH = 1040.dp
  * edge-to-edge non-clipping Scaffold padding, while sub-items inside each expanded menu split
  * dynamically via FlowRow in landscape.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SetupContent(
     modifier: Modifier = Modifier,

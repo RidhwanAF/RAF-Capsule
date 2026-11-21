@@ -36,6 +36,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.time.Duration.Companion.milliseconds
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class IslandStateCoordinatorTest {
@@ -124,7 +125,7 @@ class IslandStateCoordinatorTest {
             assertEquals(media, coordinator.uiState.value.content)
 
             // Media position tick at 500ms keeps playback active without suppressing newer events
-            advanceTimeBy(500L)
+            advanceTimeBy(500L.milliseconds)
             runCurrent()
             coordinator.onEvent(CapsuleEvent.MediaUpdated(media.copy(positionMs = 500L)))
             coordinator.onEvent(CapsuleEvent.VolumeChanged(volume))
@@ -132,14 +133,14 @@ class IslandStateCoordinatorTest {
             assertEquals(volume, coordinator.uiState.value.content)
 
             // Even while Media ticks continue every 500ms, Volume stays on top during its burst
-            advanceTimeBy(500L)
+            advanceTimeBy(500L.milliseconds)
             runCurrent()
             coordinator.onEvent(CapsuleEvent.MediaUpdated(media.copy(positionMs = 1000L)))
             runCurrent()
             assertEquals(volume, coordinator.uiState.value.content)
 
             // Once Volume auto-collapse timeout elapses (4000 / 2 = 2000ms), returns to canonical Media priority
-            advanceTimeBy(2000L)
+            advanceTimeBy(2000L.milliseconds)
             runCurrent()
             assertEquals(media.title, (coordinator.uiState.value.content as CapsuleContent.Media).title)
         }
@@ -181,14 +182,14 @@ class IslandStateCoordinatorTest {
                 assertEquals(2, expandedAlert.actions.size)
 
                 // Point 9: Wait 2.5s then tap inside State 3 keeps card interactive (no premature auto-launch)
-                advanceTimeBy(2500L)
+                advanceTimeBy(2500L.milliseconds)
                 runCurrent()
                 coordinator.onEvent(CapsuleEvent.TapCapsule)
                 runCurrent()
                 expectNoEvents()
                 assertEquals(CapsuleVisualState.STATE3_FULL_EXPANDED, coordinator.uiState.value.visualState)
 
-                advanceTimeBy(4001L)
+                advanceTimeBy(4001L.milliseconds)
                 runCurrent()
                 assertEquals(CapsuleVisualState.STATE1_CUTOUT_ANCHOR, coordinator.uiState.value.visualState)
                 cancelAndIgnoreRemainingEvents()
@@ -241,19 +242,19 @@ class IslandStateCoordinatorTest {
             runCurrent()
             assertEquals(CapsuleVisualState.STATE3_FULL_EXPANDED, coordinator.uiState.value.visualState)
 
-            advanceTimeBy(2500L)
+            advanceTimeBy(2500L.milliseconds)
             runCurrent()
             assertEquals(CapsuleVisualState.STATE3_FULL_EXPANDED, coordinator.uiState.value.visualState)
 
             coordinator.onEvent(CapsuleEvent.UserInteractedInCard)
             runCurrent()
 
-            advanceTimeBy(2500L)
+            advanceTimeBy(2500L.milliseconds)
             runCurrent()
             // Still open 5.0s after initial expand because interaction reset the 3s timer
             assertEquals(CapsuleVisualState.STATE3_FULL_EXPANDED, coordinator.uiState.value.visualState)
 
-            advanceTimeBy(600L)
+            advanceTimeBy(600L.milliseconds)
             runCurrent()
             assertEquals(CapsuleVisualState.STATE1_CUTOUT_ANCHOR, coordinator.uiState.value.visualState)
         }
@@ -323,7 +324,7 @@ class IslandStateCoordinatorTest {
 
             assertEquals(CapsuleVisualState.STATE3_FULL_EXPANDED, coordinator.uiState.value.visualState)
 
-            advanceTimeBy(4001L)
+            advanceTimeBy(4001L.milliseconds)
             runCurrent()
             assertEquals(CapsuleVisualState.STATE1_CUTOUT_ANCHOR, coordinator.uiState.value.visualState)
         }
@@ -361,7 +362,7 @@ class IslandStateCoordinatorTest {
             coordinator.onEvent(CapsuleEvent.BatteryUpdated(percent = 50, isCharging = true))
             coordinator.onEvent(CapsuleEvent.MediaUpdated(media))
             runCurrent()
-            advanceTimeBy(2100L)
+            advanceTimeBy(2100L.milliseconds)
             runCurrent()
             assertEquals(media, coordinator.uiState.value.content)
 
@@ -369,11 +370,11 @@ class IslandStateCoordinatorTest {
             runCurrent()
             assertTrue(coordinator.uiState.value.content is CapsuleContent.Charging)
 
-            advanceTimeBy(9999L)
+            advanceTimeBy(9999L.milliseconds)
             runCurrent()
             assertTrue(coordinator.uiState.value.content is CapsuleContent.Charging)
 
-            advanceTimeBy(2L)
+            advanceTimeBy(2L.milliseconds)
             runCurrent()
             assertEquals(media, coordinator.uiState.value.content)
         }
@@ -403,7 +404,7 @@ class IslandStateCoordinatorTest {
             assertEquals(CapsuleVisualState.STATE3_FULL_EXPANDED, coordinator.uiState.value.visualState)
             assertEquals(unlock, coordinator.uiState.value.content)
 
-            advanceTimeBy(4001L)
+            advanceTimeBy(4001L.milliseconds)
             runCurrent()
             assertEquals(CapsuleVisualState.STATE1_CUTOUT_ANCHOR, coordinator.uiState.value.visualState)
         }
@@ -422,11 +423,11 @@ class IslandStateCoordinatorTest {
             assertEquals(CapsuleVisualState.STATE2_HORIZONTAL_PILL, coordinator.uiState.value.visualState)
             assertEquals(unlock, coordinator.uiState.value.content)
 
-            advanceTimeBy(999L)
+            advanceTimeBy(999L.milliseconds)
             runCurrent()
             assertEquals(CapsuleVisualState.STATE2_HORIZONTAL_PILL, coordinator.uiState.value.visualState)
 
-            advanceTimeBy(2L)
+            advanceTimeBy(2L.milliseconds)
             runCurrent()
             assertEquals(CapsuleVisualState.STATE1_CUTOUT_ANCHOR, coordinator.uiState.value.visualState)
             assertEquals(CapsuleContent.Idle, coordinator.uiState.value.content)
@@ -476,16 +477,16 @@ class IslandStateCoordinatorTest {
             assertEquals(CapsuleVisualState.STATE2_HORIZONTAL_PILL, coordinator.uiState.value.visualState)
 
             // Re-posting identical notification signature must not extend timeout; standalone minimum is 6000ms
-            advanceTimeBy(4_500L)
+            advanceTimeBy(4_500L.milliseconds)
             runCurrent()
             coordinator.onEvent(CapsuleEvent.NotificationPosted(notif))
             runCurrent()
 
-            advanceTimeBy(1_499L)
+            advanceTimeBy(1_499L.milliseconds)
             runCurrent()
             assertEquals(CapsuleVisualState.STATE2_HORIZONTAL_PILL, coordinator.uiState.value.visualState)
 
-            advanceTimeBy(2L)
+            advanceTimeBy(2L.milliseconds)
             runCurrent()
             assertEquals(CapsuleVisualState.STATE1_CUTOUT_ANCHOR, coordinator.uiState.value.visualState)
         }
@@ -498,7 +499,7 @@ class IslandStateCoordinatorTest {
             coordinator.onEvent(CapsuleEvent.BatteryUpdated(percent = 62, isCharging = true))
             coordinator.onEvent(CapsuleEvent.MediaUpdated(media))
             runCurrent()
-            advanceTimeBy(2100L)
+            advanceTimeBy(2100L.milliseconds)
             runCurrent()
             assertEquals(media, coordinator.uiState.value.content)
 
@@ -537,18 +538,18 @@ class IslandStateCoordinatorTest {
             val offTorch = coordinator.uiState.value.content as CapsuleContent.Torch
             assertFalse(offTorch.isEnabled)
 
-            advanceTimeBy(3000L)
+            advanceTimeBy(3000L.milliseconds)
             runCurrent()
             assertEquals(CapsuleVisualState.STATE3_FULL_EXPANDED, coordinator.uiState.value.visualState)
 
             // Interaction resets collapse timer again
             coordinator.onEvent(CapsuleEvent.UserInteractedInCard)
             runCurrent()
-            advanceTimeBy(2500L)
+            advanceTimeBy(2500L.milliseconds)
             runCurrent()
             assertEquals(CapsuleVisualState.STATE3_FULL_EXPANDED, coordinator.uiState.value.visualState)
 
-            advanceTimeBy(1600L)
+            advanceTimeBy(1600L.milliseconds)
             runCurrent()
             assertEquals(CapsuleVisualState.STATE1_CUTOUT_ANCHOR, coordinator.uiState.value.visualState)
         }
@@ -589,7 +590,7 @@ class IslandStateCoordinatorTest {
             assertEquals(notif, coordinator.uiState.value.content)
 
             // After transient notification auto-dismisses at configured horizontal timeout (4000ms), resting top priority is Media
-            advanceTimeBy(6_001L)
+            advanceTimeBy(6_001L.milliseconds)
             runCurrent()
             assertEquals(media, coordinator.uiState.value.content)
 
@@ -599,14 +600,14 @@ class IslandStateCoordinatorTest {
             assertTrue(coordinator.uiState.value.content != media)
 
             // After 10 seconds with no user interaction, returns strictly to resting top priority: Media
-            advanceTimeBy(10_001L)
+            advanceTimeBy(10_001L.milliseconds)
             runCurrent()
             assertEquals(media, coordinator.uiState.value.content)
 
             // When Media stops, falls back strictly to LiveActivity over Charging
             coordinator.onEvent(CapsuleEvent.MediaUpdated(null))
             runCurrent()
-            advanceTimeBy(2_001L)
+            advanceTimeBy(2_001L.milliseconds)
             runCurrent()
             assertEquals(timer, coordinator.uiState.value.content)
         }
@@ -706,7 +707,7 @@ class IslandStateCoordinatorTest {
             coordinator.onEvent(CapsuleEvent.BatteryUpdated(percent = 78, isCharging = false))
             coordinator.onEvent(CapsuleEvent.MediaUpdated(media))
             runCurrent()
-            advanceTimeBy(2_100L)
+            advanceTimeBy(2_100L.milliseconds)
             runCurrent()
             assertEquals(media, coordinator.uiState.value.content)
 
@@ -728,12 +729,12 @@ class IslandStateCoordinatorTest {
             assertEquals(CapsuleContent.BatteryPeek(78), coordinator.resolveCollapseTarget().second)
 
             // Still on Battery just before 10s inactivity elapses
-            advanceTimeBy(9_900L)
+            advanceTimeBy(9_900L.milliseconds)
             runCurrent()
             assertEquals(CapsuleContent.BatteryPeek(78), coordinator.uiState.value.content)
 
             // After 10s user inactivity, returns automatically to top priority Media
-            advanceTimeBy(200L)
+            advanceTimeBy(200L.milliseconds)
             runCurrent()
             assertEquals(media, coordinator.uiState.value.content)
         }
@@ -770,7 +771,7 @@ class IslandStateCoordinatorTest {
             runCurrent()
             assertEquals(CapsuleVisualState.STATE3_FULL_EXPANDED, coordinator.uiState.value.visualState)
 
-            advanceTimeBy(14_500L)
+            advanceTimeBy(14_500L.milliseconds)
             runCurrent()
             assertEquals(CapsuleVisualState.STATE3_FULL_EXPANDED, coordinator.uiState.value.visualState)
 
@@ -782,7 +783,7 @@ class IslandStateCoordinatorTest {
             assertTrue(collapsedNow.isCollapseWaveActive)
             assertTrue(collapsedNow.isRingGlowActive)
 
-            advanceTimeBy(800L)
+            advanceTimeBy(800L.milliseconds)
             runCurrent()
             val settled = coordinator.uiState.value
             assertFalse(settled.isCollapseWaveActive)
@@ -827,7 +828,7 @@ class IslandStateCoordinatorTest {
             assertEquals(media, coordinator.uiState.value.content)
 
             // Even within 500ms (< 2s dwell), newest notification immediately takes top priority over media
-            advanceTimeBy(300L)
+            advanceTimeBy(300L.milliseconds)
             runCurrent()
             coordinator.onEvent(CapsuleEvent.NotificationPosted(firstNotif))
             runCurrent()
@@ -866,11 +867,11 @@ class IslandStateCoordinatorTest {
             assertEquals(CapsuleVisualState.STATE2_HORIZONTAL_PILL, coordinator.uiState.value.visualState)
             assertEquals(vol, coordinator.uiState.value.content)
 
-            advanceTimeBy(2900L)
+            advanceTimeBy(2900L.milliseconds)
             runCurrent()
             assertEquals(CapsuleVisualState.STATE2_HORIZONTAL_PILL, coordinator.uiState.value.visualState)
 
-            advanceTimeBy(150L)
+            advanceTimeBy(150L.milliseconds)
             runCurrent()
             assertEquals(CapsuleVisualState.STATE1_CUTOUT_ANCHOR, coordinator.uiState.value.visualState)
 
@@ -881,7 +882,7 @@ class IslandStateCoordinatorTest {
             runCurrent()
             assertEquals(CapsuleVisualState.STATE3_FULL_EXPANDED, coordinator.uiState.value.visualState)
 
-            advanceTimeBy(3100L)
+            advanceTimeBy(3100L.milliseconds)
             runCurrent()
             assertEquals(CapsuleVisualState.STATE1_CUTOUT_ANCHOR, coordinator.uiState.value.visualState)
 
@@ -890,16 +891,16 @@ class IslandStateCoordinatorTest {
             runCurrent()
             coordinator.onEvent(CapsuleEvent.TapCapsule)
             runCurrent()
-            advanceTimeBy(1000L)
+            advanceTimeBy(1000L.milliseconds)
             runCurrent()
             coordinator.onEvent(CapsuleEvent.UserInteractedInCard)
             runCurrent()
 
-            advanceTimeBy(3500L)
+            advanceTimeBy(3500L.milliseconds)
             runCurrent()
             assertEquals(CapsuleVisualState.STATE3_FULL_EXPANDED, coordinator.uiState.value.visualState)
 
-            advanceTimeBy(2600L)
+            advanceTimeBy(2600L.milliseconds)
             runCurrent()
             assertEquals(CapsuleVisualState.STATE1_CUTOUT_ANCHOR, coordinator.uiState.value.visualState)
         }
@@ -1015,7 +1016,7 @@ class IslandStateCoordinatorTest {
             assertEquals(call, coordinator.uiState.value.content)
 
             // Active Call card must NOT auto-collapse on inactivity timeout while ringing/ongoing
-            advanceTimeBy(10_000L)
+            advanceTimeBy(10_000L.milliseconds)
             runCurrent()
             assertEquals(CapsuleVisualState.STATE3_FULL_EXPANDED, coordinator.uiState.value.visualState)
 
@@ -1224,7 +1225,7 @@ class IslandStateCoordinatorTest {
             coordinator.onEvent(CapsuleEvent.ReplyFocusChanged(isReplying = true))
             runCurrent()
 
-            advanceTimeBy(15_000L)
+            advanceTimeBy(15_000L.milliseconds)
             runCurrent()
             assertEquals(CapsuleVisualState.STATE3_FULL_EXPANDED, coordinator.uiState.value.visualState)
             assertEquals(firstAlert, coordinator.uiState.value.content)
@@ -1237,16 +1238,16 @@ class IslandStateCoordinatorTest {
             // User finishes typing -> normal auto-collapse timeout resumes
             coordinator.onEvent(CapsuleEvent.ReplyFocusChanged(isReplying = false))
             runCurrent()
-            advanceTimeBy(1_000L)
+            advanceTimeBy(1_000L.milliseconds)
             runCurrent()
             assertEquals(CapsuleVisualState.STATE3_FULL_EXPANDED, coordinator.uiState.value.visualState)
 
-            advanceTimeBy(1_500L)
+            advanceTimeBy(1_500L.milliseconds)
             runCurrent()
             assertEquals(CapsuleVisualState.STATE2_HORIZONTAL_PILL, coordinator.uiState.value.visualState)
             assertEquals(incomingAlert, coordinator.uiState.value.content)
 
-            advanceTimeBy(4_000L)
+            advanceTimeBy(4_000L.milliseconds)
             runCurrent()
             assertEquals(CapsuleVisualState.STATE1_CUTOUT_ANCHOR, coordinator.uiState.value.visualState)
         }
@@ -1269,7 +1270,7 @@ class IslandStateCoordinatorTest {
             assertTrue(coordinator.uiState.value.isExpandedFromSatellite)
             assertTrue(coordinator.uiState.value.isSatelliteGlowActive)
 
-            advanceTimeBy(900L)
+            advanceTimeBy(900L.milliseconds)
             runCurrent()
             assertFalse(coordinator.uiState.value.isSatelliteGlowActive)
 
@@ -1279,7 +1280,7 @@ class IslandStateCoordinatorTest {
             assertFalse(coordinator.uiState.value.isExpandedFromSatellite)
             assertTrue(coordinator.uiState.value.isSatelliteGlowActive)
 
-            advanceTimeBy(900L)
+            advanceTimeBy(900L.milliseconds)
             runCurrent()
             assertFalse(coordinator.uiState.value.isSatelliteGlowActive)
         }
@@ -1295,7 +1296,7 @@ class IslandStateCoordinatorTest {
             assertEquals(CapsuleContent.Charging(68), coordinator.uiState.value.content)
 
             // Even after 20 seconds, charging stays in horizontal expand while plugged in
-            advanceTimeBy(20_000L)
+            advanceTimeBy(20_000L.milliseconds)
             runCurrent()
             assertEquals(CapsuleVisualState.STATE2_HORIZONTAL_PILL, coordinator.uiState.value.visualState)
             assertEquals(CapsuleContent.Charging(68), coordinator.uiState.value.content)
@@ -1378,7 +1379,7 @@ class IslandStateCoordinatorTest {
             runCurrent()
             assertEquals(media, coordinator.uiState.value.content)
 
-            advanceTimeBy(300L)
+            advanceTimeBy(300L.milliseconds)
             runCurrent()
             coordinator.onEvent(CapsuleEvent.NotificationPosted(notif))
             runCurrent()
@@ -1386,10 +1387,10 @@ class IslandStateCoordinatorTest {
             assertEquals(notif, coordinator.uiState.value.content)
 
             // Simulate notification chime briefly ducking/pausing media and resuming 400ms later
-            advanceTimeBy(200L)
+            advanceTimeBy(200L.milliseconds)
             runCurrent()
             coordinator.onEvent(CapsuleEvent.MediaUpdated(media.copy(isPlaying = false, positionMs = 500L)))
-            advanceTimeBy(200L)
+            advanceTimeBy(200L.milliseconds)
             runCurrent()
             coordinator.onEvent(CapsuleEvent.MediaUpdated(media.copy(isPlaying = true, title = "Next Track", positionMs = 0L)))
             runCurrent()
@@ -1397,12 +1398,12 @@ class IslandStateCoordinatorTest {
             // Notification must still be displayed for the full 7,500ms horizontal setting
             assertEquals(notif, coordinator.uiState.value.content)
 
-            advanceTimeBy(7_000L)
+            advanceTimeBy(7_000L.milliseconds)
             runCurrent()
             assertEquals(notif, coordinator.uiState.value.content)
 
             // After 7,500ms total elapses since notification arrived, returns cleanly to playing media
-            advanceTimeBy(150L)
+            advanceTimeBy(150L.milliseconds)
             runCurrent()
             assertEquals("Next Track", (coordinator.uiState.value.content as CapsuleContent.Media).title)
         }
@@ -1463,12 +1464,12 @@ class IslandStateCoordinatorTest {
             assertEquals(CapsuleVisualState.STATE3_FULL_EXPANDED, coordinator.uiState.value.visualState)
 
             // Past global 3s timeout -> must stay expanded because custom media timeout is 22s
-            advanceTimeBy(15_000L)
+            advanceTimeBy(15_000L.milliseconds)
             runCurrent()
             assertEquals(CapsuleVisualState.STATE3_FULL_EXPANDED, coordinator.uiState.value.visualState)
 
             // Past 22s custom media timeout -> collapses cleanly back to horizontal pill
-            advanceTimeBy(7_500L)
+            advanceTimeBy(7_500L.milliseconds)
             runCurrent()
             assertEquals(CapsuleVisualState.STATE2_HORIZONTAL_PILL, coordinator.uiState.value.visualState)
 
@@ -1483,7 +1484,7 @@ class IslandStateCoordinatorTest {
             coordinator.onEvent(CapsuleEvent.ExpandToFull)
             runCurrent()
             assertEquals(CapsuleVisualState.STATE3_FULL_EXPANDED, coordinator.uiState.value.visualState)
-            advanceTimeBy(3_500L)
+            advanceTimeBy(3_500L.milliseconds)
             runCurrent()
             assertEquals(CapsuleVisualState.STATE2_HORIZONTAL_PILL, coordinator.uiState.value.visualState)
         }
@@ -1578,34 +1579,34 @@ class IslandStateCoordinatorTest {
             }
 
             // Auto-collapses after fixed 3s peek duration
-            advanceTimeBy(2_900L)
+            advanceTimeBy(2_900L.milliseconds)
             runCurrent()
             assertEquals(CapsuleVisualState.STATE2_HORIZONTAL_PILL, coordinator.uiState.value.visualState)
 
-            advanceTimeBy(200L)
+            advanceTimeBy(200L.milliseconds)
             runCurrent()
             assertEquals(CapsuleVisualState.STATE1_CUTOUT_ANCHOR, coordinator.uiState.value.visualState)
 
             // Stays collapsed during the 1-minute idle interval (e.g. still idle at 35s)
-            advanceTimeBy(35_000L)
+            advanceTimeBy(35_000L.milliseconds)
             runCurrent()
             assertEquals(CapsuleVisualState.STATE1_CUTOUT_ANCHOR, coordinator.uiState.value.visualState)
 
             // Reappears after 1-minute (60s) idle rolling interval while notifications remain active
-            advanceTimeBy(25_000L)
+            advanceTimeBy(25_000L.milliseconds)
             runCurrent()
             assertEquals(CapsuleVisualState.STATE2_HORIZONTAL_PILL, coordinator.uiState.value.visualState)
             assertEquals(CapsuleContent.NotificationSummary(count = 3), coordinator.uiState.value.content)
 
             // Auto-collapses again after 3000ms
-            advanceTimeBy(3_100L)
+            advanceTimeBy(3_100L.milliseconds)
             runCurrent()
             assertEquals(CapsuleVisualState.STATE1_CUTOUT_ANCHOR, coordinator.uiState.value.visualState)
 
             // Clearing notifications cancels periodic reappearance
             coordinator.onEvent(CapsuleEvent.ActiveNotificationCountUpdated(0))
             runCurrent()
-            advanceTimeBy(65_000L)
+            advanceTimeBy(65_000L.milliseconds)
             runCurrent()
             assertEquals(CapsuleVisualState.STATE1_CUTOUT_ANCHOR, coordinator.uiState.value.visualState)
         }

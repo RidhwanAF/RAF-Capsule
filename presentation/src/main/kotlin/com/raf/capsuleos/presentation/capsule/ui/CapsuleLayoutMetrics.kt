@@ -66,8 +66,7 @@ internal fun computeCapsuleLayoutDpSpec(
                 cornerDp = cornerDp,
             )
         }
-        val satSizeDp = circleDp
-        val leadDp = satSizeDp + SATELLITE_GAP_DP + SATELLITE_OUTER_PAD_DP
+        val leadDp = circleDp + SATELLITE_GAP_DP + SATELLITE_OUTER_PAD_DP
         val mainLeftEdgeFromScreenLeft = (state.cutout.screenWidthDp * 0.5f) + mainCenterXDp - (mainWidthDp * 0.5f)
         val mainRightEdgeFromScreenRight = (state.cutout.screenWidthDp * 0.5f) - mainCenterXDp - (mainWidthDp * 0.5f)
         val fitsLeft = mainLeftEdgeFromScreenLeft >= leadDp + 2f
@@ -89,7 +88,7 @@ internal fun computeCapsuleLayoutDpSpec(
             widthDp = totalW,
             heightDp = mainHeightDp,
             mainWidthDp = mainWidthDp,
-            satelliteSizeDp = satSizeDp,
+            satelliteSizeDp = circleDp,
             satelliteGapDp = SATELLITE_GAP_DP,
             satelliteOnLeft = placeOnLeft,
             minWidthDp = circleDp,

@@ -213,8 +213,7 @@ fun shouldShowOuterExpansionAura(state: CapsuleUiState): Boolean {
     if (state.visualState != CapsuleVisualState.STATE3_FULL_EXPANDED) return false
     if (state.content is CapsuleContent.Torch) return false
     if (state.content is CapsuleContent.Media) {
-        if (ExpandedMediaGlowEffect.OUTER_SCREEN_GLOW !in prefs.expandedMediaGlowEffects) return false
-        return state.isNeuralPulseActive || prefs.keepOuterMediaGlowAlways
+        return ExpandedMediaGlowEffect.OUTER_SCREEN_GLOW in prefs.expandedMediaGlowEffects && (state.isNeuralPulseActive || prefs.keepOuterMediaGlowAlways)
     }
     return state.isNeuralPulseActive
 }

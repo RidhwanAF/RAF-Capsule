@@ -27,7 +27,6 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -108,7 +107,6 @@ import com.raf.capsuleos.presentation.R
 import com.raf.capsuleos.presentation.common.rememberCachedImageBitmap
 import com.raf.capsuleos.presentation.shader.NeuralBorderShader
 import kotlin.math.PI
-import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.sin

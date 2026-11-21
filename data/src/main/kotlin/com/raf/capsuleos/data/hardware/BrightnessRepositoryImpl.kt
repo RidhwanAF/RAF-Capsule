@@ -105,17 +105,13 @@ class BrightnessRepositoryImpl @Inject constructor(
             return currentSnapshot()
         }
         val clamped = percent.coerceIn(0, 100)
-        val setViaDisplayManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.CINNAMON_BUN) {
-            runCatching {
-                displayManager?.setBrightness(
-                    Display.DEFAULT_DISPLAY,
-                    clamped.toFloat(),
-                    DisplayManager.BRIGHTNESS_UNIT_PERCENTAGE,
-                )
-            }.isSuccess
-        } else {
-            false
-        }
+        val setViaDisplayManager = Build.VERSION.SDK_INT >= Build.VERSION_CODES.CINNAMON_BUN && runCatching {
+            displayManager?.setBrightness(
+                Display.DEFAULT_DISPLAY,
+                clamped.toFloat(),
+                DisplayManager.BRIGHTNESS_UNIT_PERCENTAGE,
+            )
+        }.isSuccess
         if (!setViaDisplayManager) {
             val linear01 = gammaToLinear(clamped / 100f)
             val rawValue = (linear01 * MAX_RAW_BRIGHTNESS).roundToInt().coerceIn(1, MAX_RAW_BRIGHTNESS)

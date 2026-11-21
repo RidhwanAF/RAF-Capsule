@@ -275,7 +275,6 @@ private fun MediaWaveShimmerOverlay(
  * smooth 360-degree rotating album glow, and an M3 Expressive play/pause control morphing smoothly
  * from a spinning 7-sided cookie (playing) to a clean circle (paused).
  */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun MediaExpandedContent(
     modifier: Modifier = Modifier,
@@ -462,7 +461,6 @@ fun MediaExpandedContent(
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun MediaPlayerPage(
     modifier: Modifier = Modifier,

@@ -395,7 +395,6 @@ fun IslandCapsule(
             stageKey == CapsuleStageKey.STATE1_RING -> 1f
             else -> 0f
         }
-        val targetRingMix = rawRingMix
         val targetRingGlow = when {
             allowNeuronGlow && uiState.isRingGlowActive && stageKey == CapsuleStageKey.STATE1_RING && !isScrubbing -> 1f
             cameraRingMediaGlow -> 1.0f
@@ -423,7 +422,7 @@ fun IslandCapsule(
             label = "neuralMode",
         )
         val animatedRingMix by animateFloatAsState(
-            targetValue = targetRingMix,
+            targetValue = rawRingMix,
             animationSpec = tween(durationMillis = 360),
             label = "unifiedRingMix",
         )
@@ -432,7 +431,7 @@ fun IslandCapsule(
             animationSpec = tween(durationMillis = if (targetRingGlow > 0f) 160 else 280),
             label = "unifiedRingGlow",
         )
-        val effectiveRingMix = if (isScrubbing) targetRingMix else animatedRingMix
+        val effectiveRingMix = if (isScrubbing) rawRingMix else animatedRingMix
         val animatedRingProgress by animateFloatAsState(
             targetValue = uiState.batteryPercent.coerceIn(0, 100) / 100f,
             animationSpec = tween(durationMillis = 500),
@@ -657,7 +656,6 @@ fun IslandCapsule(
                                                 var lastSampleMs = SystemClock.uptimeMillis()
                                                 var velocityXPxPerSec = 0f
                                                 var crossedDismissDetent = false
-                                                val engageScreenX = currentScreenX
                                                 val densityPx = density.density.coerceAtLeast(1f)
                                                 var latestDxDp = 0f
 
@@ -676,7 +674,7 @@ fun IslandCapsule(
                                                         lastScreenX = sx
                                                         lastSampleMs = nowMs
 
-                                                        latestDxDp = (sx - engageScreenX) / densityPx
+                                                        latestDxDp = (sx - currentScreenX) / densityPx
                                                         val sign = if (latestDxDp < 0f) -1f else 1f
                                                         val normalizedPull = (abs(latestDxDp) / 110f).coerceIn(0f, 1f)
                                                         val rubberDp = sign * (normalizedPull * 10.5f)
@@ -1381,7 +1379,6 @@ fun IslandCapsule(
                 // Gooey black liquid bridge between merging/separating satellite droplet and main capsule
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     val radiusPx = (satHeightDp * 0.5f).dp.toPx()
-                    val cy = radiusPx
                     val leadPx = liveSatLeadDp.dp.toPx()
                     val outerPadPx = outerPadDp.dp.toPx()
                     val jigglePx = satJiggleOffsetDp.value.dp.toPx()
@@ -1399,7 +1396,7 @@ fun IslandCapsule(
                     drawCircle(
                         color = Color.Black,
                         radius = radiusPx,
-                        center = Offset(satCenterX, cy),
+                        center = Offset(satCenterX, radiusPx),
                     )
 
                     // Main capsule meniscus bulge reacting to the merging/separating droplet
@@ -1409,7 +1406,7 @@ fun IslandCapsule(
                         drawCircle(
                             color = Color.Black,
                             radius = radiusPx * (0.94f + 0.09f * meniscusFactor),
-                            center = Offset(mainNearCenterX + bulgeShiftX, cy),
+                            center = Offset(mainNearCenterX + bulgeShiftX, radiusPx),
                         )
                     }
 
@@ -1422,10 +1419,10 @@ fun IslandCapsule(
                         val midX = (xStart + xEnd) * 0.5f
                         val anchorHalfH = radiusPx * 0.94f
                         val path = Path().apply {
-                            moveTo(xStart, cy - anchorHalfH)
-                            quadraticTo(midX, cy - waistHalfH, xEnd, cy - anchorHalfH)
-                            lineTo(xEnd, cy + anchorHalfH)
-                            quadraticTo(midX, cy + waistHalfH, xStart, cy + anchorHalfH)
+                            moveTo(xStart, radiusPx - anchorHalfH)
+                            quadraticTo(midX, radiusPx - waistHalfH, xEnd, radiusPx - anchorHalfH)
+                            lineTo(xEnd, radiusPx + anchorHalfH)
+                            quadraticTo(midX, radiusPx + waistHalfH, xStart, radiusPx + anchorHalfH)
                             close()
                         }
                         drawPath(path = path, color = Color.Black)
@@ -1433,17 +1430,19 @@ fun IslandCapsule(
 
                     if (animatedSatGlow > 0.01f) {
                         val glowAngle = (shaderTime * 190f) % 360f
-                        withTransform({ rotate(degrees = glowAngle, pivot = Offset(satCenterX, cy)) }) {
+                        withTransform({ rotate(degrees = glowAngle, pivot = Offset(satCenterX,
+                            radiusPx
+                        )) }) {
                             drawCircle(
                                 brush = Brush.sweepGradient(
                                     0.0f to primaryColor.copy(alpha = 0.95f * animatedSatGlow),
                                     0.35f to tertiaryColor.copy(alpha = 0.88f * animatedSatGlow),
                                     0.70f to Color.White.copy(alpha = 0.92f * animatedSatGlow),
                                     1.0f to primaryColor.copy(alpha = 0.95f * animatedSatGlow),
-                                    center = Offset(satCenterX, cy),
+                                    center = Offset(satCenterX, radiusPx),
                                 ),
                                 radius = (radiusPx - 1.1.dp.toPx()).coerceAtLeast(4f),
-                                center = Offset(satCenterX, cy),
+                                center = Offset(satCenterX, radiusPx),
                                 style = Stroke(width = 2.2.dp.toPx()),
                             )
                         }
@@ -1460,7 +1459,7 @@ fun IslandCapsule(
                         for (i in 0 until totalDots) {
                             val angleRad = Math.toRadians((startDeg + i * stepDeg).toDouble())
                             val dotX = satCenterX + (cos(angleRad) * dotOrbitRadiusPx).toFloat()
-                            val dotY = cy + (sin(angleRad) * dotOrbitRadiusPx).toFloat()
+                            val dotY = radiusPx + (sin(angleRad) * dotOrbitRadiusPx).toFloat()
                             val isCurrentDot = i == activeDotIdx
                             val dotR = (if (isCurrentDot) 1.45.dp else 1.05.dp).toPx()
                             val haloR = (if (isCurrentDot) 2.15.dp else 1.65.dp).toPx()

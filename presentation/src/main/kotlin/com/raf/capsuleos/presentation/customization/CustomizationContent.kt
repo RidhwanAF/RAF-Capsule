@@ -53,7 +53,6 @@ import com.raf.capsuleos.presentation.setup.components.IndicatorsAndMediaCard
  * (landscape) the dedicated customization card for [section], applying Scaffold padding inside the
  * scrollable region so scroll content never clips against system bars.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CustomizationContent(
     modifier: Modifier = Modifier,

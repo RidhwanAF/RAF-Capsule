@@ -54,6 +54,7 @@ import java.util.Date
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.roundToInt
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
@@ -449,8 +450,8 @@ class SystemEventsRepositoryImpl @Inject constructor(
             return freshestCached.latitude to freshestCached.longitude
         }
 
-        val freshLocation = withTimeoutOrNull(LOCATION_FIX_TIMEOUT_MS) {
-            suspendCancellableCoroutine<Location?> { cont ->
+        val freshLocation = withTimeoutOrNull(LOCATION_FIX_TIMEOUT_MS.milliseconds) {
+            suspendCancellableCoroutine { cont ->
                 if (ContextCompat.checkSelfPermission(
                         context,
                         Manifest.permission.ACCESS_COARSE_LOCATION,

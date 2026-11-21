@@ -35,7 +35,6 @@ import com.raf.capsuleos.presentation.simulation.SimulationUiState
  * Category cards below the simulated phone viewport allowing isolated triggering of Media,
  * Notifications, Volume, Flashlight, Alarm, Charging, Biometric Unlock, and Left/Center/Right preview.
  */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun SimulationControlsSection(
     modifier: Modifier = Modifier,
@@ -329,7 +328,6 @@ fun SimulationControlsSection(
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun SandboxTriggerButton(
     modifier: Modifier = Modifier,

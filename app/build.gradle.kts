@@ -17,14 +17,18 @@ val localProperties = Properties().apply {
 
 android {
     namespace = "com.raf.capsuleos"
-    compileSdk = 37
+    compileSdk {
+        version = release(37) {
+            minorApiLevel = 2
+        }
+    }
 
     defaultConfig {
         applicationId = "com.raf.capsuleos"
         minSdk = 33
         targetSdk = 37
-        versionCode = 3
-        versionName = "1.2.0"
+        versionCode = 4
+        versionName = "1.2.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -60,6 +64,10 @@ android {
 
     buildFeatures {
         compose = true
+    }
+
+    androidResources {
+        generateLocaleConfig = true
     }
 }
 

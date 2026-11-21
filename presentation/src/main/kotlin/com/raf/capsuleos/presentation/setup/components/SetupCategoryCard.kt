@@ -60,7 +60,6 @@ import com.raf.capsuleos.presentation.setup.SetupUiState
  * the Start / Pause Capsule button (enabled dynamically once Accessibility overlay is granted),
  * and the Navigation 3 Interactive Simulation launcher button directly underneath.
  */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun SetupCategoryCard(
     modifier: Modifier = Modifier,
@@ -335,7 +334,6 @@ fun SetupCategoryCard(
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun AnimatedPermissionRow(
     modifier: Modifier = Modifier,
@@ -405,7 +403,6 @@ private fun AnimatedPermissionRow(
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun AnimatedAdbPermissionRow(
     modifier: Modifier = Modifier,

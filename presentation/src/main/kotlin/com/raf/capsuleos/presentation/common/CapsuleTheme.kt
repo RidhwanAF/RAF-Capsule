@@ -80,7 +80,6 @@ private val MonochromeLightColorScheme = lightColorScheme(
  * bar icon contrast via [WindowCompat.getInsetsController], and wraps content inside
  * [MaterialExpressiveTheme] using Dynamic Color (default) or high-contrast M3 Monochrome palette.
  */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun CapsuleTheme(
     appThemeMode: AppThemeMode = AppThemeMode.SYSTEM,

@@ -8,7 +8,11 @@ plugins {
 
 android {
     namespace = "com.raf.capsuleos.presentation"
-    compileSdk = 37
+    compileSdk {
+        version = release(37) {
+            minorApiLevel = 2
+        }
+    }
 
     defaultConfig {
         minSdk = 33

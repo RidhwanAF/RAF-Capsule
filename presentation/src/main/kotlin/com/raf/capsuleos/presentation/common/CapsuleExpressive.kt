@@ -42,7 +42,6 @@ import androidx.graphics.shapes.Morph
  * Convenience Material 3 Expressive press-morphing [ButtonShapes] factory transitioning smoothly
  * between [restRadius] and [pressedRadius].
  */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun capsuleExpressiveButtonShapes(
     restRadius: Dp = 24.dp,
@@ -56,7 +55,6 @@ fun capsuleExpressiveButtonShapes(
  * Convenience Material 3 Expressive press-morphing [IconButtonShapes] factory transitioning
  * between [restRadius] and [pressedRadius].
  */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun capsuleExpressiveIconButtonShapes(
     restRadius: Dp = 24.dp,

@@ -99,6 +99,7 @@ import javax.inject.Singleton
 import kotlin.math.abs
 import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlin.time.Duration.Companion.milliseconds
 
 /** Supported quick-test actions triggered from the setup calibration dashboard. */
 enum class CapsuleTestAction {
@@ -1017,7 +1018,7 @@ class CapsuleOverlayController @Inject constructor(
                         collapseStageJob = scope.launch {
                             val startMs = SystemClock.uptimeMillis()
                             while (SystemClock.uptimeMillis() - startMs < 520L) {
-                                delay(16L)
+                                delay(16L.milliseconds)
                                 val closeToMain = abs(widthSpring.value - mainOnlySpec.widthPx) <= 1.5f &&
                                     abs(heightSpring.value - mainOnlySpec.heightPx) <= 1.5f &&
                                     abs(offsetXSpring.value - mainOnlySpec.offsetXPx) <= 1.5f &&
@@ -1025,7 +1026,7 @@ class CapsuleOverlayController @Inject constructor(
                                     abs(heightSpring.velocity) <= 12f
                                 if (closeToMain) break
                             }
-                            delay(150L)
+                            delay(150L.milliseconds)
 
                             val finalState = coordinator.uiState.value
                             if (finalState.visualState != CapsuleVisualState.STATE3_FULL_EXPANDED &&
@@ -1063,12 +1064,12 @@ class CapsuleOverlayController @Inject constructor(
                     collapseStageJob = scope.launch {
                         val startMs = SystemClock.uptimeMillis()
                         while (SystemClock.uptimeMillis() - startMs < 250L) {
-                            delay(16L)
+                            delay(16L.milliseconds)
                             val closeToMain = abs(widthSpring.value - mainOnlySpec.widthPx) <= 3.5f &&
                                 abs(offsetXSpring.value - mainOnlySpec.offsetXPx) <= 3.5f
                             if (closeToMain) break
                         }
-                        delay(90L)
+                        delay(90L.milliseconds)
                         val latestState = coordinator.uiState.value
                         if (!latestState.isQsRingOnlyActive &&
                             latestState.visualState != CapsuleVisualState.STATE3_FULL_EXPANDED &&
@@ -1352,7 +1353,6 @@ class CapsuleOverlayController @Inject constructor(
     ) {
         val t = fraction.coerceIn(0f, 1f)
         val overFraction = (fraction - 1f).coerceAtLeast(0f)
-        val widthT = t
         val blurT = ((t - 0.08f) / 0.65f).coerceIn(0f, 1f)
         val satThreshold = 0.24f
         val satLeadT = if (!session.isCollapsing && session.compactUiState.leftSatellite != null) {
@@ -1364,10 +1364,14 @@ class CapsuleOverlayController @Inject constructor(
 
         val extraLeadW = session.compactSpec.widthPx - session.compactBaseSpec.widthPx
         val extraLeadX = session.compactSpec.offsetXPx - session.compactBaseSpec.offsetXPx
-        val mainW = lerpCapsuleFloat(session.compactBaseSpec.widthPx, session.expandedSpec.widthPx, widthT) + overFraction * 24f
+        val mainW = lerpCapsuleFloat(session.compactBaseSpec.widthPx, session.expandedSpec.widthPx,
+            t
+        ) + overFraction * 24f
         val baseW = mainW + satLeadT * extraLeadW
         val baseH = lerpCapsuleFloat(session.compactBaseSpec.heightPx, session.expandedSpec.heightPx, t) + overFraction * 140f
-        val targetX = lerpCapsuleFloat(session.compactBaseSpec.offsetXPx, session.expandedSpec.offsetXPx, widthT) + satLeadT * extraLeadX
+        val targetX = lerpCapsuleFloat(session.compactBaseSpec.offsetXPx, session.expandedSpec.offsetXPx,
+            t
+        ) + satLeadT * extraLeadX
         val targetY = lerpCapsuleFloat(session.compactBaseSpec.topYPx, session.expandedSpec.topYPx, t)
         val circleCornerNowDp = (min(mainW, baseH) / density) * 0.5f
         val compactCornerTarget = if (session.compactUiState.visualState == CapsuleVisualState.STATE1_CUTOUT_ANCHOR) {
@@ -1412,7 +1416,7 @@ class CapsuleOverlayController @Inject constructor(
         if (wasCollapsingWithSat && suppressSatelliteStageState.value) {
             collapseStageJob?.cancel()
             collapseStageJob = scope.launch {
-                delay(150L)
+                delay(150L.milliseconds)
                 val finalState = coordinator.uiState.value
                 if (finalState.visualState != CapsuleVisualState.STATE3_FULL_EXPANDED &&
                     finalState.visualState != CapsuleVisualState.HIDDEN_SYSTEM &&
@@ -1555,7 +1559,7 @@ class CapsuleOverlayController @Inject constructor(
             invalidateSelf()
         }
 
-        override fun onBoundsChange(bounds: android.graphics.Rect) {
+        override fun onBoundsChange(bounds: Rect) {
             super.onBoundsChange(bounds)
             inner.bounds = bounds
         }
@@ -1570,7 +1574,10 @@ class CapsuleOverlayController @Inject constructor(
             inner.colorFilter = colorFilter
         }
 
-        @Deprecated("Deprecated in Java")
+
+        @Deprecated("Deprecated in Java",
+            ReplaceWith("PixelFormat.TRANSLUCENT", "android.graphics.PixelFormat")
+        )
         override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
 
         override fun getOutline(outline: Outline) {

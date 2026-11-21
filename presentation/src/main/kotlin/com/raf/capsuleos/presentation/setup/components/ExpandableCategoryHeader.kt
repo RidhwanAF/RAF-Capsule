@@ -210,7 +210,6 @@ fun SettingsNestedInsetBox(
  * rounding guard so items never prematurely wrap to a single column) and collapses to a single
  * full-width column on narrow screens.
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AdaptiveSubItemFlowRow(
     modifier: Modifier = Modifier,

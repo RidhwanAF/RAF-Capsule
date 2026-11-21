@@ -18,12 +18,17 @@ import androidx.core.graphics.drawable.toBitmap
 import androidx.core.graphics.scale
 import com.raf.capsuleos.domain.model.CapsuleContent
 import com.raf.capsuleos.domain.model.CapsuleEvent
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import java.io.ByteArrayOutputStream
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
@@ -36,14 +41,22 @@ import java.util.concurrent.ConcurrentHashMap
  */
 class CapsuleNotificationListenerService : NotificationListenerService() {
 
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
     private val seenSignatures = ConcurrentHashMap<String, String>()
     private val appIconBytesCache = ConcurrentHashMap<String, ByteArray>()
+
+    override fun onDestroy() {
+        serviceScope.cancel()
+        super.onDestroy()
+    }
 
     override fun onListenerConnected() {
         super.onListenerConnected()
         activeInstance = this
         _isConnected.value = true
-        refreshLiveActivities()
+        serviceScope.launch {
+            refreshLiveActivities()
+        }
     }
 
     override fun onListenerDisconnected() {
@@ -62,8 +75,13 @@ class CapsuleNotificationListenerService : NotificationListenerService() {
     override fun onNotificationPosted(sbn: StatusBarNotification?, rankingMap: RankingMap?) {
         super.onNotificationPosted(sbn, rankingMap)
         val statusBarNotif = sbn ?: return
-        refreshLiveActivities()
-        processIncomingNotification(statusBarNotif, rankingMap ?: runCatching { currentRanking }.getOrNull())
+        serviceScope.launch {
+            refreshLiveActivities()
+            processIncomingNotification(
+                statusBarNotif,
+                rankingMap ?: runCatching { currentRanking }.getOrNull(),
+            )
+        }
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification?, rankingMap: RankingMap?, reason: Int) {
@@ -74,8 +92,10 @@ class CapsuleNotificationListenerService : NotificationListenerService() {
         callAnswerIntents.remove(statusBarNotif.key)
         callDeclineIntents.remove(statusBarNotif.key)
         seenSignatures.remove(statusBarNotif.key)
-        refreshLiveActivities()
         _notificationEvents.tryEmit(CapsuleEvent.NotificationRemoved(statusBarNotif.key))
+        serviceScope.launch {
+            refreshLiveActivities()
+        }
     }
 
     private fun refreshLiveActivities() {

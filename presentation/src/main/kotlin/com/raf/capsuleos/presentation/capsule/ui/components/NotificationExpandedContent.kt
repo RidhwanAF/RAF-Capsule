@@ -27,8 +27,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.foundation.text.input.clearText
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
@@ -46,6 +48,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -70,6 +73,7 @@ import com.raf.capsuleos.domain.model.CapsuleContent
 import com.raf.capsuleos.presentation.R
 import com.raf.capsuleos.presentation.common.CapsuleExpressiveSurface
 import com.raf.capsuleos.presentation.common.rememberCapsuleHaptics
+import kotlinx.coroutines.flow.drop
 import java.nio.ByteBuffer
 
 /**
@@ -101,8 +105,14 @@ fun NotificationExpandedContent(
     var replyingAction by remember(notification.key) {
         mutableStateOf<CapsuleContent.NotificationActionItem?>(null)
     }
-    var replyDraft by remember(notification.key) { mutableStateOf("") }
+    val replyDraftState = remember(notification.key) { TextFieldState() }
     val replyFocusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(replyDraftState) {
+        snapshotFlow { replyDraftState.text.toString() }
+            .drop(1)
+            .collect { onUserInteraction() }
+    }
 
     LaunchedEffect(replyingAction) {
         val active = replyingAction != null
@@ -120,11 +130,11 @@ fun NotificationExpandedContent(
 
     val submitInlineReply = {
         val target = replyingAction
-        val clean = replyDraft.trim()
+        val clean = replyDraftState.text.toString().trim()
         if (target != null && clean.isNotEmpty()) {
             haptics.click()
             onTriggerAction(target.actionId, clean)
-            replyDraft = ""
+            replyDraftState.clearText()
             replyingAction = null
         }
     }
@@ -281,7 +291,7 @@ fun NotificationExpandedContent(
                         .padding(horizontal = 12.dp, vertical = 6.dp),
                 ) {
                     Box(modifier = Modifier.weight(1f)) {
-                        if (replyDraft.isEmpty()) {
+                        if (replyDraftState.text.isEmpty()) {
                             Text(
                                 text = currentReplyAction.replyHint ?: stringResource(R.string.hint_quick_reply),
                                 color = Color.White.copy(alpha = 0.5f),
@@ -290,12 +300,8 @@ fun NotificationExpandedContent(
                             )
                         }
                         BasicTextField(
-                            value = replyDraft,
-                            onValueChange = { next ->
-                                onUserInteraction()
-                                replyDraft = next
-                            },
-                            singleLine = true,
+                            state = replyDraftState,
+                            lineLimits = TextFieldLineLimits.SingleLine,
                             textStyle = TextStyle(
                                 color = Color.White,
                                 fontSize = 13.sp,
@@ -303,7 +309,7 @@ fun NotificationExpandedContent(
                             ),
                             cursorBrush = SolidColor(primary),
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                            keyboardActions = KeyboardActions(onSend = { submitInlineReply() }),
+                            onKeyboardAction = { submitInlineReply() },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .focusRequester(replyFocusRequester),
@@ -329,12 +335,13 @@ fun NotificationExpandedContent(
                         )
                     }
 
+                    val canSendReply = replyDraftState.text.isNotBlank()
                     CapsuleExpressiveSurface(
                         onClick = submitInlineReply,
-                        enabled = replyDraft.isNotBlank(),
+                        enabled = canSendReply,
                         restCornerDp = 14f,
                         pressedCornerDp = 7f,
-                        backgroundColor = if (replyDraft.isNotBlank()) primary else primary.copy(alpha = 0.35f),
+                        backgroundColor = if (canSendReply) primary else primary.copy(alpha = 0.35f),
                         modifier = Modifier.size(28.dp),
                     ) {
                         Icon(
