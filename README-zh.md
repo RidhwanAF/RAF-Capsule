@@ -31,25 +31,31 @@
 <table>
   <tr>
     <td align="center" width="50%">
-      <img src="docs/media/landscape-mode.gif" alt="横屏模式" width="100%" /><br/>
-      <strong>横屏模式（侧边竖向胶囊与全高卡片）</strong>
-    </td>
-    <td align="center" width="50%">
       <img src="docs/media/media-player.gif" alt="媒体播放器" width="100%" /><br/>
       <strong>媒体播放器与实时秒表时钟</strong>
     </td>
-  </tr>
-  <tr>
     <td align="center" width="50%">
       <img src="docs/media/separated-bubble.gif" alt="独立状态气泡" width="100%" /><br/>
       <strong>独立状态气泡与液态融合动画</strong>
     </td>
-    <td align="center" width="50%">
-      <img src="docs/media/volume-mixer.gif" alt="音量混音器" width="100%" /><br/>
+  </tr>
+  <tr>
+    <td align="center" colspan="2">
+      <img src="docs/media/volume-mixer.gif" alt="音量混音器" width="50%" /><br/>
       <strong>全新 M3 Expressive 音量混音器</strong>
     </td>
   </tr>
 </table>
+
+### 横屏模式特性
+
+| 功能 | 横屏表现 |
+|---|---|
+| **侧边纵向紧凑胶囊** | 跟随旋转后的摄像头位置，以纵向胶囊贴合侧边显示 |
+| **纵向状态气泡** | 配备垂直指示点并支持上下滑动切换活跃状态 |
+| **全高展开卡片** | 对称内边距、横向毛玻璃渐变，手电筒保持紧凑方形例外 |
+| **自然横屏手势** | 横向滑动展开/收起，纵向滑动切换卡片或媒体会话 |
+| **挖孔两侧实时栏** | 展示应用图标名称、带秒数的实时时钟以及点击直达日历的完整日期 |
 
 ---
 

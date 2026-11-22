@@ -31,25 +31,31 @@
 <table>
   <tr>
     <td align="center" width="50%">
-      <img src="docs/media/landscape-mode.gif" alt="가로 모드" width="100%" /><br/>
-      <strong>가로 모드 (측면 수직 필 &amp; 풀하이트 카드)</strong>
-    </td>
-    <td align="center" width="50%">
       <img src="docs/media/media-player.gif" alt="미디어 플레이어" width="100%" /><br/>
       <strong>미디어 플레이어 &amp; 실시간 시계</strong>
     </td>
-  </tr>
-  <tr>
     <td align="center" width="50%">
       <img src="docs/media/separated-bubble.gif" alt="분리된 상태 버블" width="100%" /><br/>
       <strong>분리된 상태 버블 &amp; 리퀴드 모프</strong>
     </td>
-    <td align="center" width="50%">
-      <img src="docs/media/volume-mixer.gif" alt="볼륨 믹서" width="100%" /><br/>
+  </tr>
+  <tr>
+    <td align="center" colspan="2">
+      <img src="docs/media/volume-mixer.gif" alt="볼륨 믹서" width="50%" /><br/>
       <strong>새로워진 M3 Expressive 볼륨 믹서</strong>
     </td>
   </tr>
 </table>
+
+### 가로 모드 기능
+
+| 기능 | 가로 모드 동작 |
+|---|---|
+| **측면 베젤 수직 필** | 회전된 카메라 위치에 맞춰 수직 콤팩트 필로 표시 |
+| **수직 상태 버블** | 수직 도트 인디케이터 및 세로 스와이프 전환 지원 |
+| **풀하이트 확장 카드** | 대칭 여백, 가로 블러 그라데이션 및 손전등 정사각형 예외 적용 |
+| **자연스러운 가로 제스처** | 가로 스와이프로 열기/닫기, 세로 스와이프로 카드 및 미디어 전환 |
+| **카메라 양옆 라이브 바** | 앱 아이콘/이름 및 초 단위 시계 + 캘린더 바로가기 날짜 표시 |
 
 ---
 

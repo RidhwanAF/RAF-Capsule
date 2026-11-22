@@ -31,25 +31,31 @@
 <table>
   <tr>
     <td align="center" width="50%">
-      <img src="docs/media/landscape-mode.gif" alt="Modo Horizontal" width="100%" /><br/>
-      <strong>Modo Horizontal (Píldora Lateral y Tarjetas de Altura Completa)</strong>
-    </td>
-    <td align="center" width="50%">
       <img src="docs/media/media-player.gif" alt="Reproductor Multimedia" width="100%" /><br/>
       <strong>Reproductor Multimedia y Reloj en Vivo</strong>
     </td>
-  </tr>
-  <tr>
     <td align="center" width="50%">
       <img src="docs/media/separated-bubble.gif" alt="Burbuja de Estado Separada" width="100%" /><br/>
       <strong>Burbuja de Estado Separada y Fusión Líquida</strong>
     </td>
-    <td align="center" width="50%">
-      <img src="docs/media/volume-mixer.gif" alt="Mezclador de Volumen" width="100%" /><br/>
+  </tr>
+  <tr>
+    <td align="center" colspan="2">
+      <img src="docs/media/volume-mixer.gif" alt="Mezclador de Volumen" width="50%" /><br/>
       <strong>Nuevo Mezclador de Volumen M3 Expressive</strong>
     </td>
   </tr>
 </table>
+
+### Funciones en Modo Horizontal
+
+| Función | Comportamiento Horizontal |
+|---|---|
+| **Píldora Lateral Vertical** | Se ancla verticalmente junto a la cámara rotada con iconos y datos compactos |
+| **Burbuja de Estado Vertical** | Sigue el lateral de la cámara con puntos verticales y deslizamiento vertical |
+| **Tarjetas de Altura Completa** | Altura completa con margen simétrico, desenfoque horizontal y excepción cuadrada en Linterna |
+| **Gestos Horizontales Naturales** | Desliza horizontalmente para expandir/contraer y verticalmente para cambiar de tarjeta o sesión |
+| **Barra Lateral de Cámara** | Muestra icono/nombre de la app y reloj en vivo con segundos + fecha clicable al Calendario |
 
 ---
 

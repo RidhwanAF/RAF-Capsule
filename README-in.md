@@ -34,45 +34,51 @@
 <table>
   <tr>
     <td align="center" width="50%">
-      <img src="docs/media/landscape-mode.gif" alt="Mode Lanskap" width="100%" /><br/>
-      <strong>Mode Lanskap (Pil Sisi Kamera &amp; Kartu Penuh)</strong>
-    </td>
-    <td align="center" width="50%">
       <img src="docs/media/media-player.gif" alt="Pemutar Media & Jam Langsung" width="100%" /><br/>
       <strong>Pemutar Media, Jam Langsung &amp; Output Audio</strong>
     </td>
-  </tr>
-  <tr>
     <td align="center" width="50%">
       <img src="docs/media/media-lyrics.gif" alt="Lirik Tersinkronisasi" width="100%" /><br/>
       <strong>Lirik Tersinkronisasi Langsung (LRC)</strong>
     </td>
+  </tr>
+  <tr>
     <td align="center" width="50%">
       <img src="docs/media/separated-bubble.gif" alt="Gelembung Status Terpisah" width="100%" /><br/>
       <strong>Gelembung Status Terpisah &amp; Liquid Morph</strong>
     </td>
-  </tr>
-  <tr>
     <td align="center" width="50%">
       <img src="docs/media/now-brief.gif" alt="Ringkasan Now Brief" width="100%" /><br/>
       <strong>Hub Cepat Now Brief</strong>
     </td>
+  </tr>
+  <tr>
     <td align="center" width="50%">
       <img src="docs/media/notification-swipe.gif" alt="Notifikasi & Geser Hapus" width="100%" /><br/>
       <strong>Notifikasi Bulat &amp; Geser untuk Menghapus</strong>
     </td>
-  </tr>
-  <tr>
     <td align="center" width="50%">
       <img src="docs/media/incoming-call.gif" alt="Panggilan Masuk" width="100%" /><br/>
       <strong>Panggilan Masuk &amp; Border Neuron</strong>
     </td>
-    <td align="center" width="50%">
-      <img src="docs/media/volume-mixer.gif" alt="Mixer Volume M3 Expressive" width="100%" /><br/>
+  </tr>
+  <tr>
+    <td align="center" colspan="2">
+      <img src="docs/media/volume-mixer.gif" alt="Mixer Volume M3 Expressive" width="50%" /><br/>
       <strong>Desain Baru Mixer Volume M3 Expressive</strong>
     </td>
   </tr>
 </table>
+
+### Fitur Mode Lanskap
+
+| Fitur | Perilaku di Mode Lanskap |
+|---|---|
+| **Pil Ringkas Sisi Kamera** | Menempel secara vertikal di sisi lubang kamera dengan ikon &amp; lencana ringkas |
+| **Gelembung Status Vertikal** | Mengikuti posisi kamera dengan indikator titik vertikal &amp; geser vertikal untuk ganti status |
+| **Kartu Penuh (Full-Height)** | Melebar penuh secara vertikal dengan padding simetris, gradien blur horizontal &amp; pengecualian kotak Senter |
+| **Gestur Lanskap Alami** | Geser horizontal untuk buka/tutup dan geser vertikal untuk berpindah kartu atau sesi media |
+| **Bilah Samping Kamera** | Menampilkan ikon/nama aplikasi dan jam aktif dengan detik + tanggal lengkap yang membuka Kalender |
 
 ### Layar Aplikasi & Pengaturan
 

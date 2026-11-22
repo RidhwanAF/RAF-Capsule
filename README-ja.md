@@ -31,35 +31,41 @@
 <table>
   <tr>
     <td align="center" width="50%">
-      <img src="docs/media/landscape-mode.gif" alt="横画面モード" width="100%" /><br/>
-      <strong>横画面モード（縦型ピル＆フルハイトカード）</strong>
-    </td>
-    <td align="center" width="50%">
       <img src="docs/media/media-player.gif" alt="メディアプレーヤー" width="100%" /><br/>
       <strong>メディアプレーヤー＆リアルタイム時計</strong>
     </td>
-  </tr>
-  <tr>
     <td align="center" width="50%">
       <img src="docs/media/media-lyrics.gif" alt="同期歌詞" width="100%" /><br/>
       <strong>リアルタイム同期歌詞（LRC）</strong>
     </td>
+  </tr>
+  <tr>
     <td align="center" width="50%">
       <img src="docs/media/separated-bubble.gif" alt="独立ステータスバブル" width="100%" /><br/>
       <strong>独立ステータスバブル＆リキッドモーフ</strong>
     </td>
-  </tr>
-  <tr>
     <td align="center" width="50%">
       <img src="docs/media/now-brief.gif" alt="Now Brief" width="100%" /><br/>
       <strong>Now Brief クイックハブ</strong>
     </td>
-    <td align="center" width="50%">
-      <img src="docs/media/volume-mixer.gif" alt="音量ミキサー" width="100%" /><br/>
+  </tr>
+  <tr>
+    <td align="center" colspan="2">
+      <img src="docs/media/volume-mixer.gif" alt="音量ミキサー" width="50%" /><br/>
       <strong>刷新されたM3 Expressive音量ミキサー</strong>
     </td>
   </tr>
 </table>
+
+### 横画面モード機能
+
+| 機能 | 横画面での動作 |
+|---|---|
+| **サイドベゼル縦型ピル** | 回転したカメラ位置に追従し、縦向きのコンパクトピルとして表示 |
+| **縦型ステータスバブル** | 縦ドットインジケーターと縦スワイプ切替に対応した独立バブル |
+| **フルハイト展開カード** | 均等パディング・横方向ブラーグラデーション・ライト用正方形例外に対応 |
+| **横画面専用ジェスチャー** | 横スワイプで開閉、縦スワイプでカードやメディアセッションを切替 |
+| **カメラ横ライブバー** | アプリアイコン＋名前、秒表示付き時計、カレンダー起動付き日付を表示 |
 
 ---
 

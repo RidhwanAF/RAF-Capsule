@@ -43,45 +43,51 @@
 <table>
   <tr>
     <td align="center" width="50%">
-      <img src="docs/media/landscape-mode.gif" alt="Landscape Mode Side-Bezel Capsule & Full-Height Cards" width="100%" /><br/>
-      <strong>Landscape Mode (Side-Bezel Pill &amp; Full-Height Cards)</strong>
-    </td>
-    <td align="center" width="50%">
       <img src="docs/media/media-player.gif" alt="Media Player, Live Clock/Date & Audio Switcher" width="100%" /><br/>
       <strong>Media Player, Live Clock &amp; Audio Switcher</strong>
     </td>
-  </tr>
-  <tr>
     <td align="center" width="50%">
       <img src="docs/media/media-lyrics.gif" alt="Live Synced Lyrics (LRC)" width="100%" /><br/>
       <strong>Live Synced Lyrics (LRC &amp; Online Fetch)</strong>
     </td>
+  </tr>
+  <tr>
     <td align="center" width="50%">
       <img src="docs/media/separated-bubble.gif" alt="Separated Status Bubble & Liquid Morph" width="100%" /><br/>
       <strong>Separated Status Bubble &amp; Liquid Morph</strong>
     </td>
-  </tr>
-  <tr>
     <td align="center" width="50%">
       <img src="docs/media/now-brief.gif" alt="Now Brief Quick Hub" width="100%" /><br/>
       <strong>Now Brief Quick Hub</strong>
     </td>
+  </tr>
+  <tr>
     <td align="center" width="50%">
       <img src="docs/media/notification-swipe.gif" alt="Scrollable Notifications & Swipe-to-Dismiss" width="100%" /><br/>
       <strong>Rounded Notifications &amp; Swipe-to-Dismiss</strong>
     </td>
-  </tr>
-  <tr>
     <td align="center" width="50%">
       <img src="docs/media/incoming-call.gif" alt="Incoming Call Auto-Expand" width="100%" /><br/>
       <strong>Incoming Call Auto-Expand &amp; Neuron Border</strong>
     </td>
-    <td align="center" width="50%">
-      <img src="docs/media/volume-mixer.gif" alt="Redesigned M3 Expressive Volume Mixer" width="100%" /><br/>
+  </tr>
+  <tr>
+    <td align="center" colspan="2">
+      <img src="docs/media/volume-mixer.gif" alt="Redesigned M3 Expressive Volume Mixer" width="50%" /><br/>
       <strong>Redesigned M3 Expressive Volume Mixer</strong>
     </td>
   </tr>
 </table>
+
+### Landscape Mode Features
+
+| Feature | Landscape Behavior |
+|---|---|
+| **Side-Bezel Compact Pill** | Anchors vertically beside the rotated camera cutout with compact vertical icons &amp; badges |
+| **Vertical Separated Bubble** | Follows the camera side with vertical dot indicators &amp; vertical swipe cycling |
+| **Full-Height Expanded Cards** | Expands full height with symmetric padding, horizontal blur gradient &amp; Flashlight compact square exception |
+| **Natural Landscape Gestures** | Swipe horizontally to expand/collapse and swipe vertically to switch active cards or media sessions |
+| **Camera-Flanking Live Bar** | Displays app icon/name and live clock with seconds + clickable Calendar date with rotation-aware cutout padding |
 
 ### App Screens & Configuration
 
