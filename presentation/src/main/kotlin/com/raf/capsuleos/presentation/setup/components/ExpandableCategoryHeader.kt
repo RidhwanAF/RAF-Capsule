@@ -392,22 +392,34 @@ fun ExpandableCategoryHeader(
         trailingBadge?.invoke()
 
         if (onOpenDedicatedScreen != null) {
-            FilledTonalIconButton(
+            Surface(
                 onClick = {
                     haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
                     onOpenDedicatedScreen()
                 },
-                colors = IconButtonDefaults.filledTonalIconButtonColors(
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                ),
-                modifier = Modifier.size(34.dp),
+                shape = RoundedCornerShape(17.dp),
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.height(34.dp),
             ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Rounded.OpenInNew,
-                    contentDescription = stringResource(R.string.desc_open_category_screen),
-                    modifier = Modifier.size(16.dp),
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.padding(horizontal = 10.dp),
+                ) {
+                    Text(
+                        text = stringResource(R.string.action_preview),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.OpenInNew,
+                        contentDescription = stringResource(R.string.desc_open_category_screen),
+                        modifier = Modifier.size(14.dp),
+                    )
+                }
             }
         }
 

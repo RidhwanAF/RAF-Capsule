@@ -4,21 +4,24 @@ import android.graphics.Matrix
 import android.graphics.SweepGradient
 import android.os.SystemClock
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -38,6 +41,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -88,6 +92,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -123,6 +128,7 @@ fun MediaBackdropLayer(
     media: CapsuleContent.Media,
     timeSeconds: Float,
     mediaAnimationColorMode: MediaAnimationColorMode = MediaAnimationColorMode.ALBUM_COLOR,
+    isVerticalParallax: Boolean = false,
     parallaxOffsetProvider: () -> Float = { 0f },
 ) {
     val themePrimary = MaterialTheme.colorScheme.primary
@@ -157,7 +163,8 @@ fun MediaBackdropLayer(
                             alpha = 0.54f
                             scaleX = 1.18f
                             scaleY = 1.18f
-                            translationX = parallaxOffsetProvider()
+                            val p = parallaxOffsetProvider()
+                            if (isVerticalParallax) translationY = p else translationX = p
                         },
                 )
             } else {
@@ -167,7 +174,8 @@ fun MediaBackdropLayer(
                         .graphicsLayer {
                             scaleX = 1.14f
                             scaleY = 1.14f
-                            translationX = parallaxOffsetProvider()
+                            val p = parallaxOffsetProvider()
+                            if (isVerticalParallax) translationY = p else translationX = p
                         }
                         .background(
                             brush = Brush.verticalGradient(
@@ -287,6 +295,10 @@ fun MediaExpandedContent(
     ),
     mediaAnimationColorMode: MediaAnimationColorMode = MediaAnimationColorMode.ALBUM_COLOR,
     topClearanceDp: Float,
+    startClearanceDp: Float = 0f,
+    endClearanceDp: Float = 0f,
+    bottomDotsClearanceDp: Float = 0f,
+    isLandscape: Boolean = false,
     contentPaddingDp: Float = 18f,
     timeSeconds: Float,
     interactionsEnabled: Boolean = true,
@@ -368,93 +380,64 @@ fun MediaExpandedContent(
                 media = activePageMedia,
                 timeSeconds = timeSeconds,
                 mediaAnimationColorMode = mediaAnimationColorMode,
+                isVerticalParallax = isLandscape,
                 parallaxOffsetProvider = { -pagerState.currentPageOffsetFraction * maxParallaxPx },
                 modifier = Modifier.fillMaxSize(),
             )
         }
 
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(
-                    top = topClearanceDp.dp,
-                    bottom = (contentPaddingDp * 0.72f).coerceAtLeast(10f).dp,
-                ),
-        ) {
+        // Edge-to-edge pager (VerticalPager in landscape, HorizontalPager in portrait) with camera
+        // and dot-indicator clearance applied INSIDE each page so scrolling never clips at the camera.
+        val pageRenderer: @Composable (Int) -> Unit = { pageIndex ->
+            val pageMedia = sessions.getOrNull(pageIndex) ?: activePageMedia
+            MediaPlayerPage(
+                media = pageMedia,
+                expandedMediaGlowEffects = expandedMediaGlowEffects,
+                mediaAnimationColorMode = mediaAnimationColorMode,
+                contentPaddingDp = contentPaddingDp,
+                topClearanceDp = topClearanceDp,
+                startClearanceDp = startClearanceDp,
+                endClearanceDp = endClearanceDp,
+                bottomClearanceDp = (contentPaddingDp * 0.78f).coerceAtLeast(12f) + bottomDotsClearanceDp,
+                isLandscape = isLandscape,
+                albumGlowRotationProvider = { albumGlowRotationDeg.floatValue },
+                albumBeatPhaseProvider = { albumBeatPhase.floatValue },
+                cookieRotationProvider = { cookieRotationDeg.floatValue },
+                interactionsEnabled = interactionsEnabled,
+                isActiveSharedPage = pageIndex == pagerState.currentPage,
+                enableAlbumSharedTransition = enableAlbumSharedTransition,
+                sharedTransitionScope = sharedTransitionScope,
+                animatedVisibilityScope = animatedVisibilityScope,
+                onOpenMediaApp = { onOpenMediaApp(pageMedia.packageName) },
+                onOpenAudioOutput = onOpenAudioOutput,
+                onLyricsActiveChanged = { active ->
+                    if (pageIndex == pagerState.currentPage) {
+                        onLyricsActiveChanged(active)
+                    }
+                },
+                onUserInteraction = onUserInteraction,
+                onTogglePlayPause = { onTogglePlayPause(pageMedia.sessionTokenKey) },
+                onSkipNext = { onSkipNext(pageMedia.sessionTokenKey) },
+                onSkipPrevious = { onSkipPrevious(pageMedia.sessionTokenKey) },
+                onSeekTo = { targetMs -> onSeekTo(pageMedia.sessionTokenKey, targetMs) },
+            )
+        }
+
+        if (isLandscape) {
+            VerticalPager(
+                state = pagerState,
+                userScrollEnabled = interactionsEnabled && sessions.size > 1,
+                modifier = Modifier.fillMaxSize(),
+            ) { pageIndex ->
+                pageRenderer(pageIndex)
+            }
+        } else {
             HorizontalPager(
                 state = pagerState,
                 userScrollEnabled = interactionsEnabled && sessions.size > 1,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
+                modifier = Modifier.fillMaxSize(),
             ) { pageIndex ->
-                val pageMedia = sessions.getOrNull(pageIndex) ?: activePageMedia
-                MediaPlayerPage(
-                    media = pageMedia,
-                    expandedMediaGlowEffects = expandedMediaGlowEffects,
-                    mediaAnimationColorMode = mediaAnimationColorMode,
-                    contentPaddingDp = contentPaddingDp,
-                    albumGlowRotationProvider = { albumGlowRotationDeg.floatValue },
-                    albumBeatPhaseProvider = { albumBeatPhase.floatValue },
-                    cookieRotationProvider = { cookieRotationDeg.floatValue },
-                    interactionsEnabled = interactionsEnabled,
-                    isActiveSharedPage = pageIndex == pagerState.currentPage,
-                    enableAlbumSharedTransition = enableAlbumSharedTransition,
-                    sharedTransitionScope = sharedTransitionScope,
-                    animatedVisibilityScope = animatedVisibilityScope,
-                    onOpenMediaApp = { onOpenMediaApp(pageMedia.packageName) },
-                    onOpenAudioOutput = onOpenAudioOutput,
-                    onLyricsActiveChanged = { active ->
-                        if (pageIndex == pagerState.currentPage) {
-                            onLyricsActiveChanged(active)
-                        }
-                    },
-                    onUserInteraction = onUserInteraction,
-                    onTogglePlayPause = { onTogglePlayPause(pageMedia.sessionTokenKey) },
-                    onSkipNext = { onSkipNext(pageMedia.sessionTokenKey) },
-                    onSkipPrevious = { onSkipPrevious(pageMedia.sessionTokenKey) },
-                    onSeekTo = { targetMs -> onSeekTo(pageMedia.sessionTokenKey, targetMs) },
-                )
-            }
-
-            if (sessions.size > 1) {
-                val indicatorPrimary = MaterialTheme.colorScheme.primary
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 4.dp),
-                ) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(5.dp, Alignment.CenterHorizontally),
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(50))
-                            .background(Color.Black.copy(alpha = 0.42f))
-                            .border(
-                                width = 0.8.dp,
-                                color = Color.White.copy(alpha = 0.16f),
-                                shape = RoundedCornerShape(50),
-                            )
-                            .padding(horizontal = 9.dp, vertical = 4.dp),
-                    ) {
-                        repeat(sessions.size) { index ->
-                            val isCurrent = index == pagerState.currentPage
-                            Box(
-                                modifier = Modifier
-                                    .size(width = if (isCurrent) 14.dp else 5.5.dp, height = 5.5.dp)
-                                    .clip(CircleShape)
-                                    .background(
-                                        if (isCurrent) {
-                                            indicatorPrimary
-                                        } else {
-                                            indicatorPrimary.copy(alpha = 0.34f)
-                                        },
-                                    ),
-                            )
-                        }
-                    }
-                }
+                pageRenderer(pageIndex)
             }
         }
     }
@@ -467,6 +450,11 @@ private fun MediaPlayerPage(
     expandedMediaGlowEffects: Set<ExpandedMediaGlowEffect>,
     mediaAnimationColorMode: MediaAnimationColorMode,
     contentPaddingDp: Float,
+    topClearanceDp: Float,
+    startClearanceDp: Float,
+    endClearanceDp: Float,
+    bottomClearanceDp: Float,
+    isLandscape: Boolean = false,
     albumGlowRotationProvider: () -> Float,
     albumBeatPhaseProvider: () -> Float,
     cookieRotationProvider: () -> Float,
@@ -502,7 +490,6 @@ private fun MediaPlayerPage(
         label = "mediaPageSecondary",
     )
     val artworkBitmap = rememberCachedImageBitmap(media.artworkBytes)
-    val appIconBitmap = rememberCachedImageBitmap(media.appIconBytes)
     val albumRotMatrix = remember { Matrix() }
 
     var isScrubbing by remember { mutableStateOf(false) }
@@ -558,412 +545,649 @@ private fun MediaPlayerPage(
         label = "albumGlowAlpha",
     )
 
+    val lyricsActive = showLyrics && hasLyrics
+    val landscapeLyricsMorph by animateFloatAsState(
+        targetValue = if (isLandscape && lyricsActive) 1f else 0f,
+        animationSpec = spring(dampingRatio = 0.84f, stiffness = 360f),
+        label = "landscapeLyricsMorph",
+    )
+    val landscapeArtSizeDp by animateDpAsState(
+        targetValue = if (isLandscape && lyricsActive) 48.dp else 96.dp,
+        animationSpec = spring(dampingRatio = 0.84f, stiffness = 360f),
+        label = "landscapeArtSize",
+    )
+    val landscapeArtCornerDp by animateDpAsState(
+        targetValue = if (isLandscape && lyricsActive) 12.dp else 20.dp,
+        animationSpec = spring(dampingRatio = 0.84f, stiffness = 360f),
+        label = "landscapeArtCorner",
+    )
+
     with(sharedTransitionScope) {
-        Column(
-            verticalArrangement = Arrangement.SpaceBetween,
-            modifier = modifier
-                .fillMaxSize()
-                .padding(horizontal = contentPaddingDp.dp),
-        ) {
+        val artSizeDp = if (isLandscape) landscapeArtSizeDp else 58.dp
+        val artCornerDp = if (isLandscape) landscapeArtCornerDp else 14.dp
+        val artBaseMod = if (isActiveSharedPage && enableAlbumSharedTransition) {
+            Modifier.sharedElement(
+                sharedContentState = rememberSharedContentState(key = "capsule_icon"),
+                animatedVisibilityScope = animatedVisibilityScope,
+                boundsTransform = { _, _ -> spring(dampingRatio = 0.82f, stiffness = 410f) },
+                clipInOverlayDuringTransition = OverlayClip(RoundedCornerShape(artCornerDp)),
+            )
+        } else {
+            Modifier
+        }
+
+        val albumArtworkBox: @Composable () -> Unit = {
+            Box(
+                modifier = Modifier
+                    .size(artSizeDp)
+                    .drawBehind {
+                        val glowAlpha = albumGlowAlphaState.value
+                        if (glowAlpha > 0.02f) {
+                            val baseCornerPx = artCornerDp.toPx()
+                            val maxExpandPx = 11.dp.toPx()
+                            albumRotMatrix.reset()
+                            albumRotMatrix.setRotate(albumGlowRotationProvider(), center.x, center.y)
+                            val rawWave = albumBeatPhaseProvider().coerceIn(0f, 1f)
+                            val eased = FastOutSlowInEasing.transform(rawWave)
+                            val expandPx = eased * maxExpandPx
+                            val inhale = (rawWave / 0.16f).coerceIn(0f, 1f)
+                            val exhale = (1f - eased).let { it * it }
+                            val fade = inhale * exhale * 0.68f * glowAlpha
+                            if (fade > 0.015f) {
+                                val beatStrokePx = (2.3f - 1.55f * eased).coerceAtLeast(0.65f).dp.toPx()
+                                val beatShader = SweepGradient(
+                                    center.x,
+                                    center.y,
+                                    intArrayOf(
+                                        primaryColor.copy(alpha = fade).toArgb(),
+                                        secondaryColor.copy(alpha = fade).toArgb(),
+                                        Color.White.copy(alpha = 0.85f * fade).toArgb(),
+                                        primaryColor.copy(alpha = fade).toArgb(),
+                                    ),
+                                    floatArrayOf(0.0f, 0.35f, 0.70f, 1.0f),
+                                ).apply {
+                                    setLocalMatrix(albumRotMatrix)
+                                }
+                                drawRoundRect(
+                                    brush = ShaderBrush(beatShader),
+                                    topLeft = Offset(-expandPx, -expandPx),
+                                    size = Size(size.width + expandPx * 2f, size.height + expandPx * 2f),
+                                    cornerRadius = CornerRadius(baseCornerPx + expandPx * 0.85f),
+                                    style = Stroke(width = beatStrokePx),
+                                )
+                            }
+                        }
+                    }
+                    .clickable(enabled = interactionsEnabled) {
+                        haptics.click()
+                        onOpenMediaApp()
+                    },
+            ) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = artBaseMod
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(artCornerDp))
+                        .background(primaryColor.copy(alpha = 0.24f))
+                        .drawWithContent {
+                            drawContent()
+                            val glowAlpha = albumGlowAlphaState.value
+                            if (glowAlpha > 0.02f) {
+                                val strokePx = 2.5.dp.toPx()
+                                val halfStroke = strokePx * 0.5f
+                                val cornerPx = (artCornerDp.toPx() - halfStroke).coerceAtLeast(1f)
+                                albumRotMatrix.reset()
+                                albumRotMatrix.setRotate(albumGlowRotationProvider(), center.x, center.y)
+                                val sweepShader = SweepGradient(
+                                    center.x,
+                                    center.y,
+                                    intArrayOf(
+                                        primaryColor.copy(alpha = glowAlpha).toArgb(),
+                                        secondaryColor.copy(alpha = glowAlpha).toArgb(),
+                                        Color.White.copy(alpha = 0.88f * glowAlpha).toArgb(),
+                                        primaryColor.copy(alpha = glowAlpha).toArgb(),
+                                    ),
+                                    floatArrayOf(0.0f, 0.35f, 0.70f, 1.0f),
+                                ).apply {
+                                    setLocalMatrix(albumRotMatrix)
+                                }
+                                drawRoundRect(
+                                    brush = ShaderBrush(sweepShader),
+                                    topLeft = Offset(halfStroke, halfStroke),
+                                    size = Size(size.width - strokePx, size.height - strokePx),
+                                    cornerRadius = CornerRadius(cornerPx, cornerPx),
+                                    style = Stroke(width = strokePx),
+                                )
+                            }
+                        },
+                ) {
+                    if (artworkBitmap != null) {
+                        Image(
+                            bitmap = artworkBitmap,
+                            contentDescription = stringResource(R.string.desc_album_art),
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Rounded.MusicNote,
+                            contentDescription = stringResource(R.string.desc_album_art),
+                            tint = primaryColor,
+                            modifier = Modifier.size(if (isLandscape) 40.dp else 28.dp),
+                        )
+                    }
+                }
+            }
+        }
+
+        val seekbarBlock: @Composable () -> Unit = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                CapsuleSlider(
+                    value = scrubProgress,
+                    onValueChange = { next ->
+                        isScrubbing = true
+                        scrubProgress = next
+                    },
+                    onValueChangeFinished = {
+                        isScrubbing = false
+                        onUserInteraction()
+                        onSeekTo((scrubProgress * durationMs).toLong())
+                    },
+                    enabled = interactionsEnabled,
+                    onInteraction = onUserInteraction,
+                    colors = SliderDefaults.colors(
+                        thumbColor = Color.White,
+                        activeTrackColor = primaryColor,
+                        inactiveTrackColor = Color.White.copy(alpha = 0.24f),
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(24.dp),
+                )
+
+                Row(
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    val displayedMs = (scrubProgress * durationMs).toLong()
+                    Text(
+                        text = formatDuration(displayedMs),
+                        color = Color.White.copy(alpha = 0.72f),
+                        fontSize = 11.sp,
+                    )
+                    Text(
+                        text = formatDuration(media.durationMs),
+                        color = Color.White.copy(alpha = 0.72f),
+                        fontSize = 11.sp,
+                    )
+                }
+            }
+        }
+
+        val transportRow: @Composable () -> Unit = {
             Row(
+                horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                val artBaseMod = if (isActiveSharedPage && enableAlbumSharedTransition) {
-                    Modifier.sharedElement(
-                        sharedContentState = rememberSharedContentState(key = "capsule_icon"),
-                        animatedVisibilityScope = animatedVisibilityScope,
-                        boundsTransform = { _, _ -> spring(dampingRatio = 0.82f, stiffness = 410f) },
-                        clipInOverlayDuringTransition = OverlayClip(RoundedCornerShape(14.dp)),
+                val expressiveTransportShapes = capsuleExpressiveIconButtonShapes(
+                    restRadius = 22.dp,
+                    pressedRadius = 10.dp,
+                )
+                val transportColors = IconButtonDefaults.filledTonalIconButtonColors(
+                    containerColor = Color.White.copy(alpha = 0.12f),
+                    contentColor = Color.White,
+                )
+
+                FilledTonalIconButton(
+                    enabled = interactionsEnabled,
+                    onClick = {
+                        haptics.click()
+                        onUserInteraction()
+                        onSkipPrevious()
+                    },
+                    shapes = expressiveTransportShapes,
+                    colors = transportColors,
+                    modifier = Modifier.size(44.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.SkipPrevious,
+                        contentDescription = stringResource(R.string.desc_skip_previous),
+                        modifier = Modifier.size(26.dp),
                     )
-                } else {
-                    Modifier
                 }
 
+                // M3 Expressive rotating 7-sided cookie (playing) morphing smoothly into a Circle (paused)
                 Box(
+                    contentAlignment = Alignment.Center,
                     modifier = Modifier
-                        .size(58.dp)
-                        .drawBehind {
-                            val glowAlpha = albumGlowAlphaState.value
-                            if (glowAlpha > 0.02f) {
-                                val baseCornerPx = 14.dp.toPx()
-                                val maxExpandPx = 11.dp.toPx()
-                                albumRotMatrix.reset()
-                                albumRotMatrix.setRotate(albumGlowRotationProvider(), center.x, center.y)
-                                val rawWave = albumBeatPhaseProvider().coerceIn(0f, 1f)
-                                val eased = FastOutSlowInEasing.transform(rawWave)
-                                val expandPx = eased * maxExpandPx
-                                val inhale = (rawWave / 0.16f).coerceIn(0f, 1f)
-                                val exhale = (1f - eased).let { it * it }
-                                val fade = inhale * exhale * 0.68f * glowAlpha
-                                if (fade > 0.015f) {
-                                    val beatStrokePx = (2.3f - 1.55f * eased).coerceAtLeast(0.65f).dp.toPx()
-                                    val beatShader = SweepGradient(
-                                        center.x,
-                                        center.y,
-                                        intArrayOf(
-                                            primaryColor.copy(alpha = fade).toArgb(),
-                                            secondaryColor.copy(alpha = fade).toArgb(),
-                                            Color.White.copy(alpha = 0.85f * fade).toArgb(),
-                                            primaryColor.copy(alpha = fade).toArgb(),
-                                        ),
-                                        floatArrayOf(0.0f, 0.35f, 0.70f, 1.0f),
-                                    ).apply {
-                                        setLocalMatrix(albumRotMatrix)
-                                    }
-                                    drawRoundRect(
-                                        brush = ShaderBrush(beatShader),
-                                        topLeft = Offset(-expandPx, -expandPx),
-                                        size = Size(size.width + expandPx * 2f, size.height + expandPx * 2f),
-                                        cornerRadius = CornerRadius(baseCornerPx + expandPx * 0.85f),
-                                        style = Stroke(width = beatStrokePx),
+                        .size(54.dp)
+                        .clickable(
+                            enabled = interactionsEnabled,
+                            interactionSource = playPauseInteraction,
+                            indication = null,
+                            onClick = {
+                                haptics.click()
+                                onUserInteraction()
+                                onTogglePlayPause()
+                            },
+                        ),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .graphicsLayer {
+                                rotationZ = cookieRotationProvider()
+                                scaleX = cookiePressScale
+                                scaleY = cookiePressScale
+                            }
+                            .clip(MorphingCookieShape(morph = cookieMorph, progress = cookieStateMorph))
+                            .background(Color.White),
+                    )
+                    AnimatedContent(
+                        targetState = media.isPlaying,
+                        transitionSpec = {
+                            (fadeIn(tween(170)) + scaleIn(initialScale = 0.72f, animationSpec = tween(170))) togetherWith
+                                (fadeOut(tween(110)) + scaleOut(targetScale = 0.72f, animationSpec = tween(110)))
+                        },
+                        label = "mediaPlayPauseGlyph",
+                        modifier = Modifier.graphicsLayer {
+                            scaleX = cookiePressScale
+                            scaleY = cookiePressScale
+                        },
+                    ) { playing ->
+                        Icon(
+                            imageVector = if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                            contentDescription = stringResource(R.string.desc_play_pause),
+                            tint = Color.Black,
+                            modifier = Modifier.size(28.dp),
+                        )
+                    }
+                }
+
+                FilledTonalIconButton(
+                    enabled = interactionsEnabled,
+                    onClick = {
+                        haptics.click()
+                        onUserInteraction()
+                        onSkipNext()
+                    },
+                    shapes = expressiveTransportShapes,
+                    colors = transportColors,
+                    modifier = Modifier.size(44.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.SkipNext,
+                        contentDescription = stringResource(R.string.desc_skip_next),
+                        modifier = Modifier.size(26.dp),
+                    )
+                }
+            }
+        }
+
+        Column(
+            verticalArrangement = if (isLandscape) Arrangement.Top else Arrangement.SpaceBetween,
+            horizontalAlignment = if (isLandscape) Alignment.CenterHorizontally else Alignment.Start,
+            modifier = modifier
+                .fillMaxSize()
+                .padding(
+                    start = (contentPaddingDp + startClearanceDp).dp,
+                    end = (contentPaddingDp + endClearanceDp).dp,
+                    top = topClearanceDp.dp,
+                    bottom = bottomClearanceDp.dp,
+                ),
+        ) {
+            if (isLandscape) {
+                // Elastic top/bottom weights keep Album + Title + Slider + Controls centered when
+                // lyrics are closed, and smoothly glide them to the top as lyrics expand below the slider.
+                val centerWeight = (1f - landscapeLyricsMorph).coerceAtLeast(0f)
+                if (centerWeight > 0.005f) {
+                    Spacer(modifier = Modifier.weight(centerWeight))
+                }
+
+                if (lyricsActive) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        albumArtworkBox()
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable(enabled = interactionsEnabled) {
+                                    haptics.click()
+                                    onOpenMediaApp()
+                                },
+                        ) {
+                            Text(
+                                text = media.title,
+                                color = Color.White,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            if (media.artist.isNotBlank()) {
+                                Text(
+                                    text = media.artist,
+                                    color = Color.White.copy(alpha = 0.78f),
+                                    fontSize = 11.5.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                        CapsuleExpressiveSurface(
+                            enabled = interactionsEnabled,
+                            onClick = {
+                                haptics.click()
+                                onUserInteraction()
+                                onTogglePlayPause()
+                            },
+                            restCornerDp = 18f,
+                            pressedCornerDp = 9f,
+                            backgroundColor = Color.White,
+                            modifier = Modifier.size(34.dp),
+                        ) {
+                            Icon(
+                                imageVector = if (media.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                                contentDescription = stringResource(R.string.desc_play_pause),
+                                tint = Color.Black,
+                                modifier = Modifier.size(19.dp),
+                            )
+                        }
+                    }
+                } else {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        albumArtworkBox()
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable(enabled = interactionsEnabled) {
+                                    haptics.click()
+                                    onOpenMediaApp()
+                                },
+                        ) {
+                            Text(
+                                text = media.title,
+                                color = Color.White,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                textAlign = TextAlign.Center,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            if (media.artist.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = media.artist,
+                                    color = Color.White.copy(alpha = 0.78f),
+                                    fontSize = 12.sp,
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height((14f - 8f * landscapeLyricsMorph).dp))
+                seekbarBlock()
+
+                // Synced lyrics pane smoothly expands directly below the slider
+                if (landscapeLyricsMorph > 0.02f && hasLyrics) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight((landscapeLyricsMorph * 2.2f).coerceAtLeast(0.01f))
+                            .graphicsLayer { alpha = landscapeLyricsMorph }
+                            .padding(top = 6.dp),
+                    ) {
+                        SyncedLyricsPane(
+                            lyrics = media.lyrics,
+                            positionMs = media.positionMs,
+                            durationMs = durationMs,
+                            isPlaying = media.isPlaying,
+                            primaryColor = primaryColor,
+                            interactionsEnabled = interactionsEnabled && lyricsActive,
+                            onUserInteraction = onUserInteraction,
+                            onSeekTo = onSeekTo,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                }
+
+                AnimatedVisibility(
+                    visible = !lyricsActive,
+                    enter = expandVertically(spring(dampingRatio = 0.84f, stiffness = 360f)) + fadeIn(tween(200)),
+                    exit = shrinkVertically(spring(dampingRatio = 0.86f, stiffness = 400f)) + fadeOut(tween(140)),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 12.dp),
+                    ) {
+                        transportRow()
+                    }
+                }
+
+                if (hasLyrics || media.audioOutputLabel.isNotBlank()) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = if (lyricsActive) 8.dp else 14.dp),
+                    ) {
+                        if (hasLyrics) {
+                            CapsuleExpressiveSurface(
+                                enabled = interactionsEnabled,
+                                onClick = {
+                                    haptics.click()
+                                    onUserInteraction()
+                                    showLyrics = !showLyrics
+                                },
+                                restCornerDp = 14f,
+                                pressedCornerDp = 7f,
+                                backgroundColor = if (showLyrics) primaryColor else Color.White.copy(alpha = 0.14f),
+                                modifier = Modifier.height(28.dp),
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                    modifier = Modifier.padding(horizontal = 10.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Lyrics,
+                                        contentDescription = stringResource(R.string.desc_toggle_lyrics),
+                                        tint = if (showLyrics) Color.Black else Color.White,
+                                        modifier = Modifier.size(14.dp),
                                     )
                                 }
                             }
                         }
-                        .clickable(enabled = interactionsEnabled) {
-                            haptics.click()
-                            onOpenMediaApp()
-                        },
-                ) {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = artBaseMod
-                            .fillMaxSize()
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(primaryColor.copy(alpha = 0.24f))
-                            .drawWithContent {
-                                drawContent()
-                                val glowAlpha = albumGlowAlphaState.value
-                                if (glowAlpha > 0.02f) {
-                                    val strokePx = 2.5.dp.toPx()
-                                    val halfStroke = strokePx * 0.5f
-                                    val cornerPx = (14.dp.toPx() - halfStroke).coerceAtLeast(1f)
-                                    albumRotMatrix.reset()
-                                    albumRotMatrix.setRotate(albumGlowRotationProvider(), center.x, center.y)
-                                    val sweepShader = SweepGradient(
-                                        center.x,
-                                        center.y,
-                                        intArrayOf(
-                                            primaryColor.copy(alpha = glowAlpha).toArgb(),
-                                            secondaryColor.copy(alpha = glowAlpha).toArgb(),
-                                            Color.White.copy(alpha = 0.88f * glowAlpha).toArgb(),
-                                            primaryColor.copy(alpha = glowAlpha).toArgb(),
-                                        ),
-                                        floatArrayOf(0.0f, 0.35f, 0.70f, 1.0f),
-                                    ).apply {
-                                        setLocalMatrix(albumRotMatrix)
-                                    }
-                                    drawRoundRect(
-                                        brush = ShaderBrush(sweepShader),
-                                        topLeft = Offset(halfStroke, halfStroke),
-                                        size = Size(size.width - strokePx, size.height - strokePx),
-                                        cornerRadius = CornerRadius(cornerPx, cornerPx),
-                                        style = Stroke(width = strokePx),
+                        if (media.audioOutputLabel.isNotBlank()) {
+                            CapsuleExpressiveSurface(
+                                enabled = interactionsEnabled,
+                                onClick = {
+                                    haptics.click()
+                                    onUserInteraction()
+                                    onOpenAudioOutput()
+                                },
+                                restCornerDp = 14f,
+                                pressedCornerDp = 7f,
+                                backgroundColor = primaryColor.copy(alpha = 0.22f),
+                                modifier = Modifier.height(28.dp),
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                    modifier = Modifier.padding(horizontal = 10.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = outputIconForKind(media.audioOutputKind),
+                                        contentDescription = stringResource(R.string.desc_audio_output),
+                                        tint = Color.White,
+                                        modifier = Modifier.size(13.dp),
+                                    )
+                                    Text(
+                                        text = media.audioOutputLabel,
+                                        color = Color.White,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
                                     )
                                 }
-                            },
-                    ) {
-                        if (artworkBitmap != null) {
-                            Image(
-                                bitmap = artworkBitmap,
-                                contentDescription = stringResource(R.string.desc_album_art),
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize(),
-                            )
-                        } else {
-                            Icon(
-                                imageVector = Icons.Rounded.MusicNote,
-                                contentDescription = stringResource(R.string.desc_album_art),
-                                tint = primaryColor,
-                                modifier = Modifier.size(28.dp),
-                            )
-                        }
-                    }
-
-                    if (appIconBitmap != null) {
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .size(20.dp)
-                                .clip(CircleShape)
-                                .background(Color.Black.copy(alpha = 0.86f))
-                                .padding(1.5.dp)
-                                .clip(CircleShape),
-                        ) {
-                            Image(
-                                bitmap = appIconBitmap,
-                                contentDescription = media.packageName,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize(),
-                            )
+                            }
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.width(12.dp))
-
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(10.dp))
-                        .clickable(enabled = interactionsEnabled) {
-                            haptics.click()
-                            onOpenMediaApp()
-                        },
+                if (centerWeight > 0.005f) {
+                    Spacer(modifier = Modifier.weight(centerWeight))
+                }
+            } else {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text(
-                        text = media.title,
-                        color = Color.White,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    if (media.artist.isNotBlank()) {
-                        Spacer(modifier = Modifier.height(2.dp))
+                    albumArtworkBox()
+
+                    Spacer(modifier = Modifier.width(12.dp))
+
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable(enabled = interactionsEnabled) {
+                                haptics.click()
+                                onOpenMediaApp()
+                            },
+                    ) {
                         Text(
-                            text = media.artist,
-                            color = Color.White.copy(alpha = 0.78f),
-                            fontSize = 12.sp,
+                            text = media.title,
+                            color = Color.White,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
-                    }
-                }
-
-                if (hasLyrics) {
-                    Spacer(modifier = Modifier.width(6.dp))
-                    CapsuleExpressiveSurface(
-                        enabled = interactionsEnabled,
-                        onClick = {
-                            haptics.click()
-                            onUserInteraction()
-                            showLyrics = !showLyrics
-                        },
-                        restCornerDp = 14f,
-                        pressedCornerDp = 7f,
-                        backgroundColor = if (showLyrics) primaryColor else Color.White.copy(alpha = 0.14f),
-                        modifier = Modifier.size(28.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Lyrics,
-                            contentDescription = stringResource(R.string.desc_toggle_lyrics),
-                            tint = if (showLyrics) Color.Black else Color.White,
-                            modifier = Modifier.size(15.dp),
-                        )
-                    }
-                }
-
-                if (media.audioOutputLabel.isNotBlank()) {
-                    Spacer(modifier = Modifier.width(6.dp))
-                    CapsuleExpressiveSurface(
-                        enabled = interactionsEnabled,
-                        onClick = {
-                            haptics.click()
-                            onUserInteraction()
-                            onOpenAudioOutput()
-                        },
-                        restCornerDp = 14f,
-                        pressedCornerDp = 7f,
-                        backgroundColor = primaryColor.copy(alpha = 0.22f),
-                        modifier = Modifier.height(28.dp),
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            modifier = Modifier.padding(horizontal = 8.dp),
-                        ) {
-                            Icon(
-                                imageVector = outputIconForKind(media.audioOutputKind),
-                                contentDescription = stringResource(R.string.desc_audio_output),
-                                tint = Color.White,
-                                modifier = Modifier.size(13.dp),
-                            )
+                        if (media.artist.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = media.audioOutputLabel,
-                                color = Color.White,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.SemiBold,
+                                text = media.artist,
+                                color = Color.White.copy(alpha = 0.78f),
+                                fontSize = 12.sp,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }
                     }
-                }
-            }
 
-            AnimatedContent(
-                targetState = showLyrics && hasLyrics,
-                transitionSpec = {
-                    fadeIn(tween(180)) togetherWith fadeOut(tween(140))
-                },
-                label = "mediaLyricsToggle",
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-            ) { showingLyrics ->
-                if (showingLyrics) {
-                    SyncedLyricsPane(
-                        lyrics = media.lyrics,
-                        positionMs = media.positionMs,
-                        durationMs = durationMs,
-                        isPlaying = media.isPlaying,
-                        primaryColor = primaryColor,
-                        interactionsEnabled = interactionsEnabled,
-                        onUserInteraction = onUserInteraction,
-                        onSeekTo = onSeekTo,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(top = 8.dp),
-                    )
-                } else {
-                    Column(
-                        verticalArrangement = Arrangement.SpaceBetween,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(top = 8.dp),
-                    ) {
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            CapsuleSlider(
-                                value = scrubProgress,
-                                onValueChange = { next ->
-                                    isScrubbing = true
-                                    scrubProgress = next
-                                },
-                                onValueChangeFinished = {
-                                    isScrubbing = false
-                                    onUserInteraction()
-                                    onSeekTo((scrubProgress * durationMs).toLong())
-                                },
-                                enabled = interactionsEnabled,
-                                onInteraction = onUserInteraction,
-                                colors = SliderDefaults.colors(
-                                    thumbColor = Color.White,
-                                    activeTrackColor = primaryColor,
-                                    inactiveTrackColor = Color.White.copy(alpha = 0.24f),
-                                ),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(24.dp),
+                    if (hasLyrics) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        CapsuleExpressiveSurface(
+                            enabled = interactionsEnabled,
+                            onClick = {
+                                haptics.click()
+                                onUserInteraction()
+                                showLyrics = !showLyrics
+                            },
+                            restCornerDp = 14f,
+                            pressedCornerDp = 7f,
+                            backgroundColor = if (showLyrics) primaryColor else Color.White.copy(alpha = 0.14f),
+                            modifier = Modifier.size(28.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Lyrics,
+                                contentDescription = stringResource(R.string.desc_toggle_lyrics),
+                                tint = if (showLyrics) Color.Black else Color.White,
+                                modifier = Modifier.size(15.dp),
                             )
+                        }
+                    }
 
+                    if (media.audioOutputLabel.isNotBlank()) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        CapsuleExpressiveSurface(
+                            enabled = interactionsEnabled,
+                            onClick = {
+                                haptics.click()
+                                onUserInteraction()
+                                onOpenAudioOutput()
+                            },
+                            restCornerDp = 14f,
+                            pressedCornerDp = 7f,
+                            backgroundColor = primaryColor.copy(alpha = 0.22f),
+                            modifier = Modifier.height(28.dp),
+                        ) {
                             Row(
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                modifier = Modifier.padding(horizontal = 8.dp),
                             ) {
-                                val displayedMs = (scrubProgress * durationMs).toLong()
-                                Text(
-                                    text = formatDuration(displayedMs),
-                                    color = Color.White.copy(alpha = 0.72f),
-                                    fontSize = 11.sp,
+                                Icon(
+                                    imageVector = outputIconForKind(media.audioOutputKind),
+                                    contentDescription = stringResource(R.string.desc_audio_output),
+                                    tint = Color.White,
+                                    modifier = Modifier.size(13.dp),
                                 )
                                 Text(
-                                    text = formatDuration(media.durationMs),
-                                    color = Color.White.copy(alpha = 0.72f),
-                                    fontSize = 11.sp,
+                                    text = media.audioOutputLabel,
+                                    color = Color.White,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
                                 )
                             }
                         }
+                    }
+                }
 
-                        Row(
-                            horizontalArrangement = Arrangement.SpaceEvenly,
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth(),
+                AnimatedContent(
+                    targetState = lyricsActive,
+                    transitionSpec = {
+                        fadeIn(tween(180)) togetherWith fadeOut(tween(140))
+                    },
+                    label = "mediaLyricsToggle",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                ) { showingLyrics ->
+                    if (showingLyrics) {
+                        SyncedLyricsPane(
+                            lyrics = media.lyrics,
+                            positionMs = media.positionMs,
+                            durationMs = durationMs,
+                            isPlaying = media.isPlaying,
+                            primaryColor = primaryColor,
+                            interactionsEnabled = interactionsEnabled,
+                            onUserInteraction = onUserInteraction,
+                            onSeekTo = onSeekTo,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(top = 8.dp),
+                        )
+                    } else {
+                        Column(
+                            verticalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(top = 8.dp),
                         ) {
-                            val expressiveTransportShapes = capsuleExpressiveIconButtonShapes(
-                                restRadius = 22.dp,
-                                pressedRadius = 10.dp,
-                            )
-                            val transportColors = IconButtonDefaults.filledTonalIconButtonColors(
-                                containerColor = Color.White.copy(alpha = 0.12f),
-                                contentColor = Color.White,
-                            )
-
-                            FilledTonalIconButton(
-                                enabled = interactionsEnabled,
-                                onClick = {
-                                    haptics.click()
-                                    onUserInteraction()
-                                    onSkipPrevious()
-                                },
-                                shapes = expressiveTransportShapes,
-                                colors = transportColors,
-                                modifier = Modifier.size(44.dp),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.SkipPrevious,
-                                    contentDescription = stringResource(R.string.desc_skip_previous),
-                                    modifier = Modifier.size(26.dp),
-                                )
-                            }
-
-                            // M3 Expressive rotating 7-sided cookie (playing) morphing smoothly into a Circle (paused)
-                            Box(
-                                contentAlignment = Alignment.Center,
-                                modifier = Modifier
-                                    .size(54.dp)
-                                    .clickable(
-                                        enabled = interactionsEnabled,
-                                        interactionSource = playPauseInteraction,
-                                        indication = null,
-                                        onClick = {
-                                            haptics.click()
-                                            onUserInteraction()
-                                            onTogglePlayPause()
-                                        },
-                                    ),
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .matchParentSize()
-                                        .graphicsLayer {
-                                            rotationZ = cookieRotationProvider()
-                                            scaleX = cookiePressScale
-                                            scaleY = cookiePressScale
-                                        }
-                                        .clip(MorphingCookieShape(morph = cookieMorph, progress = cookieStateMorph))
-                                        .background(Color.White),
-                                )
-                                AnimatedContent(
-                                    targetState = media.isPlaying,
-                                    transitionSpec = {
-                                        (fadeIn(tween(170)) + scaleIn(initialScale = 0.72f, animationSpec = tween(170))) togetherWith
-                                            (fadeOut(tween(110)) + scaleOut(targetScale = 0.72f, animationSpec = tween(110)))
-                                    },
-                                    label = "mediaPlayPauseGlyph",
-                                    modifier = Modifier.graphicsLayer {
-                                        scaleX = cookiePressScale
-                                        scaleY = cookiePressScale
-                                    },
-                                ) { playing ->
-                                    Icon(
-                                        imageVector = if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                                        contentDescription = stringResource(R.string.desc_play_pause),
-                                        tint = Color.Black,
-                                        modifier = Modifier.size(28.dp),
-                                    )
-                                }
-                            }
-
-                            FilledTonalIconButton(
-                                enabled = interactionsEnabled,
-                                onClick = {
-                                    haptics.click()
-                                    onUserInteraction()
-                                    onSkipNext()
-                                },
-                                shapes = expressiveTransportShapes,
-                                colors = transportColors,
-                                modifier = Modifier.size(44.dp),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.SkipNext,
-                                    contentDescription = stringResource(R.string.desc_skip_next),
-                                    modifier = Modifier.size(26.dp),
-                                )
-                            }
+                            seekbarBlock()
+                            transportRow()
                         }
                     }
                 }

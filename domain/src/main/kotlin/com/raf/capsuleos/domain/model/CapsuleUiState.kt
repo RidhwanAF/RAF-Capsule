@@ -10,6 +10,13 @@ enum class CameraAnchorPosition {
     RIGHT,
 }
 
+/** Which horizontal bezel holds the physical camera lens while the device is rotated to landscape. */
+enum class LandscapeCameraSide {
+    NONE,
+    LEFT,
+    RIGHT,
+}
+
 /** Preferred side for the separated circular status bubble relative to the main capsule. */
 enum class SatellitePosition {
     LEFT,
@@ -88,6 +95,7 @@ data class CardGestureConfig(
  * @property topOffsetDp Distance from screen top edge to cutout top edge in dp.
  * @property statusBarBottomDp Bottom edge of the system status bar in dp.
  * @property screenWidthDp Full logical screen width in dp.
+ * @property screenHeightDp Full logical screen height in dp.
  * @property holeCenterOffsetXDp Horizontal cutout offset from display center in dp (0 on centered cutouts).
  * @property screenTopCornerRadiusDp Measured hardware display top corner radius in dp for concentric expanded card rounding.
  */
@@ -97,8 +105,13 @@ data class CutoutGeometry(
     val topOffsetDp: Float = 20.8f,
     val statusBarBottomDp: Float = 80f,
     val screenWidthDp: Float = 412f,
+    val screenHeightDp: Float = 915f,
     val holeCenterOffsetXDp: Float = 0f,
     val screenTopCornerRadiusDp: Float = 42f,
+    val landscapeCameraSide: LandscapeCameraSide = LandscapeCameraSide.NONE,
+    val landscapeHoleCenterXDp: Float = 0f,
+    val landscapeHoleCenterYDp: Float = 206f,
+    val landscapeHoleEdgeInsetDp: Float = 20.8f,
 ) {
     /** Vertical center of the physical front camera hole in dp from the top of the screen. */
     val holeCenterYDp: Float
@@ -126,12 +139,14 @@ data class CapsulePreferences(
     val topOffsetAdjustDp: Float = 0f,
     val horizontalOffsetDp: Float = 0f,
     val expandedContentPaddingDp: Float = 18f,
+    val expandedCornerRadiusDp: Float = 0f,
     val hasAutoDetectedCamera: Boolean = false,
     val horizontalAutoCollapseDelayMs: Long = 6000L,
     val autoCollapseDelayMs: Long = 4000L,
     val mediaFollowGlobalAutoCollapse: Boolean = true,
     val mediaAutoCollapseDelayMs: Long = 15000L,
     val showOnLockScreen: Boolean = true,
+    val enableLandscapeMode: Boolean = true,
     val hideOnQsOpen: Boolean = true,
     val suppressSystemHeadsUp: Boolean = true,
     val enableNeuronGlow: Boolean = true,
@@ -191,6 +206,7 @@ data class CapsuleUiState(
     val isSatelliteGlowActive: Boolean = false,
     val isQsOpen: Boolean = false,
     val isKeyguardLocked: Boolean = false,
+    val isLandscape: Boolean = false,
     val swipeDirection: Int = 1,
     val cutout: CutoutGeometry = CutoutGeometry(),
     val preferences: CapsulePreferences = CapsulePreferences(),
@@ -215,6 +231,21 @@ data class CapsuleUiState(
      * measured [CutoutGeometry.holeCenterOffsetXDp], and [CapsulePreferences.horizontalOffsetDp].
      */
     fun resolveAnchorCenterXOffsetDp(): Float {
+        val maxReach = ((cutout.screenWidthDp * 0.5f) - (circleDiameterDp * 0.5f)).coerceAtLeast(0f)
+        if (isLandscape) {
+            // Portrait topOffsetAdjustDp (+ = inward from top edge) & belowStatusBar map to inward X from the side camera bezel
+            val isRightSide = cutout.landscapeCameraSide == LandscapeCameraSide.RIGHT
+            val inwardSign = if (isRightSide) -1f else 1f
+            val baseX = when {
+                preferences.belowStatusBar -> {
+                    val pastLensInset = cutout.landscapeHoleEdgeInsetDp + cutout.holeWidthDp + 4f + (circleDiameterDp * 0.5f)
+                    if (isRightSide) (cutout.screenWidthDp * 0.5f) - pastLensInset else -(cutout.screenWidthDp * 0.5f) + pastLensInset
+                }
+                cutout.landscapeCameraSide != LandscapeCameraSide.NONE -> cutout.landscapeHoleCenterXDp
+                else -> -maxReach + 16f
+            }
+            return (baseX + preferences.topOffsetAdjustDp * inwardSign).coerceIn(-maxReach, maxReach)
+        }
         val cornerMarginDp = 16f
         val cornerMag = ((cutout.screenWidthDp * 0.5f) - (circleDiameterDp * 0.5f) - cornerMarginDp)
             .coerceAtLeast(0f)
@@ -236,20 +267,36 @@ data class CapsuleUiState(
                 cornerMag
             }
         }
-        val maxReach = ((cutout.screenWidthDp * 0.5f) - (circleDiameterDp * 0.5f)).coerceAtLeast(0f)
         return (baseX + preferences.horizontalOffsetDp).coerceIn(-maxReach, maxReach)
     }
 
     /**
      * Top Y coordinate in dp so the 1:1 State 1 circle and State 2 pill are centered
-     * directly over the physical camera lens center (`cutout.holeCenterYDp`).
+     * directly over the physical camera lens center in portrait, and map portrait Start/Center/End
+     * (`LEFT -> BOTTOM`, `CENTER -> CENTER`, `RIGHT -> TOP`) + `horizontalOffsetDp` along the
+     * side camera bezel in landscape.
      */
     val anchorTopDp: Float
-        get() = if (preferences.belowStatusBar) {
-            (cutout.statusBarBottomDp + 2f + preferences.topOffsetAdjustDp).coerceAtLeast(2f)
-        } else {
-            (cutout.holeCenterYDp - (circleDiameterDp / 2f) + preferences.topOffsetAdjustDp)
-                .coerceAtLeast(0f)
+        get() = when {
+            isLandscape -> {
+                val edgeMarginDp = 16f
+                val maxTop = (cutout.screenHeightDp - circleDiameterDp - 4f).coerceAtLeast(4f)
+                val baseCenterY = when (preferences.cameraPosition) {
+                    CameraAnchorPosition.LEFT -> cutout.screenHeightDp - edgeMarginDp - (circleDiameterDp * 0.5f)
+                    CameraAnchorPosition.CENTER -> cutout.landscapeHoleCenterYDp
+                    CameraAnchorPosition.RIGHT -> edgeMarginDp + (circleDiameterDp * 0.5f)
+                }
+                // Portrait +horizontalOffsetDp moves toward End (Top in landscape); - moves toward Start (Bottom)
+                (baseCenterY - (circleDiameterDp * 0.5f) - preferences.horizontalOffsetDp)
+                    .coerceIn(4f, maxTop)
+            }
+            preferences.belowStatusBar -> {
+                (cutout.statusBarBottomDp + 2f + preferences.topOffsetAdjustDp).coerceAtLeast(2f)
+            }
+            else -> {
+                (cutout.holeCenterYDp - (circleDiameterDp / 2f) + preferences.topOffsetAdjustDp)
+                    .coerceAtLeast(0f)
+            }
         }
 
     /**

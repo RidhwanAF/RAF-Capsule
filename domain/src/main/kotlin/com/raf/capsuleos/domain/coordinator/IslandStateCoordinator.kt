@@ -170,8 +170,12 @@ class IslandStateCoordinator(
         when (event) {
             is CapsuleEvent.OrientationChanged -> {
                 if (isLandscape != event.isLandscape) {
+                    val wasHidden = isHiddenByEnvironment
                     isLandscape = event.isLandscape
-                    syncHiddenOrActive()
+                    _uiState.update { current -> current.copy(isLandscape = isLandscape) }
+                    if (wasHidden != isHiddenByEnvironment) {
+                        syncHiddenOrActive()
+                    }
                 }
             }
             is CapsuleEvent.ScreenInactiveChanged -> {
@@ -315,7 +319,7 @@ class IslandStateCoordinator(
     }
 
     private val isHiddenByEnvironment: Boolean
-        get() = isLandscape || isScreenInactive
+        get() = isScreenInactive || (isLandscape && !_uiState.value.preferences.enableLandscapeMode)
 
     private val isRestrictedToRingByQs: Boolean
         get() = (isQsOpen && _uiState.value.preferences.hideOnQsOpen) ||
@@ -1162,16 +1166,46 @@ class IslandStateCoordinator(
         }
     }
 
+    private fun satelliteSourceForContent(content: CapsuleContent): SatelliteSource? = when (content) {
+        is CapsuleContent.Torch -> SatelliteSource.TORCH
+        is CapsuleContent.Hotspot -> SatelliteSource.HOTSPOT
+        is CapsuleContent.LiveActivity -> SatelliteSource.LIVE_ACTIVITY
+        is CapsuleContent.SystemStatus -> when (content.kind) {
+            SystemStatusKind.AIRPLANE_MODE -> SatelliteSource.AIRPLANE_MODE
+            SystemStatusKind.DO_NOT_DISTURB -> SatelliteSource.DO_NOT_DISTURB
+            SystemStatusKind.BATTERY_SAVER -> SatelliteSource.BATTERY_SAVER
+            SystemStatusKind.VPN -> SatelliteSource.VPN
+            SystemStatusKind.RINGER_MUTED -> SatelliteSource.RINGER_MUTED
+            SystemStatusKind.DATA_SAVER -> SatelliteSource.DATA_SAVER
+        }
+        else -> null
+    }
+
     private fun handleCycleLeftSatellite(direction: Int) {
         if (isHiddenByEnvironment || isRestrictedToRingByQs) return
-        val prefs = _uiState.value.preferences
+        val currentState = _uiState.value
+        val prefs = currentState.preferences
         val available = availableSatelliteItems(prefs)
         if (available.isEmpty()) return
 
         val dir = if (direction < 0) -1 else 1
-        val isSatelliteExpanded = _uiState.value.visualState == CapsuleVisualState.STATE3_FULL_EXPANDED &&
-            _uiState.value.isExpandedFromSatellite
-        if (available.size <= 1) {
+        val expandedContentSource = if (currentState.visualState == CapsuleVisualState.STATE3_FULL_EXPANDED) {
+            satelliteSourceForContent(currentState.content)
+        } else {
+            null
+        }
+        val isSatelliteExpanded = currentState.visualState == CapsuleVisualState.STATE3_FULL_EXPANDED &&
+            (currentState.isExpandedFromSatellite || expandedContentSource != null)
+        val currentSource = if (isSatelliteExpanded) {
+            expandedContentSource ?: currentState.leftSatellite?.source
+        } else {
+            currentState.leftSatellite?.source
+        }
+        val curIdx = available.indexOfFirst { it.source == currentSource }
+        // Only jiggle when the currently displayed card is the sole active satellite item remaining.
+        // If the current item was just deactivated (e.g. Flashlight turned OFF -> curIdx == -1)
+        // while another satellite item is still active, allow cycling directly into it.
+        if (available.size <= 1 && curIdx >= 0) {
             satelliteJiggleSeq++
             if (isSatelliteExpanded) {
                 swipeJiggleSeq++
@@ -1187,9 +1221,11 @@ class IslandStateCoordinator(
             return
         }
 
-        val currentSource = _uiState.value.leftSatellite?.source
-        val curIdx = available.indexOfFirst { it.source == currentSource }.coerceAtLeast(0)
-        val nextIdx = (curIdx + dir).mod(available.size)
+        val nextIdx = if (curIdx < 0) {
+            if (dir > 0) 0 else available.lastIndex
+        } else {
+            (curIdx + dir).mod(available.size)
+        }
         val target = available[nextIdx]
         selectedSatelliteSource = target.source
         satelliteSwipeSeq++

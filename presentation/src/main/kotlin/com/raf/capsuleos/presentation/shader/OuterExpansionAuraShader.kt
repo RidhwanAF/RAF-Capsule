@@ -44,6 +44,7 @@ object OuterExpansionAuraShader {
         uniform float uCornerRadius;
         uniform float uSpreadPx;
         uniform float uIntensity;
+        uniform float uEdgeMode;
         uniform float4 uColorA;
         uniform float4 uColorB;
 
@@ -58,12 +59,24 @@ object OuterExpansionAuraShader {
                 return half4(0.0);
             }
 
+            // Remap coordinates when anchored to the LEFT (1.0) or RIGHT (2.0) bezel in Landscape
+            float2 coord = fragCoord;
             float w = uResolution.x;
             float h = uResolution.y;
-            float u = clamp(fragCoord.x / w, 0.0, 1.0);
-            float v = clamp(fragCoord.y / h, 0.0, 1.0);
+            if (uEdgeMode > 0.5 && uEdgeMode < 1.5) {
+                coord = float2(fragCoord.y, fragCoord.x);
+                w = uResolution.y;
+                h = uResolution.x;
+            } else if (uEdgeMode >= 1.5) {
+                coord = float2(fragCoord.y, uResolution.x - fragCoord.x);
+                w = uResolution.y;
+                h = uResolution.x;
+            }
 
-            // Top-to-bottom vertical fade: crisp at top, 100% transparent before bottom edge
+            float u = clamp(coord.x / w, 0.0, 1.0);
+            float v = clamp(coord.y / h, 0.0, 1.0);
+
+            // Edge-to-interior fade: crisp at camera bezel, 100% transparent before opposite edge
             float vTopBoost = 1.0 - smoothstep(0.0, 0.96, v);
             float verticalMask = pow(clamp(vTopBoost, 0.0, 1.0), 1.45);
             if (verticalMask <= 0.002) {
@@ -74,7 +87,7 @@ object OuterExpansionAuraShader {
             float rTop = clamp(uCornerRadius, 8.0, min(w, h) * 0.48);
             float rBot = min(rTop * 0.85, h * 0.35);
             float2 halfSize = float2(w * 0.5, h * 0.5);
-            float2 pBox = fragCoord - halfSize;
+            float2 pBox = coord - halfSize;
             float rActive = (pBox.y < 0.0) ? rTop : rBot;
             float2 q = abs(pBox) - halfSize + float2(rActive, rActive);
             float sd = min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - rActive;
@@ -110,7 +123,7 @@ object OuterExpansionAuraShader {
                 * smoothstep(dynamicReach, dynamicReach * 0.12, dOuterEdge);
             if (clippedWaveMask > 0.01) {
                 float spacing = 9.0;
-                float2 gridUv = fragCoord / spacing;
+                float2 gridUv = coord / spacing;
                 float rowShift = mod(floor(gridUv.y), 2.0) * 0.5;
                 float2 shiftedUv = float2(gridUv.x + rowShift, gridUv.y);
                 float2 cellId = floor(shiftedUv);
@@ -153,6 +166,7 @@ object OuterExpansionAuraShader {
         cornerRadiusPx: Float,
         spreadPx: Float,
         intensity: Float,
+        edgeMode: Int = 0,
         colorA: Color,
         colorB: Color,
     ) {
@@ -161,6 +175,7 @@ object OuterExpansionAuraShader {
         shader.setFloatUniform("uCornerRadius", cornerRadiusPx.coerceAtLeast(0f))
         shader.setFloatUniform("uSpreadPx", spreadPx.coerceAtLeast(16f))
         shader.setFloatUniform("uIntensity", intensity.coerceIn(0f, 1f))
+        shader.setFloatUniform("uEdgeMode", edgeMode.toFloat())
         shader.setFloatUniform("uColorA", colorA.red, colorA.green, colorA.blue, colorA.alpha)
         shader.setFloatUniform("uColorB", colorB.red, colorB.green, colorB.blue, colorB.alpha)
     }
@@ -230,6 +245,7 @@ fun OuterScreenExpansionAura(
     colorB: Color,
     screenCornerRadiusDp: Float = 36f,
     spreadDp: Float = 72f,
+    edgeMode: Int = 0,
 ) {
     val animatedIntensity by animateFloatAsState(
         targetValue = if (visible) 1f else 0f,
@@ -277,6 +293,7 @@ fun OuterScreenExpansionAura(
                         cornerRadiusPx = cornerPx,
                         spreadPx = spreadPx,
                         intensity = animatedIntensity,
+                        edgeMode = edgeMode,
                         colorA = animatedColorA,
                         colorB = animatedColorB,
                     )

@@ -18,6 +18,7 @@ import androidx.navigation3.ui.LocalNavAnimatedContentScope
 import androidx.navigation3.ui.NavDisplay
 import com.raf.capsuleos.presentation.appsettings.AppSettingsScreen
 import com.raf.capsuleos.presentation.customization.CustomizationScreen
+import com.raf.capsuleos.presentation.permissions.PermissionsScreen
 import com.raf.capsuleos.presentation.setup.SetupScreen
 import com.raf.capsuleos.presentation.simulation.SimulationScreen
 
@@ -96,6 +97,11 @@ fun CapsuleNavHost(
                                 backStack.add(CapsuleRoute.Simulation)
                             }
                         },
+                        onOpenPermissions = {
+                            if (backStack.lastOrNull() != CapsuleRoute.Permissions) {
+                                backStack.add(CapsuleRoute.Permissions)
+                            }
+                        },
                         onOpenAppSettings = {
                             if (backStack.lastOrNull() != CapsuleRoute.AppSettings) {
                                 backStack.add(CapsuleRoute.AppSettings)
@@ -137,6 +143,13 @@ fun CapsuleNavHost(
                 }
                 entry<CapsuleRoute.Simulation> {
                     SimulationScreen(
+                        sharedTransitionScope = this@SharedTransitionLayout,
+                        animatedVisibilityScope = LocalNavAnimatedContentScope.current,
+                        onBack = popBack,
+                    )
+                }
+                entry<CapsuleRoute.Permissions> {
+                    PermissionsScreen(
                         sharedTransitionScope = this@SharedTransitionLayout,
                         animatedVisibilityScope = LocalNavAnimatedContentScope.current,
                         onBack = popBack,

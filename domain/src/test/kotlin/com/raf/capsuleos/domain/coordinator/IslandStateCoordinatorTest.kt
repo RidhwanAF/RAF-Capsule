@@ -330,6 +330,52 @@ class IslandStateCoordinatorTest {
         }
 
     @Test
+    fun `given active media and expanded card, when rotating to landscape and back, then content follows seamlessly without hiding`() =
+        testScope.runTest {
+            val coordinator = createCoordinator()
+            coordinator.onEvent(CapsuleEvent.MediaUpdated(sampleMedia()))
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE2_HORIZONTAL_PILL, coordinator.uiState.value.visualState)
+            assertFalse(coordinator.uiState.value.isLandscape)
+
+            coordinator.onEvent(CapsuleEvent.OrientationChanged(isLandscape = true))
+            runCurrent()
+            assertTrue(coordinator.uiState.value.isLandscape)
+            assertEquals(CapsuleVisualState.STATE2_HORIZONTAL_PILL, coordinator.uiState.value.visualState)
+            assertTrue(coordinator.uiState.value.content is CapsuleContent.Media)
+
+            coordinator.onEvent(CapsuleEvent.ExpandToFull)
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE3_FULL_EXPANDED, coordinator.uiState.value.visualState)
+            assertTrue(coordinator.uiState.value.isLandscape)
+
+            coordinator.onEvent(CapsuleEvent.OrientationChanged(isLandscape = false))
+            runCurrent()
+            assertFalse(coordinator.uiState.value.isLandscape)
+            assertEquals(CapsuleVisualState.STATE3_FULL_EXPANDED, coordinator.uiState.value.visualState)
+            assertTrue(coordinator.uiState.value.content is CapsuleContent.Media)
+        }
+
+    @Test
+    fun `given enableLandscapeMode disabled, when rotating to landscape, then hides capsule until re-enabled or back in portrait`() =
+        testScope.runTest {
+            val coordinator = createCoordinator()
+            coordinator.updatePreferences(CapsulePreferences(enableLandscapeMode = false))
+            coordinator.onEvent(CapsuleEvent.MediaUpdated(sampleMedia()))
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE2_HORIZONTAL_PILL, coordinator.uiState.value.visualState)
+
+            coordinator.onEvent(CapsuleEvent.OrientationChanged(isLandscape = true))
+            runCurrent()
+            assertTrue(coordinator.uiState.value.isLandscape)
+            assertEquals(CapsuleVisualState.HIDDEN_SYSTEM, coordinator.uiState.value.visualState)
+
+            coordinator.updatePreferences(CapsulePreferences(enableLandscapeMode = true))
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE2_HORIZONTAL_PILL, coordinator.uiState.value.visualState)
+        }
+
+    @Test
     fun `given now brief expanded, when volume updates or torch enables, then updates live and morphs to torch card`() =
         testScope.runTest {
             val coordinator = createCoordinator()
@@ -1688,6 +1734,47 @@ class IslandStateCoordinatorTest {
             assertEquals(CapsuleVisualState.STATE3_FULL_EXPANDED, coordinator.uiState.value.visualState)
             assertTrue(coordinator.uiState.value.isExpandedFromSatellite)
             assertTrue(coordinator.uiState.value.content is CapsuleContent.Torch)
+        }
+
+    @Test
+    fun `given 2 satellite items expanded on torch, when torch turned off, then cycling still switches to remaining active item`() =
+        runTest {
+            val coordinator = createCoordinator()
+            coordinator.onEvent(
+                CapsuleEvent.TorchUpdated(
+                    CapsuleContent.Torch(isEnabled = true, strengthLevel = 3, maxStrengthLevel = 5),
+                ),
+            )
+            coordinator.onEvent(
+                CapsuleEvent.HotspotUpdated(
+                    CapsuleContent.Hotspot(isEnabled = true, connectedClients = 1, ssid = "Pixel"),
+                ),
+            )
+            runCurrent()
+
+            coordinator.onEvent(CapsuleEvent.ExpandLeftSatellite)
+            runCurrent()
+            assertTrue(coordinator.uiState.value.content is CapsuleContent.Torch)
+            assertTrue(coordinator.uiState.value.isExpandedFromSatellite)
+
+            // User turns off Flashlight while expanded; Hotspot remains active in satellite
+            coordinator.onEvent(
+                CapsuleEvent.TorchUpdated(
+                    CapsuleContent.Torch(isEnabled = false, strengthLevel = 1, maxStrengthLevel = 5),
+                ),
+            )
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE3_FULL_EXPANDED, coordinator.uiState.value.visualState)
+            assertTrue(coordinator.uiState.value.content is CapsuleContent.Torch)
+            assertEquals(1, coordinator.uiState.value.leftSatellite?.totalCount)
+            assertEquals(SatelliteSource.HOTSPOT, coordinator.uiState.value.leftSatellite?.source)
+
+            // Swiping to next/prev satellite item must still switch to the remaining active Hotspot
+            coordinator.onEvent(CapsuleEvent.CycleLeftSatellite(direction = 1))
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE3_FULL_EXPANDED, coordinator.uiState.value.visualState)
+            assertTrue(coordinator.uiState.value.isExpandedFromSatellite)
+            assertTrue(coordinator.uiState.value.content is CapsuleContent.Hotspot)
         }
 
     private fun sampleMedia(): CapsuleContent.Media =

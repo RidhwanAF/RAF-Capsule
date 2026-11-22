@@ -145,21 +145,23 @@ internal fun computeSidePillGeometry(
     cutout: CutoutGeometry,
     anchorPosition: CameraAnchorPosition = CameraAnchorPosition.CENTER,
     circleDiameterDp: Float = cutout.holeWidthDp + 12f,
+    isLandscape: Boolean = false,
 ): SidePillGeometry {
+    val effectiveAnchor = if (isLandscape) CameraAnchorPosition.CENTER else anchorPosition
     val estimatedRightDp = estimateWrappedRightWingDp(content)
-    val cutoutGap = if (anchorPosition == CameraAnchorPosition.CENTER) {
-        cutout.holeWidthDp + 8f
-    } else {
-        circleDiameterDp
+    val cutoutGap = when {
+        isLandscape -> 10f
+        effectiveAnchor == CameraAnchorPosition.CENTER -> cutout.holeWidthDp + 8f
+        else -> circleDiameterDp
     }
-    val rawIconWing = if (anchorPosition == CameraAnchorPosition.CENTER) PILL_SLOT_DP else CORNER_ICON_WING_DP
+    val rawIconWing = if (effectiveAnchor == CameraAnchorPosition.CENTER) PILL_SLOT_DP else CORNER_ICON_WING_DP
     val maxTotal = (cutout.screenWidthDp - 24f).coerceAtLeast(160f)
     val availableWings = (maxTotal - cutoutGap).coerceAtLeast(PILL_SLOT_DP * 1.5f)
     val scale = (availableWings / (rawIconWing + estimatedRightDp)).coerceAtMost(1f)
     val scaledIcon = rawIconWing * scale
     val scaledInfo = estimatedRightDp * scale
     return SidePillGeometry(
-        anchorPosition = anchorPosition,
+        anchorPosition = effectiveAnchor,
         leftWingDp = scaledIcon,
         cutoutGapDp = cutoutGap,
         rightWingDp = scaledInfo,
@@ -230,21 +232,44 @@ fun State2HorizontalPill(
     cutout: CutoutGeometry,
     anchorPosition: CameraAnchorPosition = CameraAnchorPosition.CENTER,
     circleDiameterDp: Float = cutout.holeWidthDp + 12f,
+    isLandscape: Boolean = false,
     horizontalMediaGlowStyle: HorizontalMediaGlowStyle = HorizontalMediaGlowStyle.OFF,
     mediaAnimationColorMode: MediaAnimationColorMode = MediaAnimationColorMode.ALBUM_COLOR,
     swipeDirection: Int,
     manualSwipeSeq: Int,
     enableAlbumSharedTransition: Boolean = true,
+    showWaterWave: Boolean = true,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
 ) {
     val primaryColor = MaterialTheme.colorScheme.primary
     val tertiaryColor = MaterialTheme.colorScheme.tertiary
-    val geom = computeSidePillGeometry(
+    val targetGeom = computeSidePillGeometry(
         content = content,
         cutout = cutout,
         anchorPosition = anchorPosition,
         circleDiameterDp = circleDiameterDp,
+        isLandscape = isLandscape,
+    )
+    val animatedGapDp by animateFloatAsState(
+        targetValue = targetGeom.cutoutGapDp,
+        animationSpec = spring(dampingRatio = 0.80f, stiffness = 420f),
+        label = "state2CutoutGap",
+    )
+    val animatedLeftWingDp by animateFloatAsState(
+        targetValue = targetGeom.leftWingDp,
+        animationSpec = spring(dampingRatio = 0.80f, stiffness = 420f),
+        label = "state2LeftWing",
+    )
+    val animatedRightWingDp by animateFloatAsState(
+        targetValue = targetGeom.rightWingDp,
+        animationSpec = spring(dampingRatio = 0.80f, stiffness = 420f),
+        label = "state2RightWing",
+    )
+    val geom = targetGeom.copy(
+        leftWingDp = animatedLeftWingDp,
+        cutoutGapDp = animatedGapDp,
+        rightWingDp = animatedRightWingDp,
     )
     val snapshot = State2SwipeSnapshot(
         swipeSeq = manualSwipeSeq,
@@ -256,7 +281,7 @@ fun State2HorizontalPill(
         contentAlignment = Alignment.Center,
         modifier = modifier.fillMaxSize(),
     ) {
-        if (content is CapsuleContent.Charging) {
+        if (showWaterWave && content is CapsuleContent.Charging) {
             ChargingWaterWaveFill(
                 batteryPercent = content.batteryPercent,
                 primaryColor = primaryColor,
@@ -911,7 +936,7 @@ private fun MarqueeValueText(
 }
 
 @Composable
-private fun ChargingWaterWaveFill(
+internal fun ChargingWaterWaveFill(
     modifier: Modifier = Modifier,
     batteryPercent: Int,
     primaryColor: Color,

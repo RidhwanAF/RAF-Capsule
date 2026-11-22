@@ -74,6 +74,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -98,6 +99,9 @@ fun QuickHubExpandedContent(
     modifier: Modifier = Modifier,
     brief: CapsuleContent.NowBrief,
     topClearanceDp: Float,
+    startClearanceDp: Float = 0f,
+    endClearanceDp: Float = 0f,
+    isLandscape: Boolean = false,
     contentPaddingDp: Float = 18f,
     interactionsEnabled: Boolean = true,
     sharedTransitionScope: SharedTransitionScope,
@@ -117,211 +121,41 @@ fun QuickHubExpandedContent(
     val activeStream = brief.volume.streams.firstOrNull { it.streamType == brief.volume.activeStream }
         ?: brief.volume.streams.firstOrNull { it.streamType == AudioStreamType.MEDIA }
         ?: brief.volume.streams.firstOrNull()
+    val torchTileBg by animateColorAsState(
+        targetValue = if (brief.torch.isEnabled) primary.copy(alpha = 0.24f) else Color.White.copy(alpha = 0.10f),
+        animationSpec = tween(durationMillis = 220),
+        label = "hubTorchTileBg",
+    )
+    val torchCircleBg by animateColorAsState(
+        targetValue = if (brief.torch.isEnabled) primary else Color.White.copy(alpha = 0.14f),
+        animationSpec = tween(durationMillis = 220),
+        label = "hubTorchCircleBg",
+    )
+    val torchCircleTint by animateColorAsState(
+        targetValue = if (brief.torch.isEnabled) Color.Black else Color.White,
+        animationSpec = tween(durationMillis = 220),
+        label = "hubTorchTint",
+    )
 
-    Column(
-        verticalArrangement = Arrangement.SpaceBetween,
-        modifier = modifier
-            .fillMaxSize()
-            .padding(
-                start = contentPaddingDp.dp,
-                end = contentPaddingDp.dp,
-                top = topClearanceDp.dp,
-                bottom = (contentPaddingDp + 2f).coerceAtLeast(12f).dp,
-            ),
-    ) {
-        // Header + At-a-Glance weather/notification count + compact Alarm & Battery/Live chip
-        Row(
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Column(modifier = Modifier.weight(1f).padding(end = 10.dp)) {
-                Text(
-                    text = stringResource(R.string.title_now_brief),
-                    color = primary,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                AtAGlanceSummaryRow(
-                    brief = brief,
-                    primary = primary,
-                    interactionsEnabled = interactionsEnabled,
-                    onOpenNotificationShade = {
-                        localHapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
-                        onOpenNotificationShade()
-                    },
-                )
-            }
+    val autoActive = brief.brightness.isAuto
+    var autoSpinCycles by remember { mutableIntStateOf(0) }
+    val autoBtnBg by animateColorAsState(
+        targetValue = if (autoActive) primary.copy(alpha = 0.24f) else Color.White.copy(alpha = 0.12f),
+        animationSpec = tween(durationMillis = 220),
+        label = "autoBrightnessBtnBg",
+    )
+    val autoBtnTint by animateColorAsState(
+        targetValue = if (autoActive) primary else Color.White.copy(alpha = 0.88f),
+        animationSpec = tween(durationMillis = 220),
+        label = "autoBrightnessBtnTint",
+    )
+    val autoIconRotation by animateFloatAsState(
+        targetValue = autoSpinCycles * 360f,
+        animationSpec = spring(dampingRatio = 0.72f, stiffness = 360f),
+        label = "autoBrightnessSpin",
+    )
 
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                CapsuleExpressiveSurface(
-                    enabled = interactionsEnabled,
-                    onClick = {
-                        localHapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
-                        onOpenClock()
-                    },
-                    restCornerDp = 12f,
-                    pressedCornerDp = 7f,
-                    backgroundColor = Color.Transparent,
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Alarm,
-                            contentDescription = stringResource(R.string.desc_alarm_icon),
-                            tint = if (brief.nextAlarmLabel != null) primary else Color.White.copy(alpha = 0.52f),
-                            modifier = Modifier.size(14.dp),
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = brief.nextAlarmLabel ?: stringResource(R.string.label_no_alarm),
-                            color = if (brief.nextAlarmLabel != null) Color.White.copy(alpha = 0.88f) else Color.White.copy(alpha = 0.56f),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium,
-                            maxLines = 1,
-                        )
-                    }
-                }
-            }
-        }
-
-        // Quick Action Row: Compact Expressive Flashlight Left + Expressive Lock Screen Right
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            val torchTileBg by animateColorAsState(
-                targetValue = if (brief.torch.isEnabled) primary.copy(alpha = 0.24f) else Color.White.copy(alpha = 0.10f),
-                animationSpec = tween(durationMillis = 220),
-                label = "hubTorchTileBg",
-            )
-            val torchCircleBg by animateColorAsState(
-                targetValue = if (brief.torch.isEnabled) primary else Color.White.copy(alpha = 0.14f),
-                animationSpec = tween(durationMillis = 220),
-                label = "hubTorchCircleBg",
-            )
-            val torchCircleTint by animateColorAsState(
-                targetValue = if (brief.torch.isEnabled) Color.Black else Color.White,
-                animationSpec = tween(durationMillis = 220),
-                label = "hubTorchTint",
-            )
-
-            CapsuleExpressiveSurface(
-                onClick = {
-                    localHapticFeedback.performHapticFeedback(
-                        if (brief.torch.isEnabled) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn,
-                    )
-                    onUserInteraction()
-                    onToggleTorch(!brief.torch.isEnabled)
-                },
-                restCornerDp = 22f,
-                pressedCornerDp = 10f,
-                backgroundColor = torchTileBg,
-                contentAlignment = Alignment.CenterStart,
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(vertical = 1.dp),
-            ) {
-                with(sharedTransitionScope) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                    ) {
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .sharedElement(
-                                    sharedContentState = rememberSharedContentState(key = "torch_icon_box"),
-                                    animatedVisibilityScope = animatedVisibilityScope,
-                                )
-                                .size(28.dp)
-                                .clip(CircleShape)
-                                .background(torchCircleBg),
-                        ) {
-                            AnimatedContent(
-                                targetState = brief.torch.isEnabled,
-                                transitionSpec = {
-                                    (fadeIn(tween(180)) + scaleIn(initialScale = 0.72f, animationSpec = tween(180))) togetherWith
-                                        (fadeOut(tween(130)) + scaleOut(targetScale = 0.72f, animationSpec = tween(130)))
-                                },
-                                label = "hubTorchIcon",
-                            ) { enabled ->
-                                Icon(
-                                    imageVector = if (enabled) Icons.Rounded.FlashlightOn else Icons.Rounded.FlashlightOff,
-                                    contentDescription = stringResource(R.string.desc_torch_icon),
-                                    tint = torchCircleTint,
-                                    modifier = Modifier.size(16.dp),
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = stringResource(R.string.label_torch),
-                            color = Color.White,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.sharedElement(
-                                sharedContentState = rememberSharedContentState(key = "torch_label"),
-                                animatedVisibilityScope = animatedVisibilityScope,
-                            ),
-                        )
-                    }
-                }
-            }
-
-            CapsuleExpressiveSurface(
-                enabled = interactionsEnabled,
-                onClick = {
-                    localHapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
-                    onLockScreen()
-                },
-                restCornerDp = 22f,
-                pressedCornerDp = 10f,
-                backgroundColor = Color.White.copy(alpha = 0.10f),
-                contentAlignment = Alignment.CenterStart,
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(vertical = 1.dp),
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                ) {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .size(28.dp)
-                            .clip(CircleShape)
-                            .background(Color.White.copy(alpha = 0.14f)),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Lock,
-                            contentDescription = stringResource(R.string.desc_lock_screen),
-                            tint = Color.White,
-                            modifier = Modifier.size(16.dp),
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = stringResource(R.string.action_lock_screen),
-                        color = Color.White,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-        }
-
-        // Volume Row: Smooth slider Left + M3 Expressive Ringer Mode cycle button Right
+    val volumeRowContent: @Composable () -> Unit = {
         if (activeStream != null) {
             val max = activeStream.max.coerceAtLeast(1)
             val isMuted = activeStream.current <= 0 || brief.volume.ringerMode == RingerModeState.SILENT
@@ -401,26 +235,9 @@ fun QuickHubExpandedContent(
                 }
             }
         }
+    }
 
-        // Brightness Row: Smooth slider Left + M3 Expressive Auto-Brightness toggle Right
-        val autoActive = brief.brightness.isAuto
-        var autoSpinCycles by remember { mutableIntStateOf(0) }
-        val autoBtnBg by animateColorAsState(
-            targetValue = if (autoActive) primary.copy(alpha = 0.24f) else Color.White.copy(alpha = 0.12f),
-            animationSpec = tween(durationMillis = 220),
-            label = "autoBrightnessBtnBg",
-        )
-        val autoBtnTint by animateColorAsState(
-            targetValue = if (autoActive) primary else Color.White.copy(alpha = 0.88f),
-            animationSpec = tween(durationMillis = 220),
-            label = "autoBrightnessBtnTint",
-        )
-        val autoIconRotation by animateFloatAsState(
-            targetValue = autoSpinCycles * 360f,
-            animationSpec = spring(dampingRatio = 0.72f, stiffness = 360f),
-            label = "autoBrightnessSpin",
-        )
-
+    val brightnessRowContent: @Composable () -> Unit = {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth(),
@@ -484,6 +301,498 @@ fun QuickHubExpandedContent(
                         .graphicsLayer { rotationZ = autoIconRotation },
                 )
             }
+        }
+    }
+
+    if (isLandscape) {
+        val batteryColor = capsuleBatteryAccentColor(
+            batteryPercent = brief.batteryPercent,
+            isCharging = brief.isCharging,
+            primaryColor = primary,
+        )
+        val torchStatusLabel = when {
+            !brief.torch.isEnabled -> "OFF"
+            brief.torch.maxStrengthLevel > 1 -> "${brief.torch.brightnessPercent}%"
+            else -> "ON"
+        }
+
+        Column(
+            verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterVertically),
+            modifier = modifier
+                .fillMaxSize()
+                .padding(
+                    start = (contentPaddingDp + startClearanceDp).dp,
+                    end = (contentPaddingDp + endClearanceDp).dp,
+                    top = topClearanceDp.dp,
+                    bottom = (contentPaddingDp + 2f).coerceAtLeast(12f).dp,
+                ),
+        ) {
+            // 1. Unified At-a-Glance Bento Card (Battery + Weather + Notifications + Next Alarm)
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(Color.White.copy(alpha = 0.08f))
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Icon(
+                            imageVector = segmentedBatteryIconForLevel(brief.batteryPercent),
+                            contentDescription = stringResource(R.string.desc_battery_icon),
+                            tint = batteryColor,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        if (brief.isCharging) {
+                            Icon(
+                                imageVector = Icons.Rounded.Bolt,
+                                contentDescription = stringResource(R.string.label_charging),
+                                tint = batteryColor,
+                                modifier = Modifier.size(14.dp),
+                            )
+                        }
+                        Text(
+                            text = "${brief.batteryPercent}%",
+                            color = if (brief.isCharging) batteryColor else Color.White.copy(alpha = 0.90f),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                        )
+                    }
+
+                    brief.weather?.let { weather ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Icon(
+                                imageVector = weatherIconForKind(weather.conditionKind),
+                                contentDescription = stringResource(R.string.desc_weather_icon),
+                                tint = primary.copy(alpha = 0.92f),
+                                modifier = Modifier.size(14.dp),
+                            )
+                            Text(
+                                text = weather.formattedBadge,
+                                color = Color.White.copy(alpha = 0.90f),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    if (brief.activeNotificationCount > 0) {
+                        CapsuleExpressiveSurface(
+                            enabled = interactionsEnabled,
+                            onClick = {
+                                localHapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
+                                onOpenNotificationShade()
+                            },
+                            restCornerDp = 12f,
+                            pressedCornerDp = 7f,
+                            backgroundColor = primary.copy(alpha = 0.18f),
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Notifications,
+                                    contentDescription = stringResource(R.string.desc_notification_count),
+                                    tint = primary,
+                                    modifier = Modifier.size(13.dp),
+                                )
+                                Spacer(modifier = Modifier.width(5.dp))
+                                Text(
+                                    text = pluralStringResource(
+                                        R.plurals.label_notification_count_summary,
+                                        brief.activeNotificationCount,
+                                        brief.activeNotificationCount,
+                                    ),
+                                    color = primary,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    }
+
+                    CapsuleExpressiveSurface(
+                        enabled = interactionsEnabled,
+                        onClick = {
+                            localHapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
+                            onOpenClock()
+                        },
+                        restCornerDp = 12f,
+                        pressedCornerDp = 7f,
+                        backgroundColor = Color.White.copy(alpha = 0.08f),
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Alarm,
+                                contentDescription = stringResource(R.string.desc_alarm_icon),
+                                tint = if (brief.nextAlarmLabel != null) primary else Color.White.copy(alpha = 0.52f),
+                                modifier = Modifier.size(13.dp),
+                            )
+                            Spacer(modifier = Modifier.width(5.dp))
+                            Text(
+                                text = brief.nextAlarmLabel ?: stringResource(R.string.label_no_alarm),
+                                color = if (brief.nextAlarmLabel != null) Color.White.copy(alpha = 0.90f) else Color.White.copy(alpha = 0.56f),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+            }
+
+            // 2. Single-Column Full-Width Quick Actions (Flashlight + Lock Screen)
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                CapsuleExpressiveSurface(
+                    onClick = {
+                        localHapticFeedback.performHapticFeedback(
+                            if (brief.torch.isEnabled) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn,
+                        )
+                        onUserInteraction()
+                        onToggleTorch(!brief.torch.isEnabled)
+                    },
+                    restCornerDp = 22f,
+                    pressedCornerDp = 10f,
+                    backgroundColor = torchTileBg,
+                    contentAlignment = Alignment.CenterStart,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(44.dp),
+                ) {
+                    with(sharedTransitionScope) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp),
+                        ) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .sharedElement(
+                                        sharedContentState = rememberSharedContentState(key = "torch_icon_box"),
+                                        animatedVisibilityScope = animatedVisibilityScope,
+                                    )
+                                    .size(28.dp)
+                                    .clip(CircleShape)
+                                    .background(torchCircleBg),
+                            ) {
+                                AnimatedContent(
+                                    targetState = brief.torch.isEnabled,
+                                    transitionSpec = {
+                                        (fadeIn(tween(180)) + scaleIn(initialScale = 0.72f, animationSpec = tween(180))) togetherWith
+                                            (fadeOut(tween(130)) + scaleOut(targetScale = 0.72f, animationSpec = tween(130)))
+                                    },
+                                    label = "hubTorchIcon",
+                                ) { enabled ->
+                                    Icon(
+                                        imageVector = if (enabled) Icons.Rounded.FlashlightOn else Icons.Rounded.FlashlightOff,
+                                        contentDescription = stringResource(R.string.desc_torch_icon),
+                                        tint = torchCircleTint,
+                                        modifier = Modifier.size(16.dp),
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = stringResource(R.string.label_torch),
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .sharedElement(
+                                        sharedContentState = rememberSharedContentState(key = "torch_label"),
+                                        animatedVisibilityScope = animatedVisibilityScope,
+                                    ),
+                            )
+                            Text(
+                                text = torchStatusLabel,
+                                color = if (brief.torch.isEnabled) primary else Color.White.copy(alpha = 0.56f),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                            )
+                        }
+                    }
+                }
+
+                CapsuleExpressiveSurface(
+                    enabled = interactionsEnabled,
+                    onClick = {
+                        localHapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
+                        onLockScreen()
+                    },
+                    restCornerDp = 22f,
+                    pressedCornerDp = 10f,
+                    backgroundColor = Color.White.copy(alpha = 0.10f),
+                    contentAlignment = Alignment.CenterStart,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(44.dp),
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp),
+                    ) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(28.dp)
+                                .clip(CircleShape)
+                                .background(Color.White.copy(alpha = 0.14f)),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Lock,
+                                contentDescription = stringResource(R.string.desc_lock_screen),
+                                tint = Color.White,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = stringResource(R.string.action_lock_screen),
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+
+            // 3. Grouped Sliders Control Card (Volume + Brightness)
+            Column(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(Color.White.copy(alpha = 0.07f))
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+            ) {
+                volumeRowContent()
+                brightnessRowContent()
+            }
+        }
+    } else {
+        Column(
+            verticalArrangement = Arrangement.SpaceBetween,
+            modifier = modifier
+                .fillMaxSize()
+                .padding(
+                    start = (contentPaddingDp + startClearanceDp).dp,
+                    end = (contentPaddingDp + endClearanceDp).dp,
+                    top = topClearanceDp.dp,
+                    bottom = (contentPaddingDp + 2f).coerceAtLeast(12f).dp,
+                ),
+        ) {
+            // Compact At-a-Glance weather/notification summary + clickable Alarm chip
+            Row(
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Box(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                    AtAGlanceSummaryRow(
+                        brief = brief,
+                        primary = primary,
+                        interactionsEnabled = interactionsEnabled,
+                        onOpenNotificationShade = {
+                            localHapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
+                            onOpenNotificationShade()
+                        },
+                    )
+                }
+                CapsuleExpressiveSurface(
+                    enabled = interactionsEnabled,
+                    onClick = {
+                        localHapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
+                        onOpenClock()
+                    },
+                    restCornerDp = 12f,
+                    pressedCornerDp = 7f,
+                    backgroundColor = Color.White.copy(alpha = 0.08f),
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Alarm,
+                            contentDescription = stringResource(R.string.desc_alarm_icon),
+                            tint = if (brief.nextAlarmLabel != null) primary else Color.White.copy(alpha = 0.52f),
+                            modifier = Modifier.size(14.dp),
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = brief.nextAlarmLabel ?: stringResource(R.string.label_no_alarm),
+                            color = if (brief.nextAlarmLabel != null) Color.White.copy(alpha = 0.88f) else Color.White.copy(alpha = 0.56f),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+
+            // Quick Action Row: Compact Expressive Flashlight Left + Expressive Lock Screen Right
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                CapsuleExpressiveSurface(
+                    onClick = {
+                        localHapticFeedback.performHapticFeedback(
+                            if (brief.torch.isEnabled) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn,
+                        )
+                        onUserInteraction()
+                        onToggleTorch(!brief.torch.isEnabled)
+                    },
+                    restCornerDp = 22f,
+                    pressedCornerDp = 10f,
+                    backgroundColor = torchTileBg,
+                    contentAlignment = Alignment.CenterStart,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(vertical = 1.dp),
+                ) {
+                    with(sharedTransitionScope) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        ) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .sharedElement(
+                                        sharedContentState = rememberSharedContentState(key = "torch_icon_box"),
+                                        animatedVisibilityScope = animatedVisibilityScope,
+                                    )
+                                    .size(28.dp)
+                                    .clip(CircleShape)
+                                    .background(torchCircleBg),
+                            ) {
+                                AnimatedContent(
+                                    targetState = brief.torch.isEnabled,
+                                    transitionSpec = {
+                                        (fadeIn(tween(180)) + scaleIn(initialScale = 0.72f, animationSpec = tween(180))) togetherWith
+                                            (fadeOut(tween(130)) + scaleOut(targetScale = 0.72f, animationSpec = tween(130)))
+                                    },
+                                    label = "hubTorchIcon",
+                                ) { enabled ->
+                                    Icon(
+                                        imageVector = if (enabled) Icons.Rounded.FlashlightOn else Icons.Rounded.FlashlightOff,
+                                        contentDescription = stringResource(R.string.desc_torch_icon),
+                                        tint = torchCircleTint,
+                                        modifier = Modifier.size(16.dp),
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = stringResource(R.string.label_torch),
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.sharedElement(
+                                    sharedContentState = rememberSharedContentState(key = "torch_label"),
+                                    animatedVisibilityScope = animatedVisibilityScope,
+                                ),
+                            )
+                        }
+                    }
+                }
+
+                CapsuleExpressiveSurface(
+                    enabled = interactionsEnabled,
+                    onClick = {
+                        localHapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
+                        onLockScreen()
+                    },
+                    restCornerDp = 22f,
+                    pressedCornerDp = 10f,
+                    backgroundColor = Color.White.copy(alpha = 0.10f),
+                    contentAlignment = Alignment.CenterStart,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(vertical = 1.dp),
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    ) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(28.dp)
+                                .clip(CircleShape)
+                                .background(Color.White.copy(alpha = 0.14f)),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Lock,
+                                contentDescription = stringResource(R.string.desc_lock_screen),
+                                tint = Color.White,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = stringResource(R.string.action_lock_screen),
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+
+            volumeRowContent()
+            brightnessRowContent()
         }
     }
 }

@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -30,6 +32,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -51,29 +54,31 @@ fun AlarmExpandedContent(
     modifier: Modifier = Modifier,
     alarm: CapsuleContent.Alarm,
     topClearanceDp: Float,
+    isLandscape: Boolean = false,
     contentPaddingDp: Float = 18f,
     onOpenClock: () -> Unit,
 ) {
     val haptics = rememberCapsuleHaptics()
     val coral = MaterialTheme.colorScheme.primary
+    val timeValue = if (alarm.isSet) alarm.formattedTime else stringResource(R.string.label_no_alarm)
 
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-        modifier = modifier
-            .fillMaxSize()
-            .padding(
-                start = contentPaddingDp.dp,
-                end = contentPaddingDp.dp,
-                top = topClearanceDp.dp,
-                bottom = (contentPaddingDp * 0.9f).coerceAtLeast(10f).dp,
-            ),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+    if (isLandscape) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+            modifier = modifier
+                .fillMaxSize()
+                .padding(
+                    start = contentPaddingDp.dp,
+                    end = contentPaddingDp.dp,
+                    top = topClearanceDp.dp,
+                    bottom = contentPaddingDp.coerceAtLeast(16f).dp,
+                ),
+        ) {
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
-                    .size(42.dp)
+                    .size(68.dp)
                     .clip(CircleShape)
                     .background(coral.copy(alpha = 0.2f)),
             ) {
@@ -81,41 +86,107 @@ fun AlarmExpandedContent(
                     imageVector = Icons.Rounded.Alarm,
                     contentDescription = stringResource(R.string.desc_alarm_icon),
                     tint = coral,
-                    modifier = Modifier.size(22.dp),
+                    modifier = Modifier.size(34.dp),
                 )
             }
-            Spacer(modifier = Modifier.width(12.dp))
-            Column {
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = timeValue,
+                color = Color.White,
+                fontSize = 26.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = stringResource(R.string.label_next_alarm),
+                color = Color.White.copy(alpha = 0.72f),
+                fontSize = 13.sp,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(modifier = Modifier.height(24.dp))
+            CapsuleExpressiveSurface(
+                onClick = {
+                    haptics.click()
+                    onOpenClock()
+                },
+                restCornerDp = 22f,
+                pressedCornerDp = 10f,
+                backgroundColor = coral,
+                modifier = Modifier
+                    .fillMaxWidth(0.84f)
+                    .height(44.dp),
+            ) {
                 Text(
-                    text = stringResource(R.string.label_next_alarm),
-                    color = Color.White.copy(alpha = 0.72f),
-                    fontSize = 12.sp,
-                )
-                Text(
-                    text = if (alarm.isSet) alarm.formattedTime else stringResource(R.string.label_no_alarm),
-                    color = Color.White,
-                    fontSize = 18.sp,
+                    text = stringResource(R.string.action_open_clock),
+                    color = Color.Black,
+                    fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
                 )
             }
         }
-
-        CapsuleExpressiveSurface(
-            onClick = {
-                haptics.click()
-                onOpenClock()
-            },
-            restCornerDp = 22f,
-            pressedCornerDp = 10f,
-            backgroundColor = coral,
+    } else {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = modifier
+                .fillMaxSize()
+                .padding(
+                    start = contentPaddingDp.dp,
+                    end = contentPaddingDp.dp,
+                    top = topClearanceDp.dp,
+                    bottom = (contentPaddingDp * 0.9f).coerceAtLeast(10f).dp,
+                ),
         ) {
-            Text(
-                text = stringResource(R.string.action_open_clock),
-                color = Color.Black,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(42.dp)
+                        .clip(CircleShape)
+                        .background(coral.copy(alpha = 0.2f)),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Alarm,
+                        contentDescription = stringResource(R.string.desc_alarm_icon),
+                        tint = coral,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text(
+                        text = stringResource(R.string.label_next_alarm),
+                        color = Color.White.copy(alpha = 0.72f),
+                        fontSize = 12.sp,
+                    )
+                    Text(
+                        text = timeValue,
+                        color = Color.White,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+
+            CapsuleExpressiveSurface(
+                onClick = {
+                    haptics.click()
+                    onOpenClock()
+                },
+                restCornerDp = 22f,
+                pressedCornerDp = 10f,
+                backgroundColor = coral,
+            ) {
+                Text(
+                    text = stringResource(R.string.action_open_clock),
+                    color = Color.Black,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                )
+            }
         }
     }
 }
@@ -157,6 +228,7 @@ fun UnlockExpandedContent(
     modifier: Modifier = Modifier,
     unlock: CapsuleContent.Unlock,
     topClearanceDp: Float,
+    isLandscape: Boolean = false,
     contentPaddingDp: Float = 18f,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
@@ -178,19 +250,19 @@ fun UnlockExpandedContent(
     }
 
     with(sharedTransitionScope) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-            modifier = modifier
-                .fillMaxSize()
-                .padding(
-                    start = contentPaddingDp.dp,
-                    end = contentPaddingDp.dp,
-                    top = topClearanceDp.dp,
-                    bottom = (contentPaddingDp * 0.9f).coerceAtLeast(10f).dp,
-                ),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+        if (isLandscape) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+                modifier = modifier
+                    .fillMaxSize()
+                    .padding(
+                        start = contentPaddingDp.dp,
+                        end = contentPaddingDp.dp,
+                        top = topClearanceDp.dp,
+                        bottom = contentPaddingDp.coerceAtLeast(16f).dp,
+                    ),
+            ) {
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
@@ -198,7 +270,7 @@ fun UnlockExpandedContent(
                             sharedContentState = rememberSharedContentState(key = "capsule_icon"),
                             animatedVisibilityScope = animatedVisibilityScope,
                         )
-                        .size(42.dp)
+                        .size(68.dp)
                         .clip(CircleShape)
                         .background(mint.copy(alpha = 0.2f)),
                 ) {
@@ -206,32 +278,85 @@ fun UnlockExpandedContent(
                         imageVector = visuals.icon,
                         contentDescription = stringResource(R.string.desc_unlock_icon),
                         tint = mint,
-                        modifier = Modifier.size(22.dp),
+                        modifier = Modifier.size(34.dp),
                     )
                 }
-                Spacer(modifier = Modifier.width(12.dp))
-                Column {
-                    Text(
-                        text = visuals.label,
-                        color = Color.White,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Clip,
-                        modifier = Modifier.basicMarquee(
-                            iterations = Int.MAX_VALUE,
-                            initialDelayMillis = 350,
-                            repeatDelayMillis = 900,
-                            velocity = 34.dp,
-                        ),
-                    )
-                    Text(
-                        text = statusDetail,
-                        color = Color.White.copy(alpha = 0.72f),
-                        fontSize = 12.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = visuals.label,
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = statusDetail,
+                    color = Color.White.copy(alpha = 0.72f),
+                    fontSize = 13.sp,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        } else {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = modifier
+                    .fillMaxSize()
+                    .padding(
+                        start = contentPaddingDp.dp,
+                        end = contentPaddingDp.dp,
+                        top = topClearanceDp.dp,
+                        bottom = (contentPaddingDp * 0.9f).coerceAtLeast(10f).dp,
+                    ),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .sharedElement(
+                                sharedContentState = rememberSharedContentState(key = "capsule_icon"),
+                                animatedVisibilityScope = animatedVisibilityScope,
+                            )
+                            .size(42.dp)
+                            .clip(CircleShape)
+                            .background(mint.copy(alpha = 0.2f)),
+                    ) {
+                        Icon(
+                            imageVector = visuals.icon,
+                            contentDescription = stringResource(R.string.desc_unlock_icon),
+                            tint = mint,
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = visuals.label,
+                            color = Color.White,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Clip,
+                            modifier = Modifier.basicMarquee(
+                                iterations = Int.MAX_VALUE,
+                                initialDelayMillis = 350,
+                                repeatDelayMillis = 900,
+                                velocity = 34.dp,
+                            ),
+                        )
+                        Text(
+                            text = statusDetail,
+                            color = Color.White.copy(alpha = 0.72f),
+                            fontSize = 12.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
         }

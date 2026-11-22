@@ -211,6 +211,22 @@ fun CameraPositionCard(
                     },
                     modifier = itemMod,
                 )
+
+                PrecisionTuningSliderRow(
+                    label = stringResource(R.string.label_expanded_corner_radius),
+                    valueLabel = if (preferences.expandedCornerRadiusDp <= 0.5f) {
+                        stringResource(R.string.label_auto_default)
+                    } else {
+                        formatDpValue(preferences.expandedCornerRadiusDp)
+                    },
+                    value = preferences.expandedCornerRadiusDp,
+                    valueRange = 0f..56f,
+                    stepSize = 1f,
+                    onValueChange = { next ->
+                        onUpdatePreferences { it.copy(expandedCornerRadiusDp = next) }
+                    },
+                    modifier = itemMod,
+                )
             }
         }
     }

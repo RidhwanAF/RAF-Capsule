@@ -44,6 +44,10 @@ sealed interface CapsuleRoute : NavKey {
     @Serializable
     data object Simulation : CapsuleRoute
 
+    /** Dedicated full-screen Permissions, Shizuku, ADB & OEM Compatibility setup hub. */
+    @Serializable
+    data object Permissions : CapsuleRoute
+
     /** App-level Theme (System/Light/Dark, Dynamic Color / M3 Expressive Monochrome) and System-Synced Language screen. */
     @Serializable
     data object AppSettings : CapsuleRoute

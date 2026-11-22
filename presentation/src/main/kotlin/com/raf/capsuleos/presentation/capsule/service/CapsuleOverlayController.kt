@@ -19,6 +19,7 @@ import android.hardware.display.DisplayManager
 import android.os.PowerManager
 import android.os.SystemClock
 import android.provider.AlarmClock
+import android.provider.CalendarContract
 import android.provider.Settings
 import android.view.Choreographer
 import android.view.Display
@@ -29,14 +30,18 @@ import android.view.View
 import android.view.Window
 import android.view.WindowManager
 import android.widget.FrameLayout
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.dynamicDarkColorScheme
+import com.raf.capsuleos.presentation.common.OemCompatibilityHelper
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
@@ -53,6 +58,7 @@ import com.raf.capsuleos.domain.model.CapsuleEffect
 import com.raf.capsuleos.domain.model.CapsuleEvent
 import com.raf.capsuleos.domain.model.CapsuleUiState
 import com.raf.capsuleos.domain.model.CapsuleVisualState
+import com.raf.capsuleos.domain.model.LandscapeCameraSide
 import com.raf.capsuleos.domain.model.RingerModeState
 import com.raf.capsuleos.domain.model.SystemStatusKind
 import com.raf.capsuleos.domain.repository.BluetoothRepository
@@ -216,6 +222,7 @@ class CapsuleOverlayController @Inject constructor(
             if (displayId == Display.DEFAULT_DISPLAY) {
                 activeHostContext?.let { measureDeviceCutout(it) }
                 dispatchEnvironmentVisibility()
+                activeHostContext?.let { syncAuraWindowHeight(it) }
             }
         }
     }
@@ -246,12 +253,13 @@ class CapsuleOverlayController @Inject constructor(
         scope.launch { ensureInitialCameraDetected(appContext) }
     }
 
-    /** Runs hardware cutout detection once on initial setup without overwriting subsequent manual edits. */
+    /** Runs hardware cutout detection once on initial setup without overwriting live orientation geometry. */
     suspend fun ensureInitialCameraDetected(hostContext: Context = appContext) {
         val currentPrefs = settingsRepository.observePreferences().first()
-        val measurement = CutoutGeometryResolver.detect(hostContext)
-        coordinator.updateCutoutGeometry(measurement.geometry)
+        val liveContext = activeHostContext ?: hostContext
+        coordinator.updateCutoutGeometry(CutoutGeometryResolver.detectLiveOverlayGeometry(liveContext))
         if (!currentPrefs.hasAutoDetectedCamera) {
+            val measurement = CutoutGeometryResolver.detect(hostContext)
             settingsRepository.updatePreferences { prefs ->
                 if (prefs.hasAutoDetectedCamera) {
                     prefs
@@ -260,6 +268,7 @@ class CapsuleOverlayController @Inject constructor(
                         cameraPosition = measurement.detectedPosition,
                         horizontalOffsetDp = 0f,
                         topOffsetAdjustDp = 0f,
+                        expandedCornerRadiusDp = 0f,
                         hasAutoDetectedCamera = true,
                     )
                 }
@@ -270,12 +279,14 @@ class CapsuleOverlayController @Inject constructor(
     /** Explicitly auto-detects physical camera cutout alignment and resets fine-tune offsets. */
     internal suspend fun autoDetectCameraPosition(hostContext: Context = appContext): DetectedCutoutMeasurement {
         val measurement = CutoutGeometryResolver.detect(hostContext)
-        coordinator.updateCutoutGeometry(measurement.geometry)
+        val liveContext = activeHostContext ?: hostContext
+        coordinator.updateCutoutGeometry(CutoutGeometryResolver.detectLiveOverlayGeometry(liveContext))
         settingsRepository.updatePreferences { prefs ->
             prefs.copy(
                 cameraPosition = measurement.detectedPosition,
                 horizontalOffsetDp = 0f,
                 topOffsetAdjustDp = 0f,
+                expandedCornerRadiusDp = 0f,
                 hasAutoDetectedCamera = true,
             )
         }
@@ -338,6 +349,43 @@ class CapsuleOverlayController @Inject constructor(
     fun onConfigurationChanged(hostContext: Context, newConfig: Configuration) {
         measureDeviceCutout(hostContext)
         dispatchEnvironmentVisibility(newConfig)
+        syncAuraWindowHeight(hostContext)
+        updateSpringTargets()
+    }
+
+    private fun syncAuraWindowHeight(hostContext: Context) {
+        activeAuraDialog?.window?.let { auraWin ->
+            val state = coordinator.uiState.value
+            val bounds = windowManager.maximumWindowMetrics.bounds
+            val displayW = bounds.width().takeIf { it > 0 } ?: hostContext.resources.displayMetrics.widthPixels
+            val displayH = bounds.height().takeIf { it > 0 } ?: hostContext.resources.displayMetrics.heightPixels
+            val isLandscape = state.isLandscape
+            val targetW: Int
+            val targetH: Int
+            val targetGravity: Int
+            if (isLandscape) {
+                targetW = (displayW * 0.56f).roundToInt().coerceAtLeast(1)
+                targetH = WindowManager.LayoutParams.MATCH_PARENT
+                targetGravity = if (state.cutout.landscapeCameraSide == LandscapeCameraSide.RIGHT) {
+                    Gravity.RIGHT or Gravity.CENTER_VERTICAL
+                } else {
+                    Gravity.LEFT or Gravity.CENTER_VERTICAL
+                }
+            } else {
+                targetW = WindowManager.LayoutParams.MATCH_PARENT
+                targetH = (displayH * 0.52f).roundToInt().coerceAtLeast(1)
+                targetGravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            }
+            val current = auraWin.attributes
+            if (current.width != targetW || current.height != targetH || current.gravity != targetGravity) {
+                auraWin.attributes = WindowManager.LayoutParams().apply {
+                    copyFrom(current)
+                    width = targetW
+                    height = targetH
+                    gravity = targetGravity
+                }
+            }
+        }
     }
 
     /** Dispatches a synthetic test event from the setup dashboard. */
@@ -402,7 +450,7 @@ class CapsuleOverlayController @Inject constructor(
                 val suppressSatellite by suppressSatelliteStageState
                 val heldPill by holdPillBeforeRingState
                 val effectiveUiState = heldPill ?: state
-                MaterialTheme(colorScheme = dynamicDarkColorScheme(hostContext)) {
+                MaterialTheme(colorScheme = OemCompatibilityHelper.safeDynamicDarkColorScheme(hostContext)) {
                     IslandCapsule(
                         uiState = effectiveUiState,
                         cornerRadiusDp = animatedCornerDpState.floatValue,
@@ -625,6 +673,27 @@ class CapsuleOverlayController @Inject constructor(
                             }
                             runCatching { appContext.startActivity(clockIntent) }
                         },
+                        onOpenCalendar = {
+                            coordinator.onEvent(CapsuleEvent.CollapseCapsule)
+                            val defaultCalIntent = Intent(Intent.ACTION_MAIN).apply {
+                                addCategory(Intent.CATEGORY_APP_CALENDAR)
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            val launchedDefault = runCatching { appContext.startActivity(defaultCalIntent) }.isSuccess
+                            if (!launchedDefault) {
+                                val gcalIntent = appContext.packageManager
+                                    .getLaunchIntentForPackage("com.google.android.calendar")
+                                    ?.apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+                                val launchedGcal = gcalIntent != null &&
+                                    runCatching { appContext.startActivity(gcalIntent) }.isSuccess
+                                if (!launchedGcal) {
+                                    val fallbackUriIntent = Intent(Intent.ACTION_VIEW, CalendarContract.CONTENT_URI).apply {
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    runCatching { appContext.startActivity(fallbackUriIntent) }
+                                }
+                            }
+                        },
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
@@ -682,7 +751,7 @@ class CapsuleOverlayController @Inject constructor(
                 setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
                 setContent {
                     val auraState by coordinator.uiState.collectAsStateWithLifecycle()
-                    MaterialTheme(colorScheme = dynamicDarkColorScheme(hostContext)) {
+                    MaterialTheme(colorScheme = OemCompatibilityHelper.safeDynamicDarkColorScheme(hostContext)) {
                         val (auraColorA, auraColorB) = resolveOuterExpansionAuraColors(
                             state = auraState,
                             primaryColor = MaterialTheme.colorScheme.primary,
@@ -692,19 +761,48 @@ class CapsuleOverlayController @Inject constructor(
                             state = auraState,
                             isHoldingCapsule = false,
                         )
-                        val outerAuraHeightDp = (layoutSpec.topYDp + layoutSpec.heightDp + 36f)
-                            .coerceAtLeast(180f)
-                            .dp
-                        OuterScreenExpansionAura(
-                            visible = shouldShowOuterExpansionAura(auraState),
-                            colorA = auraColorA,
-                            colorB = auraColorB,
-                            screenCornerRadiusDp = auraState.cutout.screenTopCornerRadiusDp.coerceIn(28f, 52f),
-                            spreadDp = 72f,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(outerAuraHeightDp),
-                        )
+                        val edgeMode = when {
+                            !auraState.isLandscape -> 0
+                            auraState.cutout.landscapeCameraSide == LandscapeCameraSide.RIGHT -> 2
+                            else -> 1
+                        }
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            if (auraState.isLandscape) {
+                                val outerAuraWidthDp = (auraState.cutout.landscapeHoleEdgeInsetDp + layoutSpec.widthDp + 44f)
+                                    .coerceAtLeast(220f)
+                                    .dp
+                                OuterScreenExpansionAura(
+                                    visible = shouldShowOuterExpansionAura(auraState),
+                                    colorA = auraColorA,
+                                    colorB = auraColorB,
+                                    screenCornerRadiusDp = auraState.cutout.screenTopCornerRadiusDp.coerceIn(28f, 52f),
+                                    spreadDp = 72f,
+                                    edgeMode = edgeMode,
+                                    modifier = Modifier
+                                        .align(
+                                            if (edgeMode == 2) Alignment.CenterEnd else Alignment.CenterStart,
+                                        )
+                                        .width(outerAuraWidthDp)
+                                        .fillMaxHeight(),
+                                )
+                            } else {
+                                val outerAuraHeightDp = (layoutSpec.topYDp + layoutSpec.heightDp + 36f)
+                                    .coerceAtLeast(180f)
+                                    .dp
+                                OuterScreenExpansionAura(
+                                    visible = shouldShowOuterExpansionAura(auraState),
+                                    colorA = auraColorA,
+                                    colorB = auraColorB,
+                                    screenCornerRadiusDp = auraState.cutout.screenTopCornerRadiusDp.coerceIn(28f, 52f),
+                                    spreadDp = 72f,
+                                    edgeMode = 0,
+                                    modifier = Modifier
+                                        .align(Alignment.TopCenter)
+                                        .fillMaxWidth()
+                                        .height(outerAuraHeightDp),
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -788,6 +886,9 @@ class CapsuleOverlayController @Inject constructor(
         runCatching {
             auraDialog.show()
             activeAuraDialog = auraDialog
+            syncAuraWindowHeight(hostContext)
+        }
+        runCatching {
             dialog.show()
             activeDialog = dialog
             startObservingWindowState()
@@ -903,6 +1004,8 @@ class CapsuleOverlayController @Inject constructor(
         windowObserverJob = scope.launch {
             var lastVisualState: CapsuleVisualState? = null
             var lastQsRingOnly = false
+            var lastAuraLandscape = coordinator.uiState.value.isLandscape
+            var lastAuraSide = coordinator.uiState.value.cutout.landscapeCameraSide
             var lastSwipeJiggleSeq = coordinator.uiState.value.swipeJiggleSeq
 
             coordinator.uiState.collect { state ->
@@ -916,6 +1019,12 @@ class CapsuleOverlayController @Inject constructor(
                 val dialog = activeDialog ?: return@collect
                 val win = dialog.window ?: return@collect
                 val host = activeHostContext ?: return@collect
+
+                if (state.isLandscape != lastAuraLandscape || state.cutout.landscapeCameraSide != lastAuraSide) {
+                    lastAuraLandscape = state.isLandscape
+                    lastAuraSide = state.cutout.landscapeCameraSide
+                    syncAuraWindowHeight(host)
+                }
 
                 setOverlayNotTouchableForQs(win, state.isQsRingOnlyActive)
 
@@ -1087,7 +1196,11 @@ class CapsuleOverlayController @Inject constructor(
                     val density = host.resources.displayMetrics.density.coerceAtLeast(1f)
                     val dir = if (state.swipeDirection < 0) -1f else 1f
                     jiggleUntilMs = SystemClock.uptimeMillis() + CAPSULE_JIGGLE_DURATION_MS
-                    offsetXSpring.velocity = dir * CAPSULE_JIGGLE_VELOCITY_DP_PER_SEC * density
+                    if (state.isLandscape) {
+                        topYSpring.velocity = dir * CAPSULE_JIGGLE_VELOCITY_DP_PER_SEC * density
+                    } else {
+                        offsetXSpring.velocity = dir * CAPSULE_JIGGLE_VELOCITY_DP_PER_SEC * density
+                    }
                     ensureSpringLoopRunning()
                 }
 
@@ -1187,10 +1300,13 @@ class CapsuleOverlayController @Inject constructor(
         val session = activeScrubSession
         if (session != null && !session.isFingerDown) {
             val density = host.resources.displayMetrics.density.coerceAtLeast(1f)
-            val coastFraction = ((heightSpring.value - session.compactBaseSpec.heightPx) / session.travelPx)
-                .coerceIn(-0.04f, 1.14f)
+            val coastFraction = if (session.isLandscape) {
+                ((widthSpring.value - session.compactBaseSpec.widthPx) / session.travelPx).coerceIn(-0.04f, 1.14f)
+            } else {
+                ((heightSpring.value - session.compactBaseSpec.heightPx) / session.travelPx).coerceIn(-0.04f, 1.14f)
+            }
             val t = coastFraction.coerceIn(0f, 1f)
-            val satThreshold = 0.24f
+            val satThreshold = 0.14f
             val satLeadT = if (!session.isCollapsing && session.compactUiState.leftSatellite != null) {
                 ((satThreshold - t) / satThreshold).coerceIn(0f, 1f)
             } else {
@@ -1254,9 +1370,17 @@ class CapsuleOverlayController @Inject constructor(
         val compactBaseSpec = computeTargetWindowSpec(host, compactState.copy(leftSatellite = null))
         val expandedSpec = computeTargetWindowSpec(host, expandedState)
         val density = host.resources.displayMetrics.density.coerceAtLeast(1f)
-        val travelPx = (expandedSpec.heightPx - compactBaseSpec.heightPx).coerceAtLeast(160f)
-        val initialFraction = ((heightSpring.value - compactBaseSpec.heightPx) / travelPx)
-            .coerceIn(-0.04f, 1.14f)
+        val isLandscape = current.isLandscape
+        val travelPx = if (isLandscape) {
+            (expandedSpec.widthPx - compactBaseSpec.widthPx).coerceAtLeast(160f)
+        } else {
+            (expandedSpec.heightPx - compactBaseSpec.heightPx).coerceAtLeast(160f)
+        }
+        val initialFraction = if (isLandscape) {
+            ((widthSpring.value - compactBaseSpec.widthPx) / travelPx).coerceIn(-0.04f, 1.14f)
+        } else {
+            ((heightSpring.value - compactBaseSpec.heightPx) / travelPx).coerceIn(-0.04f, 1.14f)
+        }
 
         val session = ScrubSession(
             compactUiState = compactState,
@@ -1267,6 +1391,7 @@ class CapsuleOverlayController @Inject constructor(
             expandedWidthDp = expandedSpec.widthPx / density,
             expandedHeightDp = expandedSpec.heightPx / density,
             travelPx = travelPx,
+            isLandscape = isLandscape,
             isFingerDown = true,
             isCollapsing = isFromExpanded,
             expectedCoastVisualState = expandedState.visualState,
@@ -1338,10 +1463,15 @@ class CapsuleOverlayController @Inject constructor(
         cornerDpSpring.target = targetSpec.cornerDp
         blurRadiusSpring.target = targetSpec.blurRadiusPx
 
-        heightSpring.velocity = velocityYPxPerSec.coerceIn(
+        val coastVel = velocityYPxPerSec.coerceIn(
             -CAPSULE_SCRUB_MAX_COAST_VELOCITY_PX,
             CAPSULE_SCRUB_MAX_COAST_VELOCITY_PX,
         )
+        if (session.isLandscape) {
+            widthSpring.velocity = coastVel
+        } else {
+            heightSpring.velocity = coastVel
+        }
         ensureSpringLoopRunning()
     }
 
@@ -1353,33 +1483,43 @@ class CapsuleOverlayController @Inject constructor(
     ) {
         val t = fraction.coerceIn(0f, 1f)
         val overFraction = (fraction - 1f).coerceAtLeast(0f)
-        val blurT = ((t - 0.08f) / 0.65f).coerceIn(0f, 1f)
-        val satThreshold = 0.24f
-        val satLeadT = if (!session.isCollapsing && session.compactUiState.leftSatellite != null) {
+        val hasMergingSatellite = !session.isCollapsing && session.compactUiState.leftSatellite != null
+        val satThreshold = 0.14f
+        val satLeadT = if (hasMergingSatellite) {
             ((satThreshold - t) / satThreshold).coerceIn(0f, 1f)
         } else {
             0f
         }
+        // Merge the separated circle quickly BEFORE beginning card expansion during slow drag
+        val expandT = if (hasMergingSatellite) {
+            ((t - 0.11f) / 0.89f).coerceIn(0f, 1f)
+        } else {
+            t
+        }
+        val blurT = ((expandT - 0.08f) / 0.65f).coerceIn(0f, 1f)
         val density = host.resources.displayMetrics.density.coerceAtLeast(1f)
 
         val extraLeadW = session.compactSpec.widthPx - session.compactBaseSpec.widthPx
+        val extraLeadH = session.compactSpec.heightPx - session.compactBaseSpec.heightPx
         val extraLeadX = session.compactSpec.offsetXPx - session.compactBaseSpec.offsetXPx
-        val mainW = lerpCapsuleFloat(session.compactBaseSpec.widthPx, session.expandedSpec.widthPx,
-            t
-        ) + overFraction * 24f
+        val extraLeadY = session.compactSpec.topYPx - session.compactBaseSpec.topYPx
+        val mainW = lerpCapsuleFloat(session.compactBaseSpec.widthPx, session.expandedSpec.widthPx, expandT) +
+            if (session.isLandscape) overFraction * 110f else overFraction * 24f
+        val mainH = lerpCapsuleFloat(session.compactBaseSpec.heightPx, session.expandedSpec.heightPx, expandT) +
+            if (session.isLandscape) overFraction * 24f else overFraction * 140f
         val baseW = mainW + satLeadT * extraLeadW
-        val baseH = lerpCapsuleFloat(session.compactBaseSpec.heightPx, session.expandedSpec.heightPx, t) + overFraction * 140f
-        val targetX = lerpCapsuleFloat(session.compactBaseSpec.offsetXPx, session.expandedSpec.offsetXPx,
-            t
-        ) + satLeadT * extraLeadX
-        val targetY = lerpCapsuleFloat(session.compactBaseSpec.topYPx, session.expandedSpec.topYPx, t)
-        val circleCornerNowDp = (min(mainW, baseH) / density) * 0.5f
+        val baseH = mainH + satLeadT * extraLeadH
+        val targetX = lerpCapsuleFloat(session.compactBaseSpec.offsetXPx, session.expandedSpec.offsetXPx, expandT) +
+            satLeadT * extraLeadX
+        val targetY = lerpCapsuleFloat(session.compactBaseSpec.topYPx, session.expandedSpec.topYPx, expandT) +
+            satLeadT * extraLeadY
+        val circleCornerNowDp = (min(mainW, mainH) / density) * 0.5f
         val compactCornerTarget = if (session.compactUiState.visualState == CapsuleVisualState.STATE1_CUTOUT_ANCHOR) {
             circleCornerNowDp
         } else {
             session.compactBaseSpec.cornerDp
         }
-        val cornerDp = lerpCapsuleFloat(compactCornerTarget, session.expandedSpec.cornerDp, t)
+        val cornerDp = lerpCapsuleFloat(compactCornerTarget, session.expandedSpec.cornerDp, expandT)
         val blurPx = lerpCapsuleFloat(session.compactBaseSpec.blurRadiusPx, session.expandedSpec.blurRadiusPx, blurT)
 
         widthSpring.snapTo(baseW.coerceAtLeast(minClampWPx))
@@ -1438,6 +1578,7 @@ class CapsuleOverlayController @Inject constructor(
         val expandedWidthDp: Float,
         val expandedHeightDp: Float,
         val travelPx: Float,
+        val isLandscape: Boolean,
         var isFingerDown: Boolean,
         val isCollapsing: Boolean,
         var expectedCoastVisualState: CapsuleVisualState,
@@ -1492,7 +1633,7 @@ class CapsuleOverlayController @Inject constructor(
                 width = clampedW
                 height = clampedH
             }
-            window.attributes = freshParams
+            runCatching { window.attributes = freshParams }
         }
     }
 
@@ -1528,8 +1669,7 @@ class CapsuleOverlayController @Inject constructor(
     }
 
     private fun measureDeviceCutout(context: Context) {
-        val detected = CutoutGeometryResolver.detect(context)
-        coordinator.updateCutoutGeometry(detected.geometry)
+        coordinator.updateCutoutGeometry(CutoutGeometryResolver.detectLiveOverlayGeometry(context))
     }
 
     private fun dispatchEnvironmentVisibility(config: Configuration = appContext.resources.configuration) {

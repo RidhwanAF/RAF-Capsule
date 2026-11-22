@@ -21,6 +21,7 @@ serializationCore = "1.13.0"
 javaxInject = "1"
 junit = "4.13.2"
 turbine = "1.2.1"
+shizuku = "13.1.5"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -58,6 +59,8 @@ javax-inject = { group = "javax.inject", name = "javax.inject", version.ref = "j
 
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 turbine = { group = "app.cash.turbine", name = "turbine", version.ref = "turbine" }
+shizuku-api = { group = "dev.rikka.shizuku", name = "api", version.ref = "shizuku" }
+shizuku-provider = { group = "dev.rikka.shizuku", name = "provider", version.ref = "shizuku" }
 
 [bundles]
 compose = [

@@ -5,12 +5,14 @@ import android.content.res.Configuration
 import android.graphics.RectF
 import android.hardware.display.DisplayManager
 import android.view.Display
+import android.view.DisplayCutout
 import android.view.RoundedCorner
 import android.view.Surface
 import android.view.WindowInsets
 import android.view.WindowManager
 import com.raf.capsuleos.domain.model.CameraAnchorPosition
 import com.raf.capsuleos.domain.model.CutoutGeometry
+import com.raf.capsuleos.domain.model.LandscapeCameraSide
 
 /**
  * Hardware cutout measurement pairing physical [CutoutGeometry] metrics with the detected
@@ -127,6 +129,95 @@ internal object CutoutGeometryResolver {
             holeCenterOffsetXDp = detected.holeCenterOffsetXDp.coerceIn(-120f, 120f),
             screenTopCornerRadiusDp = detected.screenTopCornerRadiusDp.coerceIn(24f, 44f),
         )
+    }
+
+    /**
+     * Returns live overlay [CutoutGeometry] using the current logical display width & height
+     * and exact physical camera bezel coordinates (`LEFT` / `RIGHT`) in landscape mode.
+     */
+    fun detectLiveOverlayGeometry(context: Context): CutoutGeometry {
+        val density = context.resources.displayMetrics.density.coerceAtLeast(1f)
+        val windowManager = context.getSystemService(WindowManager::class.java)
+        val displayManager = context.getSystemService(DisplayManager::class.java)
+        val defaultDisplay = displayManager?.getDisplay(Display.DEFAULT_DISPLAY)
+        val rotation = defaultDisplay?.rotation ?: Surface.ROTATION_0
+        val metrics = windowManager?.currentWindowMetrics
+        val liveWidthPx = (metrics?.bounds?.width() ?: context.resources.displayMetrics.widthPixels)
+            .toFloat()
+            .coerceAtLeast(1f)
+        val liveHeightPx = (metrics?.bounds?.height() ?: context.resources.displayMetrics.heightPixels)
+            .toFloat()
+            .coerceAtLeast(1f)
+        val liveWidthDp = (liveWidthPx / density).coerceAtLeast(320f)
+        val liveHeightDp = (liveHeightPx / density).coerceAtLeast(320f)
+        val isLandscape = rotation == Surface.ROTATION_90 ||
+            rotation == Surface.ROTATION_270 ||
+            context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE ||
+            liveWidthPx > liveHeightPx
+
+        val base = detect(context).geometry
+        if (!isLandscape) {
+            return base.copy(
+                screenWidthDp = liveWidthDp,
+                screenHeightDp = liveHeightDp,
+                landscapeCameraSide = LandscapeCameraSide.NONE,
+            )
+        }
+
+        val cutout = metrics?.windowInsets?.displayCutout ?: defaultDisplay?.cutout
+        val rawBounds = extractLiveCutoutBounds(cutout)
+        val side: LandscapeCameraSide
+        val centerXDp: Float
+        val centerYDp: Float
+        val edgeInsetDp: Float
+
+        if (rawBounds != null) {
+            side = if (rawBounds.centerX() < liveWidthPx * 0.5f) {
+                LandscapeCameraSide.LEFT
+            } else {
+                LandscapeCameraSide.RIGHT
+            }
+            centerXDp = (rawBounds.centerX() - (liveWidthPx * 0.5f)) / density
+            centerYDp = (rawBounds.centerY() / density).coerceIn(24f, liveHeightDp - 24f)
+            edgeInsetDp = if (side == LandscapeCameraSide.LEFT) {
+                (rawBounds.left / density).coerceIn(4f, 44f)
+            } else {
+                ((liveWidthPx - rawBounds.right) / density).coerceIn(4f, 44f)
+            }
+        } else {
+            side = if (rotation == Surface.ROTATION_270) LandscapeCameraSide.RIGHT else LandscapeCameraSide.LEFT
+            edgeInsetDp = base.topOffsetDp.coerceIn(8f, 32f)
+            val halfLens = base.holeHeightDp * 0.5f
+            centerXDp = if (side == LandscapeCameraSide.LEFT) {
+                -(liveWidthDp * 0.5f) + edgeInsetDp + halfLens
+            } else {
+                (liveWidthDp * 0.5f) - edgeInsetDp - halfLens
+            }
+            centerYDp = liveHeightDp * 0.5f
+        }
+
+        return base.copy(
+            screenWidthDp = liveWidthDp,
+            screenHeightDp = liveHeightDp,
+            landscapeCameraSide = side,
+            landscapeHoleCenterXDp = centerXDp,
+            landscapeHoleCenterYDp = centerYDp,
+            landscapeHoleEdgeInsetDp = edgeInsetDp,
+        )
+    }
+
+    private fun extractLiveCutoutBounds(cutout: DisplayCutout?): RectF? {
+        if (cutout == null) return null
+        val path = cutout.cutoutPath
+        if (path != null) {
+            val bounds = RectF()
+            path.computeBounds(bounds, true)
+            if (!bounds.isEmpty && bounds.width() > 0f && bounds.height() > 0f) return bounds
+        }
+        val rect = cutout.boundingRectLeft.takeIf { !it.isEmpty }
+            ?: cutout.boundingRectRight.takeIf { !it.isEmpty }
+            ?: cutout.boundingRects.firstOrNull { !it.isEmpty }
+        return rect?.let { RectF(it) }
     }
 
     private fun buildPortraitMeasurementFromBounds(

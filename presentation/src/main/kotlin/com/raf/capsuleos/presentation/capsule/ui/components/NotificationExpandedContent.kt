@@ -196,19 +196,11 @@ fun NotificationExpandedContent(
 
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = notification.appName,
-                        color = primary,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
                         text = notification.title,
                         color = Color.White,
                         fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.sharedElement(
                             sharedContentState = rememberSharedContentState(key = "capsule_title"),

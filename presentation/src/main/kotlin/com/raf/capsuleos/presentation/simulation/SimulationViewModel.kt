@@ -774,6 +774,7 @@ class SimulationViewModel @Inject constructor(
 
         val expandedSettingChanged =
             preferences.expandedContentPaddingDp != previousPreferences.expandedContentPaddingDp ||
+                preferences.expandedCornerRadiusDp != previousPreferences.expandedCornerRadiusDp ||
                 preferences.autoCollapseDelayMs != previousPreferences.autoCollapseDelayMs ||
                 preferences.enableNeuronGlow != previousPreferences.enableNeuronGlow ||
                 preferences.enableOuterNeuronGlow != previousPreferences.enableOuterNeuronGlow ||

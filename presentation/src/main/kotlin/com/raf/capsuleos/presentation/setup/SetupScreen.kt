@@ -43,6 +43,7 @@ fun SetupScreen(
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
     onOpenCustomizationSection: (CustomizationSection) -> Unit = {},
     onOpenSimulation: () -> Unit = {},
+    onOpenPermissions: () -> Unit = {},
     onOpenAppSettings: () -> Unit = {},
     viewModel: SetupViewModel = hiltViewModel(),
 ) {
@@ -139,6 +140,7 @@ fun SetupScreen(
         onToggleStartPause = viewModel::toggleUserPause,
         onOpenCustomizationSection = onOpenCustomizationSection,
         onOpenSimulation = onOpenSimulation,
+        onOpenPermissions = onOpenPermissions,
         onOpenAppSettings = onOpenAppSettings,
         onAutoDetectCamera = { viewModel.autoDetectCameraPosition(context) },
         onUpdatePreferences = viewModel::updatePreferences,

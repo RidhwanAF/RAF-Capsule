@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -29,6 +30,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -46,6 +48,7 @@ fun BluetoothExpandedContent(
     modifier: Modifier = Modifier,
     device: CapsuleContent.BluetoothDevice,
     topClearanceDp: Float,
+    isLandscape: Boolean = false,
     contentPaddingDp: Float = 18f,
     interactionsEnabled: Boolean = true,
     onOpenBluetoothSettings: () -> Unit,
@@ -54,73 +57,143 @@ fun BluetoothExpandedContent(
     val accentTint = device.batteryPercent?.let { pct ->
         capsuleBatteryAccentColor(batteryPercent = pct, isCharging = pct >= 60, primaryColor = primaryColor)
     } ?: primaryColor
+    val subText = device.batteryPercent?.let { pct ->
+        "${stringResource(R.string.label_bluetooth_connected)} • ${stringResource(R.string.label_bluetooth_battery, pct)}"
+    } ?: stringResource(R.string.label_bluetooth_connected)
 
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = modifier
-            .fillMaxSize()
-            .padding(
-                start = contentPaddingDp.dp,
-                end = contentPaddingDp.dp,
-                top = topClearanceDp.dp,
-                bottom = contentPaddingDp.coerceAtLeast(14f).dp,
-            ),
-    ) {
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .size(44.dp)
-                .clip(CircleShape)
-                .background(accentTint.copy(alpha = 0.2f)),
+    if (isLandscape) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+            modifier = modifier
+                .fillMaxSize()
+                .padding(
+                    start = contentPaddingDp.dp,
+                    end = contentPaddingDp.dp,
+                    top = topClearanceDp.dp,
+                    bottom = contentPaddingDp.coerceAtLeast(16f).dp,
+                ),
         ) {
-            Icon(
-                imageVector = bluetoothIconForCategory(device.category),
-                contentDescription = stringResource(R.string.desc_bluetooth_icon),
-                tint = accentTint,
-                modifier = Modifier.size(22.dp),
-            )
-        }
-
-        Column(modifier = Modifier.weight(1f)) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(68.dp)
+                    .clip(CircleShape)
+                    .background(accentTint.copy(alpha = 0.2f)),
+            ) {
+                Icon(
+                    imageVector = bluetoothIconForCategory(device.category),
+                    contentDescription = stringResource(R.string.desc_bluetooth_icon),
+                    tint = accentTint,
+                    modifier = Modifier.size(34.dp),
+                )
+            }
+            Spacer(modifier = Modifier.height(16.dp))
             Text(
                 text = device.name,
                 color = Color.White,
-                fontSize = 15.sp,
+                fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
-                maxLines = 1,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            Spacer(modifier = Modifier.height(2.dp))
+            Spacer(modifier = Modifier.height(6.dp))
             Text(
-                text = device.batteryPercent?.let { pct ->
-                    "${stringResource(R.string.label_bluetooth_connected)} • ${stringResource(R.string.label_bluetooth_battery, pct)}"
-                } ?: stringResource(R.string.label_bluetooth_connected),
+                text = subText,
                 color = accentTint,
-                fontSize = 12.sp,
+                fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
+            Spacer(modifier = Modifier.height(24.dp))
+            CapsuleExpressiveSurface(
+                enabled = interactionsEnabled,
+                onClick = onOpenBluetoothSettings,
+                restCornerDp = 22f,
+                pressedCornerDp = 10f,
+                backgroundColor = primaryColor.copy(alpha = 0.22f),
+                modifier = Modifier
+                    .fillMaxWidth(0.84f)
+                    .height(44.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.action_open),
+                    color = primaryColor,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                )
+            }
         }
-
-        CapsuleExpressiveSurface(
-            enabled = interactionsEnabled,
-            onClick = onOpenBluetoothSettings,
-            restCornerDp = 18f,
-            pressedCornerDp = 9f,
-            backgroundColor = primaryColor.copy(alpha = 0.22f),
-            modifier = Modifier
-                .height(36.dp)
-                .width(92.dp),
+    } else {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = modifier
+                .fillMaxSize()
+                .padding(
+                    start = contentPaddingDp.dp,
+                    end = contentPaddingDp.dp,
+                    top = topClearanceDp.dp,
+                    bottom = contentPaddingDp.coerceAtLeast(14f).dp,
+                ),
         ) {
-            Text(
-                text = stringResource(R.string.action_open),
-                color = primaryColor,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-            )
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(accentTint.copy(alpha = 0.2f)),
+            ) {
+                Icon(
+                    imageVector = bluetoothIconForCategory(device.category),
+                    contentDescription = stringResource(R.string.desc_bluetooth_icon),
+                    tint = accentTint,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = device.name,
+                    color = Color.White,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = subText,
+                    color = accentTint,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+
+            CapsuleExpressiveSurface(
+                enabled = interactionsEnabled,
+                onClick = onOpenBluetoothSettings,
+                restCornerDp = 18f,
+                pressedCornerDp = 9f,
+                backgroundColor = primaryColor.copy(alpha = 0.22f),
+                modifier = Modifier
+                    .height(36.dp)
+                    .width(92.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.action_open),
+                    color = primaryColor,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                )
+            }
         }
     }
 }

@@ -32,7 +32,8 @@ import kotlin.math.roundToInt
 
 /**
  * Calibration slider row with optional adjacent `-` and `+` M3 Expressive step buttons for
- * exact fine tuning, emitting Compose `SegmentFrequentTick` haptics on every value change.
+ * exact fine tuning, pairing continuous low-amplitude wave haptics on [CapsuleSlider] with
+ * discrete `SegmentTick` clicks on the step buttons.
  *
  * @param modifier Applied to the outer row container.
  * @param label Human-readable setting label.

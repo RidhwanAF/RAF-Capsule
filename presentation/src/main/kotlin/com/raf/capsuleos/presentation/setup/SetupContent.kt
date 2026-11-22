@@ -70,6 +70,7 @@ fun SetupContent(
     onToggleStartPause: () -> Unit,
     onOpenCustomizationSection: (CustomizationSection) -> Unit,
     onOpenSimulation: () -> Unit,
+    onOpenPermissions: () -> Unit = {},
     onOpenAppSettings: () -> Unit,
     onAutoDetectCamera: () -> Unit,
     onUpdatePreferences: ((CapsulePreferences) -> CapsulePreferences) -> Unit,
@@ -160,6 +161,7 @@ fun SetupContent(
                 onCopyAdbCommand = onCopyAdbCommand,
                 onToggleStartPause = onToggleStartPause,
                 onOpenSimulation = onOpenSimulation,
+                onOpenPermissions = onOpenPermissions,
                 modifier = mainCardModifier,
             )
 

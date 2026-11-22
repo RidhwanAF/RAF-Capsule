@@ -30,10 +30,11 @@ import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -71,17 +72,25 @@ import com.raf.capsuleos.domain.model.CapsuleUiState
 import com.raf.capsuleos.domain.model.CapsuleVisualState
 import com.raf.capsuleos.domain.model.ExpandedMediaGlowEffect
 import com.raf.capsuleos.domain.model.HorizontalMediaGlowStyle
+import com.raf.capsuleos.domain.model.LandscapeCameraSide
 import com.raf.capsuleos.domain.model.MediaAnimationColorMode
 import com.raf.capsuleos.domain.model.RingerModeState
 import com.raf.capsuleos.domain.model.SystemStatusKind
+import com.raf.capsuleos.presentation.capsule.ui.components.ChargingWaterWaveFill
+import com.raf.capsuleos.presentation.capsule.ui.components.LandscapeChargingWaterWaveFill
 import com.raf.capsuleos.presentation.capsule.ui.components.LeftSatelliteBubbleIcon
 import com.raf.capsuleos.presentation.capsule.ui.components.MediaBackdropLayer
 import com.raf.capsuleos.presentation.capsule.ui.components.State2HorizontalPill
+import com.raf.capsuleos.presentation.capsule.ui.components.State2LandscapeVerticalPill
 import com.raf.capsuleos.presentation.capsule.ui.components.State3ExpandedCard
 import com.raf.capsuleos.presentation.capsule.ui.components.capsuleBatteryAccentColor
+import com.raf.capsuleos.presentation.capsule.ui.components.computeLandscapeVerticalPillGeometry
 import com.raf.capsuleos.presentation.capsule.ui.components.computeSidePillGeometry
+import com.raf.capsuleos.presentation.common.LocalCapsuleSliderTouchCount
+import com.raf.capsuleos.presentation.common.OemCompatibilityHelper
 import com.raf.capsuleos.presentation.common.rememberCapsuleHaptics
 import com.raf.capsuleos.presentation.shader.NeuralBorderShader
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -190,14 +199,17 @@ fun IslandCapsule(
     onLockScreen: () -> Unit,
     onOpenNotificationShade: () -> Unit = {},
     onOpenClock: () -> Unit,
+    onOpenCalendar: () -> Unit = {},
 ) {
     if (uiState.visualState == CapsuleVisualState.HIDDEN_SYSTEM && scrubPresentation == null) {
         return
     }
 
     val context = LocalContext.current
-    val dynamicScheme = remember(context) { dynamicDarkColorScheme(context) }
+    val dynamicScheme = remember(context) { OemCompatibilityHelper.safeDynamicDarkColorScheme(context) }
+    val activeSliderTouchCount = remember { mutableIntStateOf(0) }
 
+    CompositionLocalProvider(LocalCapsuleSliderTouchCount provides activeSliderTouchCount) {
     MaterialTheme(colorScheme = dynamicScheme) {
         val primaryColor = MaterialTheme.colorScheme.primary
         val tertiaryColor = MaterialTheme.colorScheme.tertiary
@@ -482,7 +494,7 @@ fun IslandCapsule(
         val strokePx = with(density) { (2.2f + 0.4f * effectiveRingMix).dp.toPx() }
 
         val contentPaddingDp = prefs.expandedContentPaddingDp.coerceIn(8f, 32f)
-        val targetTopClearanceDp = if (prefs.belowStatusBar) {
+        val targetTopClearanceDp = if (prefs.belowStatusBar || uiState.isLandscape) {
             contentPaddingDp
         } else {
             val anchorYDp = uiState.anchorTopDp
@@ -505,13 +517,28 @@ fun IslandCapsule(
         val bottomAlpha = 1f - (1f - effectiveExpandedBottomAlpha) * bgProgress
 
         val cardBackgroundModifier = if (bgProgress > 0.01f) {
-            Modifier.background(
-                brush = Brush.verticalGradient(
+            val gradientBrush = if (uiState.isLandscape) {
+                if (uiState.cutout.landscapeCameraSide == LandscapeCameraSide.RIGHT) {
+                    Brush.horizontalGradient(
+                        0.0f to Color.Black.copy(alpha = bottomAlpha),
+                        0.72f to Color.Black.copy(alpha = midAlpha),
+                        1.0f to Color.Black,
+                    )
+                } else {
+                    Brush.horizontalGradient(
+                        0.0f to Color.Black,
+                        0.28f to Color.Black.copy(alpha = midAlpha),
+                        1.0f to Color.Black.copy(alpha = bottomAlpha),
+                    )
+                }
+            } else {
+                Brush.verticalGradient(
                     0.0f to Color.Black,
                     0.28f to Color.Black.copy(alpha = midAlpha),
                     1.0f to Color.Black.copy(alpha = bottomAlpha),
-                ),
-            )
+                )
+            }
+            Modifier.background(brush = gradientBrush)
         } else {
             Modifier.background(Color.Black)
         }
@@ -639,26 +666,44 @@ fun IslandCapsule(
                                 pendingCompactTapJob?.cancel()
                                 pendingCompactTapJob = null
                                 latestUserInteraction()
+                                val isLandscapeGesture = latestUiState.isLandscape
+                                val expandSignX = if (latestUiState.cutout.landscapeCameraSide == LandscapeCameraSide.RIGHT) {
+                                    -1f
+                                } else {
+                                    1f
+                                }
+                                // Once a child control (slider, pager, scroll) handles or consumes any event
+                                // in this gesture, block parent swipe/dismiss/collapse for the rest of the drag.
+                                var childConsumedGesture = down.isConsumed || activeSliderTouchCount.intValue > 0
                                 do {
                                     val event = awaitPointerEvent()
                                     val change = event.changes.firstOrNull()
                                     if (change != null) {
                                         latestUserInteraction()
-                                        if (!change.isConsumed) {
+                                        if (change.isConsumed || activeSliderTouchCount.intValue > 0) {
+                                            childConsumedGesture = true
+                                        }
+                                        if (!childConsumedGesture && !change.isConsumed) {
                                             rootView.getLocationOnScreen(screenLoc)
                                             val currentScreenX = screenLoc[0] + change.position.x
                                             val currentScreenY = screenLoc[1] + change.position.y
                                             val dx = currentScreenX - startScreenX
                                             val dy = currentScreenY - startScreenY
+                                            val dismissAxisDelta = if (isLandscapeGesture) dy else dx
+                                            val collapseAxisDelta = if (isLandscapeGesture) dx * expandSignX else dy
                                             val activeNotif = latestUiState.content as? CapsuleContent.NotificationAlert
-                                            if (activeNotif != null && abs(dx) > 22f && abs(dx) > abs(dy) * 1.35f) {
+                                            if (activeNotif != null &&
+                                                abs(dismissAxisDelta) > 22f &&
+                                                abs(dismissAxisDelta) > abs(collapseAxisDelta) * 1.35f
+                                            ) {
                                                 change.consume()
-                                                var lastScreenX = currentScreenX
+                                                val engageDismissCoord = if (isLandscapeGesture) currentScreenY else currentScreenX
+                                                var lastDismissCoord = engageDismissCoord
                                                 var lastSampleMs = SystemClock.uptimeMillis()
-                                                var velocityXPxPerSec = 0f
+                                                var velocityPxPerSec = 0f
                                                 var crossedDismissDetent = false
                                                 val densityPx = density.density.coerceAtLeast(1f)
-                                                var latestDxDp = 0f
+                                                var latestDeltaDp = 0f
 
                                                 do {
                                                     val dragEvent = awaitPointerEvent()
@@ -667,44 +712,51 @@ fun IslandCapsule(
                                                         dragChange.consume()
                                                         latestUserInteraction()
                                                         rootView.getLocationOnScreen(screenLoc)
-                                                        val sx = screenLoc[0] + dragChange.position.x
+                                                        val sc = if (isLandscapeGesture) {
+                                                            screenLoc[1] + dragChange.position.y
+                                                        } else {
+                                                            screenLoc[0] + dragChange.position.x
+                                                        }
                                                         val nowMs = SystemClock.uptimeMillis()
                                                         val dtSec = ((nowMs - lastSampleMs).coerceAtLeast(1L)) / 1000f
-                                                        val instVel = (sx - lastScreenX) / dtSec
-                                                        velocityXPxPerSec = velocityXPxPerSec * 0.55f + instVel * 0.45f
-                                                        lastScreenX = sx
+                                                        val instVel = (sc - lastDismissCoord) / dtSec
+                                                        velocityPxPerSec = velocityPxPerSec * 0.55f + instVel * 0.45f
+                                                        lastDismissCoord = sc
                                                         lastSampleMs = nowMs
 
-                                                        latestDxDp = (sx - currentScreenX) / densityPx
-                                                        val sign = if (latestDxDp < 0f) -1f else 1f
-                                                        val normalizedPull = (abs(latestDxDp) / 110f).coerceIn(0f, 1f)
+                                                        latestDeltaDp = (sc - engageDismissCoord) / densityPx
+                                                        val sign = if (latestDeltaDp < 0f) -1f else 1f
+                                                        val normalizedPull = (abs(latestDeltaDp) / 110f).coerceIn(0f, 1f)
                                                         val rubberDp = sign * (normalizedPull * 10.5f)
                                                         val targetScale = 1f - normalizedPull * 0.11f
 
-                                                        if (!crossedDismissDetent && abs(latestDxDp) >= 68f) {
+                                                        if (!crossedDismissDetent && abs(latestDeltaDp) >= 68f) {
                                                             crossedDismissDetent = true
-                                                            composeHaptics.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick)
-                                                        } else if (crossedDismissDetent && abs(latestDxDp) < 52f) {
+                                                            composeHaptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                                                        } else if (crossedDismissDetent && abs(latestDeltaDp) < 52f) {
                                                             crossedDismissDetent = false
                                                         }
 
-                                                        latestNotificationSwipeChanged(rubberDp, normalizedPull)
+                                                        latestNotificationSwipeChanged(if (isLandscapeGesture) 0f else rubberDp, normalizedPull)
                                                         coroutineScope.launch {
-                                                            notifSwipeOffsetDp.snapTo(rubberDp)
+                                                            notifSwipeOffsetDp.snapTo(if (isLandscapeGesture) 0f else rubberDp)
                                                             notifSwipeScale.snapTo(targetScale)
                                                         }
                                                     }
                                                 } while (dragEvent.changes.any { it.pressed })
 
-                                                val velocityXDpPerSec = velocityXPxPerSec / densityPx
-                                                val shouldDismiss = abs(latestDxDp) >= 68f ||
-                                                    (abs(velocityXDpPerSec) >= 480f && abs(latestDxDp) >= 24f)
+                                                val velocityDpPerSec = velocityPxPerSec / densityPx
+                                                val shouldDismiss = abs(latestDeltaDp) >= 68f ||
+                                                    (abs(velocityDpPerSec) >= 480f && abs(latestDeltaDp) >= 24f)
                                                 if (shouldDismiss) {
-                                                    val dir = if (latestDxDp < 0f) -1f else 1f
+                                                    val dir = if (latestDeltaDp < 0f) -1f else 1f
                                                     composeHaptics.performHapticFeedback(HapticFeedbackType.Confirm)
                                                     coroutineScope.launch {
                                                         launch { notifSwipeScale.animateTo(0.88f, tween(durationMillis = 75)) }
-                                                        notifSwipeOffsetDp.animateTo(dir * 11.5f, tween(durationMillis = 75))
+                                                        notifSwipeOffsetDp.animateTo(
+                                                            if (isLandscapeGesture) 0f else dir * 11.5f,
+                                                            tween(durationMillis = 75),
+                                                        )
                                                         latestReplyFocusChanged(false)
                                                         latestDismissNotification(activeNotif)
                                                         launch {
@@ -734,35 +786,41 @@ fun IslandCapsule(
                                                 }
                                                 return@awaitEachGesture
                                             }
-                                            if (latestUiState.isExpandedFromSatellite && abs(dx) > 36f && abs(dx) > abs(dy) * 1.35f) {
+                                            val canCycleSatellite = latestUiState.isExpandedFromSatellite ||
+                                                (latestUiState.leftSatellite != null && isSatelliteCardContent(latestUiState.content))
+                                            if (canCycleSatellite &&
+                                                abs(dismissAxisDelta) > 26f &&
+                                                abs(dismissAxisDelta) > abs(collapseAxisDelta) * 1.15f
+                                            ) {
                                                 change.consume()
-                                                composeHaptics.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick)
-                                                latestCycleSatellite(if (dx < 0f) 1 else -1)
+                                                composeHaptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                                                latestCycleSatellite(if (dismissAxisDelta < 0f) 1 else -1)
                                                 do {
                                                     val drain = awaitPointerEvent()
                                                     drain.changes.forEach { it.consume() }
                                                 } while (drain.changes.any { it.pressed })
                                                 return@awaitEachGesture
                                             }
-                                            if (dy < -22f && abs(dy) > abs(dx) * 1.35f) {
-                                                composeHaptics.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick)
+                                            if (collapseAxisDelta < -22f && abs(collapseAxisDelta) > abs(dismissAxisDelta) * 1.35f) {
                                                 val (travelPx, initialFraction) = latestScrubStart()
-                                                trackVerticalScrub(
+                                                trackExpandCollapseScrub(
                                                     startFraction = initialFraction,
                                                     travelPx = travelPx,
-                                                    engageScreenY = currentScreenY,
+                                                    engageCoord = if (isLandscapeGesture) currentScreenX else currentScreenY,
+                                                    axisHorizontal = isLandscapeGesture,
+                                                    expandSign = if (isLandscapeGesture) expandSignX else 1f,
                                                     initiallyFromExpanded = true,
                                                     rootView = rootView,
                                                     screenLoc = screenLoc,
+                                                    coroutineScope = coroutineScope,
                                                     onProgress = latestScrubProgress,
                                                     onInteractionPulse = latestUserInteraction,
-                                                    onHapticTick = {
-                                                        composeHaptics.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick)
-                                                    },
-                                                    onComplete = { commitExpanded, velocityY, _ ->
-                                                        // Always use smooth scrub-to-coast on swipe-up collapse so album art never blinks
+                                                    onSlideMove = haptics::onSmoothSlideMove,
+                                                    onSlideStop = haptics::stopSmoothSlideWave,
+                                                    onComplete = { commitExpanded, velocityAxis, _ ->
+                                                        // Always use smooth scrub-to-coast on swipe collapse so album art never blinks
                                                         suppressAlbumSharedAfterDrag = true
-                                                        latestScrubEnd(commitExpanded, velocityY, false)
+                                                        latestScrubEnd(commitExpanded, velocityAxis, false)
                                                     },
                                                 )
                                                 return@awaitEachGesture
@@ -813,6 +871,12 @@ fun IslandCapsule(
                                 null
                             }
 
+                            val isLandscapeCompact = latestUiState.isLandscape
+                            val compactExpandSignX = if (latestUiState.cutout.landscapeCameraSide == LandscapeCameraSide.RIGHT) {
+                                -1f
+                            } else {
+                                1f
+                            }
                             do {
                                 val event = awaitPointerEvent()
                                 val change = event.changes.firstOrNull()
@@ -827,13 +891,15 @@ fun IslandCapsule(
                                     val currentScreenY = screenLoc[1] + change.position.y
                                     val dx = currentScreenX - startScreenX
                                     val dy = currentScreenY - startScreenY
+                                    val expandAxisDelta = if (isLandscapeCompact) dx * compactExpandSignX else dy
+                                    val cycleAxisDelta = if (isLandscapeCompact) dy else dx
                                     if (abs(dy) > 4f || abs(dx) > 4f) {
                                         change.consume()
                                     }
-                                    if (dy > 6f && abs(dy) > abs(dx)) {
+                                    if (expandAxisDelta > 6f && abs(expandAxisDelta) > abs(cycleAxisDelta)) {
                                         holdJob?.cancel()
                                     }
-                                    if (dy > 10f && abs(dy) > abs(dx) * 1.05f) {
+                                    if (expandAxisDelta > 10f && abs(expandAxisDelta) > abs(cycleAxisDelta) * 1.05f) {
                                         lastCompactTapUpMs = 0L
                                         holdJob?.cancel()
                                         if (isHolding) {
@@ -842,34 +908,38 @@ fun IslandCapsule(
                                             haptics.cancelWave()
                                         }
                                         change.consume()
-                                        composeHaptics.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick)
                                         val (travelPx, initialFraction) = latestScrubStart()
-                                        trackVerticalScrub(
+                                        trackExpandCollapseScrub(
                                             startFraction = initialFraction,
                                             travelPx = travelPx,
-                                            engageScreenY = currentScreenY,
+                                            engageCoord = if (isLandscapeCompact) currentScreenX else currentScreenY,
+                                            axisHorizontal = isLandscapeCompact,
+                                            expandSign = if (isLandscapeCompact) compactExpandSignX else 1f,
                                             initiallyFromExpanded = false,
                                             rootView = rootView,
                                             screenLoc = screenLoc,
+                                            coroutineScope = coroutineScope,
                                             onProgress = latestScrubProgress,
                                             onInteractionPulse = latestUserInteraction,
-                                            onHapticTick = {
-                                                composeHaptics.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick)
-                                            },
-                                            onComplete = { commitExpanded, velocityY, isFastDirectSwipe ->
+                                            onSlideMove = haptics::onSmoothSlideMove,
+                                            onSlideStop = haptics::stopSmoothSlideWave,
+                                            onComplete = { commitExpanded, velocityAxis, isFastDirectSwipe ->
                                                 suppressAlbumSharedAfterDrag = !isFastDirectSwipe
-                                                latestScrubEnd(commitExpanded, velocityY, isFastDirectSwipe)
+                                                latestScrubEnd(commitExpanded, velocityAxis, isFastDirectSwipe)
                                             },
                                         )
                                         return@awaitEachGesture
-                                    } else if (!cycledThisGesture && abs(dx) > 46f && abs(dx) > abs(dy) * 1.3f) {
+                                    } else if (!cycledThisGesture &&
+                                        abs(cycleAxisDelta) > 46f &&
+                                        abs(cycleAxisDelta) > abs(expandAxisDelta) * 1.3f
+                                    ) {
                                         lastCompactTapUpMs = 0L
                                         cycledThisGesture = true
                                         movedTooFar = true
                                         holdJob?.cancel()
                                         change.consume()
-                                        composeHaptics.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick)
-                                        onCycleContent(if (dx < 0f) 1 else -1)
+                                        composeHaptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                                        onCycleContent(if (cycleAxisDelta < 0f) 1 else -1)
                                     } else if (hypot(dx, dy) > 36f) {
                                         lastCompactTapUpMs = 0L
                                         movedTooFar = true
@@ -923,25 +993,24 @@ fun IslandCapsule(
                 val isCollapsingScrub = scrubPresentation?.isCollapsing == true
                 val compactAlpha = when {
                     f == null -> 1f
-                    isCollapsingScrub -> ((0.75f - f) / 0.75f).coerceIn(0f, 1f)
-                    else -> ((0.25f - f) / 0.25f).coerceIn(0f, 1f)
+                    // Fade & scale compact State 2 in smoothly only in the final compact phase so Charging/Pill never bleeds into large cards
+                    isCollapsingScrub -> ((0.42f - f) / 0.42f).coerceIn(0f, 1f)
+                    else -> ((0.30f - f) / 0.30f).coerceIn(0f, 1f)
                 }
                 val expandedAlpha = when {
                     f == null -> 1f
-                    isCollapsingScrub -> (f / 0.75f).coerceIn(0f, 1f)
-                    else -> ((f - 0.25f) / 0.75f).coerceIn(0f, 1f)
+                    isCollapsingScrub -> ((f - 0.18f) / 0.82f).coerceIn(0f, 1f)
+                    else -> ((f - 0.22f) / 0.78f).coerceIn(0f, 1f)
                 }
             val expandedScale = if (scrubPresentation != null) {
                 val widthRatio = (scrubPresentation.currentWidthDp / scrubPresentation.expandedWidthDp.coerceAtLeast(1f))
-                    .coerceIn(0.32f, 1.08f)
+                    .coerceIn(0.45f, 1.06f)
                 val heightRatio = (scrubPresentation.currentHeightDp / scrubPresentation.expandedHeightDp.coerceAtLeast(1f))
-                    .coerceIn(0.32f, 1.08f)
+                    .coerceIn(0.45f, 1.06f)
                 minOf(widthRatio, heightRatio)
             } else {
                 1f
             }
-
-            val stageMorphOrigin = TransformOrigin(0.5f, 0f)
 
             fun Modifier.scrubContainer(
                 targetW: Float,
@@ -950,22 +1019,26 @@ fun IslandCapsule(
                 scaleVal: Float,
             ): Modifier = this
                 .fillMaxSize()
-                .wrapContentSize(align = Alignment.TopCenter, unbounded = true)
+                .wrapContentSize(align = Alignment.Center, unbounded = true)
                 .size(width = targetW.dp, height = targetH.dp)
                 .graphicsLayer {
                     alpha = alphaVal
                     scaleX = scaleVal
                     scaleY = scaleVal
-                    transformOrigin = stageMorphOrigin
+                    transformOrigin = TransformOrigin.Center
                 }
 
-            fun resolvePillScrubScale(geomWidthDp: Float): Float = if (scrubPresentation != null) {
-                val liveMainW = (scrubPresentation.currentWidthDp -
-                    scrubPresentation.satelliteFraction * (uiState.circleDiameterDp + SATELLITE_GAP_DP + SATELLITE_OUTER_PAD_DP))
-                    .coerceAtLeast(uiState.circleDiameterDp)
-                val pillWidthScale = (liveMainW / geomWidthDp.coerceAtLeast(1f))
-                    .coerceIn(0.65f, 1.05f)
-                (0.82f + 0.18f * compactAlpha).coerceAtMost(pillWidthScale)
+            fun resolvePillScrubScale(geomSpanDp: Float): Float = if (scrubPresentation != null) {
+                val satLeadSubtract = scrubPresentation.satelliteFraction *
+                    (uiState.circleDiameterDp + SATELLITE_GAP_DP + SATELLITE_OUTER_PAD_DP)
+                val liveMainSpan = if (uiState.isLandscape) {
+                    (scrubPresentation.currentHeightDp - satLeadSubtract).coerceAtLeast(uiState.circleDiameterDp)
+                } else {
+                    (scrubPresentation.currentWidthDp - satLeadSubtract).coerceAtLeast(uiState.circleDiameterDp)
+                }
+                val pillSpanScale = (liveMainSpan / geomSpanDp.coerceAtLeast(1f))
+                    .coerceIn(0.72f, 1.04f)
+                (0.84f + 0.16f * compactAlpha).coerceAtMost(pillSpanScale)
             } else {
                 1f
             }
@@ -975,6 +1048,42 @@ fun IslandCapsule(
             val useScrubCroppedMediaBg = scrubPresentation != null &&
                 scrubMedia != null &&
                 expandedAlpha > 0.01f
+
+            val steadyState2Charging = if (stageKey == CapsuleStageKey.STATE2_SIDE_PILL) {
+                uiState.content as? CapsuleContent.Charging
+            } else {
+                null
+            }
+            val scrubState2Charging = if (scrubPresentation != null &&
+                scrubPresentation.compactVisualState == CapsuleVisualState.STATE2_HORIZONTAL_PILL
+            ) {
+                scrubPresentation.compactContent as? CapsuleContent.Charging
+            } else {
+                null
+            }
+            val state2ChargingContent = if (scrubPresentation != null) scrubState2Charging else steadyState2Charging
+            var retainedChargingForWave by remember { mutableStateOf(state2ChargingContent) }
+            if (state2ChargingContent != null) {
+                retainedChargingForWave = state2ChargingContent
+            }
+            // Keep steady alpha synced to compactAlpha during scrub so canceling a slow collapse back
+            // to Now Brief never flashes a stale 1.0f charging wave when scrubPresentation clears.
+            val targetSteadyChargingWaveAlpha = when {
+                scrubPresentation != null -> if (scrubState2Charging != null) compactAlpha else 0f
+                steadyState2Charging != null -> 1f
+                else -> 0f
+            }
+            val animatedSteadyChargingWaveAlpha by animateFloatAsState(
+                targetValue = targetSteadyChargingWaveAlpha,
+                animationSpec = tween(durationMillis = if (targetSteadyChargingWaveAlpha > 0f) 210 else 150),
+                label = "chargingWaveAlpha",
+            )
+            val chargingWaveAlpha = if (scrubPresentation != null) {
+                if (scrubState2Charging != null) compactAlpha else 0f
+            } else {
+                animatedSteadyChargingWaveAlpha
+            }
+            val activeWaveCharging = state2ChargingContent ?: retainedChargingForWave
 
             Box(modifier = Modifier.fillMaxSize()) {
                 if (useScrubCroppedMediaBg) {
@@ -987,37 +1096,60 @@ fun IslandCapsule(
                             .graphicsLayer { alpha = expandedAlpha },
                     )
                 }
-                // Single unified stage tree ensures State 3 (e.g. MediaPlayer) never unmounts/blinks on vertical drag
+                if (activeWaveCharging != null && chargingWaveAlpha > 0.01f) {
+                    if (uiState.isLandscape) {
+                        val vGeom = computeLandscapeVerticalPillGeometry(
+                            cutout = uiState.cutout,
+                            anchorPosition = prefs.cameraPosition,
+                            circleDiameterDp = uiState.circleDiameterDp,
+                        )
+                        LandscapeChargingWaterWaveFill(
+                            batteryPercent = activeWaveCharging.batteryPercent,
+                            primaryColor = primaryColor,
+                            geom = vGeom,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer { alpha = chargingWaveAlpha },
+                        )
+                    } else {
+                        val pillGeom = computeSidePillGeometry(
+                            content = activeWaveCharging,
+                            cutout = uiState.cutout,
+                            anchorPosition = prefs.cameraPosition,
+                            circleDiameterDp = uiState.circleDiameterDp,
+                            isLandscape = false,
+                        )
+                        ChargingWaterWaveFill(
+                            batteryPercent = activeWaveCharging.batteryPercent,
+                            primaryColor = primaryColor,
+                            geom = pillGeom,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer { alpha = chargingWaveAlpha },
+                        )
+                    }
+                }
+                // Single unified stage tree with center-aligned smooth fadeIn + scaleIn across all states
                 SharedTransitionLayout(modifier = Modifier.fillMaxSize()) {
                     AnimatedContent(
                         targetState = stageKey,
-                        contentAlignment = Alignment.TopCenter,
+                        contentAlignment = Alignment.Center,
                         transitionSpec = {
                             val isBigCardTransition = targetState == CapsuleStageKey.STATE3_BIG_CARD ||
                                 initialState == CapsuleStageKey.STATE3_BIG_CARD
-                            val origin = if (isBigCardTransition) {
-                                stageMorphOrigin
-                            } else {
-                                TransformOrigin(0.5f, 0.5f)
-                            }
-                            if (targetState == CapsuleStageKey.STATE1_RING || initialState == CapsuleStageKey.STATE1_RING) {
-                                (fadeIn(animationSpec = tween(190)) +
-                                    scaleIn(
-                                        initialScale = if (isBigCardTransition) 0.68f else 0.86f,
-                                        transformOrigin = origin,
-                                        animationSpec = spring(dampingRatio = 0.84f, stiffness = 380f),
-                                    )) togetherWith
-                                    (fadeOut(animationSpec = tween(150)) +
-                                        scaleOut(
-                                            targetScale = if (isBigCardTransition) 0.68f else 0.86f,
-                                            transformOrigin = origin,
-                                            animationSpec = tween(175),
-                                        )) using SizeTransform(clip = false)
-                            } else {
-                                fadeIn(animationSpec = tween(200)) togetherWith
-                                    fadeOut(animationSpec = tween(150)) using
-                                    SizeTransform(clip = false)
-                            }
+                            val initialScaleVal = if (isBigCardTransition) 0.78f else 0.86f
+                            (fadeIn(animationSpec = tween(210)) +
+                                scaleIn(
+                                    initialScale = initialScaleVal,
+                                    transformOrigin = TransformOrigin.Center,
+                                    animationSpec = spring(dampingRatio = 0.84f, stiffness = 390f),
+                                )) togetherWith
+                                (fadeOut(animationSpec = tween(150)) +
+                                    scaleOut(
+                                        targetScale = initialScaleVal,
+                                        transformOrigin = TransformOrigin.Center,
+                                        animationSpec = tween(165),
+                                    )) using SizeTransform(clip = false)
                         },
                         label = "capsuleStageSwitch",
                         modifier = Modifier.fillMaxSize(),
@@ -1032,37 +1164,72 @@ fun IslandCapsule(
                                 } else {
                                     uiState.content
                                 }
-                                val pillGeom = computeSidePillGeometry(
-                                    content = pillContent,
-                                    cutout = uiState.cutout,
-                                    anchorPosition = prefs.cameraPosition,
-                                    circleDiameterDp = uiState.circleDiameterDp,
-                                )
-                                val pillModifier = if (scrubPresentation != null) {
-                                    Modifier.scrubContainer(
-                                        targetW = pillGeom.totalWidthDp,
-                                        targetH = uiState.circleDiameterDp,
-                                        alphaVal = compactAlpha,
-                                        scaleVal = resolvePillScrubScale(pillGeom.totalWidthDp),
+                                if (uiState.isLandscape) {
+                                    val vGeom = computeLandscapeVerticalPillGeometry(
+                                        cutout = uiState.cutout,
+                                        anchorPosition = prefs.cameraPosition,
+                                        circleDiameterDp = uiState.circleDiameterDp,
                                     )
+                                    val pillModifier = if (scrubPresentation != null) {
+                                        Modifier.scrubContainer(
+                                            targetW = vGeom.pillWidthDp,
+                                            targetH = vGeom.totalHeightDp,
+                                            alphaVal = compactAlpha,
+                                            scaleVal = resolvePillScrubScale(vGeom.totalHeightDp),
+                                        )
+                                    } else {
+                                        Modifier.fillMaxSize()
+                                    }
+                                    Box(modifier = pillModifier) {
+                                        State2LandscapeVerticalPill(
+                                            content = pillContent,
+                                            cutout = uiState.cutout,
+                                            anchorPosition = prefs.cameraPosition,
+                                            circleDiameterDp = uiState.circleDiameterDp,
+                                            horizontalMediaGlowStyle = prefs.horizontalMediaGlowStyle,
+                                            mediaAnimationColorMode = prefs.mediaAnimationColorMode,
+                                            swipeDirection = uiState.swipeDirection,
+                                            manualSwipeSeq = uiState.manualSwipeSeq,
+                                            showWaterWave = false,
+                                            modifier = Modifier.fillMaxSize(),
+                                        )
+                                    }
                                 } else {
-                                    Modifier.fillMaxSize()
-                                }
-                                Box(modifier = pillModifier) {
-                                    State2HorizontalPill(
+                                    val pillGeom = computeSidePillGeometry(
                                         content = pillContent,
                                         cutout = uiState.cutout,
                                         anchorPosition = prefs.cameraPosition,
                                         circleDiameterDp = uiState.circleDiameterDp,
-                                        horizontalMediaGlowStyle = prefs.horizontalMediaGlowStyle,
-                                        mediaAnimationColorMode = prefs.mediaAnimationColorMode,
-                                        swipeDirection = uiState.swipeDirection,
-                                        manualSwipeSeq = uiState.manualSwipeSeq,
-                                        enableAlbumSharedTransition = enableAlbumSharedTransition,
-                                        sharedTransitionScope = this@SharedTransitionLayout,
-                                        animatedVisibilityScope = this@AnimatedContent,
-                                        modifier = Modifier.fillMaxSize(),
+                                        isLandscape = false,
                                     )
+                                    val pillModifier = if (scrubPresentation != null) {
+                                        Modifier.scrubContainer(
+                                            targetW = pillGeom.totalWidthDp,
+                                            targetH = uiState.circleDiameterDp,
+                                            alphaVal = compactAlpha,
+                                            scaleVal = resolvePillScrubScale(pillGeom.totalWidthDp),
+                                        )
+                                    } else {
+                                        Modifier.fillMaxSize()
+                                    }
+                                    Box(modifier = pillModifier) {
+                                        State2HorizontalPill(
+                                            content = pillContent,
+                                            cutout = uiState.cutout,
+                                            anchorPosition = prefs.cameraPosition,
+                                            circleDiameterDp = uiState.circleDiameterDp,
+                                            isLandscape = false,
+                                            horizontalMediaGlowStyle = prefs.horizontalMediaGlowStyle,
+                                            mediaAnimationColorMode = prefs.mediaAnimationColorMode,
+                                            swipeDirection = uiState.swipeDirection,
+                                            manualSwipeSeq = uiState.manualSwipeSeq,
+                                            enableAlbumSharedTransition = enableAlbumSharedTransition,
+                                            showWaterWave = false,
+                                            sharedTransitionScope = this@SharedTransitionLayout,
+                                            animatedVisibilityScope = this@AnimatedContent,
+                                            modifier = Modifier.fillMaxSize(),
+                                        )
+                                    }
                                 }
                             }
                             CapsuleStageKey.STATE3_BIG_CARD -> {
@@ -1081,9 +1248,16 @@ fun IslandCapsule(
                                         content = uiState.content,
                                         mediaSessions = uiState.mediaSessions,
                                         selectedMediaIndex = uiState.selectedMediaIndex,
+                                        leftSatellite = uiState.leftSatellite,
+                                        isExpandedFromSatellite = uiState.isExpandedFromSatellite,
+                                        swipeDirection = uiState.swipeDirection,
+                                        cutout = uiState.cutout,
+                                        cameraPosition = prefs.cameraPosition,
+                                        belowStatusBar = prefs.belowStatusBar,
                                         expandedMediaGlowEffects = prefs.expandedMediaGlowEffects,
                                         mediaAnimationColorMode = prefs.mediaAnimationColorMode,
                                         topClearanceDp = topClearanceDp,
+                                        isLandscape = uiState.isLandscape,
                                         contentPaddingDp = contentPaddingDp,
                                         timeSeconds = shaderTime,
                                         interactionsEnabled = interactionsEnabled,
@@ -1122,6 +1296,7 @@ fun IslandCapsule(
                                         onLockScreen = onLockScreen,
                                         onOpenNotificationShade = onOpenNotificationShade,
                                         onOpenClock = onOpenClock,
+                                        onOpenCalendar = onOpenCalendar,
                                         modifier = Modifier.fillMaxSize(),
                                     )
                                 }
@@ -1130,42 +1305,74 @@ fun IslandCapsule(
                     }
                 }
 
-                // Cross-stage scrub preview when dragging past 50% toward the opposite stage
+                // Cross-stage scrub preview smoothly fading & scaling in centered during collapse
                 if (scrubPresentation != null &&
                     stageKey == CapsuleStageKey.STATE3_BIG_CARD &&
                     scrubPresentation.compactVisualState == CapsuleVisualState.STATE2_HORIZONTAL_PILL &&
                     compactAlpha > 0.01f
                 ) {
-                    val pillGeom = computeSidePillGeometry(
-                        content = scrubPresentation.compactContent,
-                        cutout = uiState.cutout,
-                        anchorPosition = prefs.cameraPosition,
-                        circleDiameterDp = uiState.circleDiameterDp,
-                    )
-                    Box(
-                        modifier = Modifier.scrubContainer(
-                            targetW = pillGeom.totalWidthDp,
-                            targetH = uiState.circleDiameterDp,
-                            alphaVal = compactAlpha,
-                            scaleVal = resolvePillScrubScale(pillGeom.totalWidthDp),
-                        ),
-                    ) {
-                        SharedTransitionLayout(modifier = Modifier.fillMaxSize()) {
-                            AnimatedVisibility(visible = true, modifier = Modifier.fillMaxSize()) {
-                                State2HorizontalPill(
-                                    content = scrubPresentation.compactContent,
-                                    cutout = uiState.cutout,
-                                    anchorPosition = prefs.cameraPosition,
-                                    circleDiameterDp = uiState.circleDiameterDp,
-                                    horizontalMediaGlowStyle = prefs.horizontalMediaGlowStyle,
-                                    mediaAnimationColorMode = prefs.mediaAnimationColorMode,
-                                    swipeDirection = uiState.swipeDirection,
-                                    manualSwipeSeq = uiState.manualSwipeSeq,
-                                    enableAlbumSharedTransition = false,
-                                    sharedTransitionScope = this@SharedTransitionLayout,
-                                    animatedVisibilityScope = this@AnimatedVisibility,
-                                    modifier = Modifier.fillMaxSize(),
-                                )
+                    if (uiState.isLandscape) {
+                        val vGeom = computeLandscapeVerticalPillGeometry(
+                            cutout = uiState.cutout,
+                            anchorPosition = prefs.cameraPosition,
+                            circleDiameterDp = uiState.circleDiameterDp,
+                        )
+                        Box(
+                            modifier = Modifier.scrubContainer(
+                                targetW = vGeom.pillWidthDp,
+                                targetH = vGeom.totalHeightDp,
+                                alphaVal = compactAlpha,
+                                scaleVal = resolvePillScrubScale(vGeom.totalHeightDp),
+                            ),
+                        ) {
+                            State2LandscapeVerticalPill(
+                                content = scrubPresentation.compactContent,
+                                cutout = uiState.cutout,
+                                anchorPosition = prefs.cameraPosition,
+                                circleDiameterDp = uiState.circleDiameterDp,
+                                horizontalMediaGlowStyle = prefs.horizontalMediaGlowStyle,
+                                mediaAnimationColorMode = prefs.mediaAnimationColorMode,
+                                swipeDirection = uiState.swipeDirection,
+                                manualSwipeSeq = uiState.manualSwipeSeq,
+                                showWaterWave = false,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+                    } else {
+                        val pillGeom = computeSidePillGeometry(
+                            content = scrubPresentation.compactContent,
+                            cutout = uiState.cutout,
+                            anchorPosition = prefs.cameraPosition,
+                            circleDiameterDp = uiState.circleDiameterDp,
+                            isLandscape = false,
+                        )
+                        Box(
+                            modifier = Modifier.scrubContainer(
+                                targetW = pillGeom.totalWidthDp,
+                                targetH = uiState.circleDiameterDp,
+                                alphaVal = compactAlpha,
+                                scaleVal = resolvePillScrubScale(pillGeom.totalWidthDp),
+                            ),
+                        ) {
+                            SharedTransitionLayout(modifier = Modifier.fillMaxSize()) {
+                                AnimatedVisibility(visible = true, modifier = Modifier.fillMaxSize()) {
+                                    State2HorizontalPill(
+                                        content = scrubPresentation.compactContent,
+                                        cutout = uiState.cutout,
+                                        anchorPosition = prefs.cameraPosition,
+                                        circleDiameterDp = uiState.circleDiameterDp,
+                                        isLandscape = false,
+                                        horizontalMediaGlowStyle = prefs.horizontalMediaGlowStyle,
+                                        mediaAnimationColorMode = prefs.mediaAnimationColorMode,
+                                        swipeDirection = uiState.swipeDirection,
+                                        manualSwipeSeq = uiState.manualSwipeSeq,
+                                        enableAlbumSharedTransition = false,
+                                        showWaterWave = false,
+                                        sharedTransitionScope = this@SharedTransitionLayout,
+                                        animatedVisibilityScope = this@AnimatedVisibility,
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                }
                             }
                         }
                     }
@@ -1187,9 +1394,16 @@ fun IslandCapsule(
                                     content = scrubPresentation.expandedContent,
                                     mediaSessions = uiState.mediaSessions,
                                     selectedMediaIndex = uiState.selectedMediaIndex,
+                                    leftSatellite = uiState.leftSatellite,
+                                    isExpandedFromSatellite = uiState.isExpandedFromSatellite,
+                                    swipeDirection = uiState.swipeDirection,
+                                    cutout = uiState.cutout,
+                                    cameraPosition = prefs.cameraPosition,
+                                    belowStatusBar = prefs.belowStatusBar,
                                     expandedMediaGlowEffects = prefs.expandedMediaGlowEffects,
                                     mediaAnimationColorMode = prefs.mediaAnimationColorMode,
                                     topClearanceDp = topClearanceDp,
+                                    isLandscape = uiState.isLandscape,
                                     contentPaddingDp = contentPaddingDp,
                                     timeSeconds = shaderTime,
                                     interactionsEnabled = false,
@@ -1228,6 +1442,7 @@ fun IslandCapsule(
                                     onLockScreen = onLockScreen,
                                     onOpenNotificationShade = onOpenNotificationShade,
                                     onOpenClock = onOpenClock,
+                                    onOpenCalendar = onOpenCalendar,
                                     modifier = Modifier.fillMaxSize(),
                                 )
                             }
@@ -1252,20 +1467,20 @@ fun IslandCapsule(
                 coroutineScope.launch {
                     val hasHorizontalPill = latestUiState.visualState == CapsuleVisualState.STATE2_HORIZONTAL_PILL
                     if (hasHorizontalPill) {
-                        // Horizontal Expand -> Left Circle: merge directly into main pill, then expand (skip camera ring)
+                        // Merge quickly into main pill before expanding
                         isMergingSatelliteIntoMain = true
                         latestMergeSatelliteIntoMain()
-                        delay(225.milliseconds)
+                        delay(115.milliseconds)
                         latestExpandSatellite()
-                        delay(320.milliseconds)
+                        delay(260.milliseconds)
                         isMergingSatelliteIntoMain = false
                     } else {
-                        // Camera Ring -> Left Circle: merge into camera circle, then expand
+                        // Merge quickly into camera ring before expanding
                         isMergingToCameraBeforeExpand = true
                         latestMergeToCamera()
-                        delay(220.milliseconds)
+                        delay(115.milliseconds)
                         latestExpandSatellite()
-                        delay(320.milliseconds)
+                        delay(260.milliseconds)
                         isMergingToCameraBeforeExpand = false
                     }
                 }
@@ -1277,6 +1492,8 @@ fun IslandCapsule(
             val totalHeightDp = maxHeight.value
             val circleDp = uiState.circleDiameterDp
             val leadSpanDp = circleDp + SATELLITE_GAP_DP + SATELLITE_OUTER_PAD_DP
+            val isSatVertical = layoutSpec.satelliteVertical
+            val satOnTop = layoutSpec.satelliteOnTop
             val isSatelliteHiddenForCollapse = isExpandedCard ||
                 localCollapseSatLock ||
                 (isSatelliteDelayedStage && !isMergingSatelliteIntoMain)
@@ -1292,51 +1509,49 @@ fun IslandCapsule(
                 0f
             }
             val satLeadActive = targetSatLeadDp > 0.5f
-            LaunchedEffect(satLeadActive, layoutSpec.satelliteOnLeft) {
+            LaunchedEffect(satLeadActive, layoutSpec.satelliteOnLeft, isSatVertical) {
                 val satDir = if (layoutSpec.satelliteOnLeft) 1f else -1f
                 if (previousSatLeadActive && !satLeadActive) {
-                    // Merging into main capsule: inward-safe liquid compression & bounce anchored to far edge
                     previousSatLeadActive = false
                     launch {
-                        mainReactionOffsetXDp.animateTo(-2.4f * satDir, tween(durationMillis = 70))
+                        mainReactionOffsetXDp.animateTo(if (isSatVertical) 0f else -2.4f * satDir, tween(durationMillis = 55))
                         mainReactionOffsetXDp.animateTo(
                             0f,
-                            spring(dampingRatio = 0.52f, stiffness = 500f),
+                            spring(dampingRatio = 0.54f, stiffness = 560f),
                         )
                     }
                     launch {
-                        mainReactionScaleX.animateTo(0.93f, tween(durationMillis = 85))
+                        mainReactionScaleX.animateTo(0.93f, tween(durationMillis = 65))
                         mainReactionScaleX.animateTo(
                             1f,
-                            spring(dampingRatio = 0.50f, stiffness = 460f),
+                            spring(dampingRatio = 0.52f, stiffness = 520f),
                         )
                     }
                     launch {
-                        mainReactionScaleY.animateTo(0.95f, tween(durationMillis = 85))
+                        mainReactionScaleY.animateTo(0.95f, tween(durationMillis = 65))
                         mainReactionScaleY.animateTo(
                             1f,
-                            spring(dampingRatio = 0.52f, stiffness = 480f),
+                            spring(dampingRatio = 0.52f, stiffness = 520f),
                         )
                     }
                 } else if (!previousSatLeadActive && satLeadActive) {
-                    // Separating from main capsule: surface-tension pull then elastic settle anchored to far edge
                     previousSatLeadActive = true
                     launch {
-                        mainReactionOffsetXDp.animateTo(-2.0f * satDir, tween(durationMillis = 75))
+                        mainReactionOffsetXDp.animateTo(if (isSatVertical) 0f else -2.0f * satDir, tween(durationMillis = 70))
                         mainReactionOffsetXDp.animateTo(
                             0f,
                             spring(dampingRatio = 0.54f, stiffness = 480f),
                         )
                     }
                     launch {
-                        mainReactionScaleX.animateTo(0.95f, tween(durationMillis = 80))
+                        mainReactionScaleX.animateTo(0.95f, tween(durationMillis = 75))
                         mainReactionScaleX.animateTo(
                             1f,
                             spring(dampingRatio = 0.54f, stiffness = 460f),
                         )
                     }
                     launch {
-                        mainReactionScaleY.animateTo(0.96f, tween(durationMillis = 80))
+                        mainReactionScaleY.animateTo(0.96f, tween(durationMillis = 75))
                         mainReactionScaleY.animateTo(
                             1f,
                             spring(dampingRatio = 0.54f, stiffness = 480f),
@@ -1346,11 +1561,16 @@ fun IslandCapsule(
             }
             val animatedSatLeadDp by animateFloatAsState(
                 targetValue = targetSatLeadDp,
-                animationSpec = spring(dampingRatio = 0.82f, stiffness = 410f),
+                animationSpec = if (targetSatLeadDp <= 0.5f) {
+                    spring(dampingRatio = 0.86f, stiffness = 780f)
+                } else {
+                    spring(dampingRatio = 0.82f, stiffness = 430f)
+                },
                 label = "satLeadSpring",
             )
             val ringSideDp = if (isHolding) circleDp + 4f else circleDp
-            val maxSafeSatLeadDp = (totalWidthDp - ringSideDp).coerceAtLeast(0f)
+            val totalAxisSpanDp = if (isSatVertical) totalHeightDp else totalWidthDp
+            val maxSafeSatLeadDp = (totalAxisSpanDp - ringSideDp).coerceAtLeast(0f)
             val rawSatLeadDp = when {
                 scrubPresentation != null -> {
                     (scrubPresentation.satelliteFraction * leadSpanDp).coerceIn(0f, leadSpanDp)
@@ -1358,7 +1578,7 @@ fun IslandCapsule(
                 isSatelliteHiddenForCollapse -> 0f
                 stageKey == CapsuleStageKey.STATE1_RING -> {
                     // Lock separation 1:1 to live window delta so camera ring NEVER stretches into a capsule
-                    (totalWidthDp - ringSideDp).coerceIn(0f, leadSpanDp)
+                    (totalAxisSpanDp - ringSideDp).coerceIn(0f, leadSpanDp)
                 }
                 else -> animatedSatLeadDp.coerceIn(0f, leadSpanDp)
             }
@@ -1375,13 +1595,24 @@ fun IslandCapsule(
             val activeSatellite = if (isSatelliteHiddenForCollapse) null else (retainedSatellite ?: uiState.leftSatellite)
             val showMetaball = activeSatellite != null && sepFrac > 0.015f
             val mainBoxWidthDp = when {
-                isExpandedCard || isSatelliteHiddenForCollapse -> totalWidthDp
+                isExpandedCard || isSatelliteHiddenForCollapse || isSatVertical -> totalWidthDp
                 showMetaball -> (totalWidthDp - liveSatLeadDp).coerceAtLeast(ringSideDp)
                 else -> totalWidthDp
             }
+            val mainBoxHeightDp = when {
+                isExpandedCard || isSatelliteHiddenForCollapse || !isSatVertical -> totalHeightDp
+                showMetaball -> (totalHeightDp - liveSatLeadDp).coerceAtLeast(ringSideDp)
+                else -> totalHeightDp
+            }
             val satOnLeft = layoutSpec.satelliteOnLeft
-            val safeReactionOrigin = TransformOrigin(if (satOnLeft) 1f else 0f, 0.5f)
-            val clampedReactionTxPx = if (satOnLeft) {
+            val safeReactionOrigin = if (isSatVertical) {
+                TransformOrigin(0.5f, if (satOnTop) 1f else 0f)
+            } else {
+                TransformOrigin(if (satOnLeft) 1f else 0f, 0.5f)
+            }
+            val clampedReactionTxPx = if (isSatVertical) {
+                0f
+            } else if (satOnLeft) {
                 mainReactionOffsetXDp.value.coerceAtMost(0f) * density.density
             } else {
                 mainReactionOffsetXDp.value.coerceAtLeast(0f) * density.density
@@ -1390,119 +1621,233 @@ fun IslandCapsule(
             val safeReactionScaleY = mainReactionScaleY.value.coerceIn(0.90f, 1f)
 
             if (showMetaball) {
-                val satHeightDp = totalHeightDp.coerceAtMost(circleDp + 4f)
+                val satDimDp = if (isSatVertical) {
+                    totalWidthDp.coerceAtMost(circleDp + 4f)
+                } else {
+                    totalHeightDp.coerceAtMost(circleDp + 4f)
+                }
                 val outerPadDp = SATELLITE_OUTER_PAD_DP * sepFrac
 
-                // Gooey black liquid bridge between merging/separating satellite droplet and main capsule
+                // Gooey black liquid bridge between merging/separating satellite droplet and main capsule (horizontal or vertical)
                 Canvas(modifier = Modifier.fillMaxSize()) {
-                    val radiusPx = (satHeightDp * 0.5f).dp.toPx()
+                    val radiusPx = (satDimDp * 0.5f).dp.toPx()
                     val leadPx = liveSatLeadDp.dp.toPx()
                     val outerPadPx = outerPadDp.dp.toPx()
                     val jigglePx = satJiggleOffsetDp.value.dp.toPx()
-                    val satCenterX = if (satOnLeft) {
-                        outerPadPx + radiusPx + jigglePx
-                    } else {
-                        size.width - outerPadPx - radiusPx + jigglePx
-                    }
-                    val mainNearCenterX = if (satOnLeft) {
-                        leadPx + radiusPx + clampedReactionTxPx
-                    } else {
-                        (mainBoxWidthDp.dp.toPx() - radiusPx + clampedReactionTxPx).coerceAtLeast(radiusPx)
-                    }
 
-                    drawCircle(
-                        color = Color.Black,
-                        radius = radiusPx,
-                        center = Offset(satCenterX, radiusPx),
-                    )
+                    if (isSatVertical) {
+                        val cx = size.width * 0.5f
+                        val satCenterY = if (satOnTop) {
+                            outerPadPx + radiusPx + jigglePx
+                        } else {
+                            size.height - outerPadPx - radiusPx + jigglePx
+                        }
+                        val mainNearCenterY = if (satOnTop) {
+                            leadPx + radiusPx
+                        } else {
+                            (mainBoxHeightDp.dp.toPx() - radiusPx).coerceAtLeast(radiusPx)
+                        }
 
-                    // Main capsule meniscus bulge reacting to the merging/separating droplet
-                    val meniscusFactor = (1f - abs(sepFrac - 0.38f) / 0.62f).coerceIn(0f, 1f)
-                    if (meniscusFactor > 0.02f) {
-                        val bulgeShiftX = (if (satOnLeft) -1f else 1f) * radiusPx * 0.24f * meniscusFactor
                         drawCircle(
                             color = Color.Black,
-                            radius = radiusPx * (0.94f + 0.09f * meniscusFactor),
-                            center = Offset(mainNearCenterX + bulgeShiftX, radiusPx),
+                            radius = radiusPx,
+                            center = Offset(cx, satCenterY),
                         )
-                    }
 
-                    if (sepFrac in 0.02f..0.92f) {
-                        val neckU = ((sepFrac - 0.02f) / 0.90f).coerceIn(0f, 1f)
-                        val waistHalfH = radiusPx * (0.92f * (1f - neckU * neckU))
-                        val attachOffsetX = radiusPx * 0.34f
-                        val xStart = if (satOnLeft) satCenterX + attachOffsetX else mainNearCenterX + attachOffsetX
-                        val xEnd = if (satOnLeft) mainNearCenterX - attachOffsetX else satCenterX - attachOffsetX
-                        val midX = (xStart + xEnd) * 0.5f
-                        val anchorHalfH = radiusPx * 0.94f
-                        val path = Path().apply {
-                            moveTo(xStart, radiusPx - anchorHalfH)
-                            quadraticTo(midX, radiusPx - waistHalfH, xEnd, radiusPx - anchorHalfH)
-                            lineTo(xEnd, radiusPx + anchorHalfH)
-                            quadraticTo(midX, radiusPx + waistHalfH, xStart, radiusPx + anchorHalfH)
-                            close()
-                        }
-                        drawPath(path = path, color = Color.Black)
-                    }
-
-                    if (animatedSatGlow > 0.01f) {
-                        val glowAngle = (shaderTime * 190f) % 360f
-                        withTransform({ rotate(degrees = glowAngle, pivot = Offset(satCenterX,
-                            radiusPx
-                        )) }) {
+                        val meniscusFactor = (1f - abs(sepFrac - 0.38f) / 0.62f).coerceIn(0f, 1f)
+                        if (meniscusFactor > 0.02f) {
+                            val bulgeShiftY = (if (satOnTop) -1f else 1f) * radiusPx * 0.24f * meniscusFactor
                             drawCircle(
-                                brush = Brush.sweepGradient(
-                                    0.0f to primaryColor.copy(alpha = 0.95f * animatedSatGlow),
-                                    0.35f to tertiaryColor.copy(alpha = 0.88f * animatedSatGlow),
-                                    0.70f to Color.White.copy(alpha = 0.92f * animatedSatGlow),
-                                    1.0f to primaryColor.copy(alpha = 0.95f * animatedSatGlow),
+                                color = Color.Black,
+                                radius = radiusPx * (0.94f + 0.09f * meniscusFactor),
+                                center = Offset(cx, mainNearCenterY + bulgeShiftY),
+                            )
+                        }
+
+                        if (sepFrac in 0.02f..0.92f) {
+                            val neckU = ((sepFrac - 0.02f) / 0.90f).coerceIn(0f, 1f)
+                            val waistHalfW = radiusPx * (0.92f * (1f - neckU * neckU))
+                            val attachOffsetY = radiusPx * 0.34f
+                            val yStart = if (satOnTop) satCenterY + attachOffsetY else mainNearCenterY + attachOffsetY
+                            val yEnd = if (satOnTop) mainNearCenterY - attachOffsetY else satCenterY - attachOffsetY
+                            val midY = (yStart + yEnd) * 0.5f
+                            val anchorHalfW = radiusPx * 0.94f
+                            val path = Path().apply {
+                                moveTo(cx - anchorHalfW, yStart)
+                                quadraticTo(cx - waistHalfW, midY, cx - anchorHalfW, yEnd)
+                                lineTo(cx + anchorHalfW, yEnd)
+                                quadraticTo(cx + waistHalfW, midY, cx + anchorHalfW, yStart)
+                                close()
+                            }
+                            drawPath(path = path, color = Color.Black)
+                        }
+
+                        if (animatedSatGlow > 0.01f) {
+                            val glowAngle = (shaderTime * 190f) % 360f
+                            withTransform({ rotate(degrees = glowAngle, pivot = Offset(cx, satCenterY)) }) {
+                                drawCircle(
+                                    brush = Brush.sweepGradient(
+                                        0.0f to primaryColor.copy(alpha = 0.95f * animatedSatGlow),
+                                        0.35f to tertiaryColor.copy(alpha = 0.88f * animatedSatGlow),
+                                        0.70f to Color.White.copy(alpha = 0.92f * animatedSatGlow),
+                                        1.0f to primaryColor.copy(alpha = 0.95f * animatedSatGlow),
+                                        center = Offset(cx, satCenterY),
+                                    ),
+                                    radius = (radiusPx - 1.1.dp.toPx()).coerceAtLeast(4f),
+                                    center = Offset(cx, satCenterY),
+                                    style = Stroke(width = 2.2.dp.toPx()),
+                                )
+                            }
+                        }
+
+                        val dotFade = ((sepFrac - 0.55f) / 0.45f).coerceIn(0f, 1f)
+                        if (dotFade > 0.02f && activeSatellite.totalCount > 1) {
+                            val totalDots = activeSatellite.totalCount
+                            val activeDotIdx = activeSatellite.activeIndex.coerceIn(0, totalDots - 1)
+                            val stepDeg = if (totalDots <= 4) 22f else (240f / totalDots).coerceIn(18f, 42f)
+                            // Vertical arc on the screen-facing side (right side for standard LEFT camera bezel)
+                            val centerDeg = if (uiState.cutout.landscapeCameraSide == LandscapeCameraSide.RIGHT) {
+                                180f
+                            } else {
+                                0f
+                            }
+                            val startDeg = centerDeg - stepDeg * (totalDots - 1) * 0.5f
+                            val dotOrbitRadiusPx = (radiusPx - 1.55.dp.toPx()).coerceAtLeast(4f)
+                            for (i in 0 until totalDots) {
+                                val angleRad = Math.toRadians((startDeg + i * stepDeg).toDouble())
+                                val dotX = cx + (cos(angleRad) * dotOrbitRadiusPx).toFloat()
+                                val dotY = satCenterY + (sin(angleRad) * dotOrbitRadiusPx).toFloat()
+                                val isCurrentDot = i == activeDotIdx
+                                val dotR = (if (isCurrentDot) 1.45.dp else 1.05.dp).toPx()
+                                val haloR = (if (isCurrentDot) 2.15.dp else 1.65.dp).toPx()
+                                drawCircle(
+                                    color = Color.Black.copy(alpha = 0.86f * dotFade),
+                                    radius = haloR,
+                                    center = Offset(dotX, dotY),
+                                )
+                                drawCircle(
+                                    color = if (isCurrentDot) {
+                                        primaryColor.copy(alpha = dotFade)
+                                    } else {
+                                        Color.White.copy(alpha = 0.46f * dotFade)
+                                    },
+                                    radius = dotR,
+                                    center = Offset(dotX, dotY),
+                                )
+                            }
+                        }
+                    } else {
+                        val satCenterX = if (satOnLeft) {
+                            outerPadPx + radiusPx + jigglePx
+                        } else {
+                            size.width - outerPadPx - radiusPx + jigglePx
+                        }
+                        val mainNearCenterX = if (satOnLeft) {
+                            leadPx + radiusPx + clampedReactionTxPx
+                        } else {
+                            (mainBoxWidthDp.dp.toPx() - radiusPx + clampedReactionTxPx).coerceAtLeast(radiusPx)
+                        }
+
+                        drawCircle(
+                            color = Color.Black,
+                            radius = radiusPx,
+                            center = Offset(satCenterX, radiusPx),
+                        )
+
+                        // Main capsule meniscus bulge reacting to the merging/separating droplet
+                        val meniscusFactor = (1f - abs(sepFrac - 0.38f) / 0.62f).coerceIn(0f, 1f)
+                        if (meniscusFactor > 0.02f) {
+                            val bulgeShiftX = (if (satOnLeft) -1f else 1f) * radiusPx * 0.24f * meniscusFactor
+                            drawCircle(
+                                color = Color.Black,
+                                radius = radiusPx * (0.94f + 0.09f * meniscusFactor),
+                                center = Offset(mainNearCenterX + bulgeShiftX, radiusPx),
+                            )
+                        }
+
+                        if (sepFrac in 0.02f..0.92f) {
+                            val neckU = ((sepFrac - 0.02f) / 0.90f).coerceIn(0f, 1f)
+                            val waistHalfH = radiusPx * (0.92f * (1f - neckU * neckU))
+                            val attachOffsetX = radiusPx * 0.34f
+                            val xStart = if (satOnLeft) satCenterX + attachOffsetX else mainNearCenterX + attachOffsetX
+                            val xEnd = if (satOnLeft) mainNearCenterX - attachOffsetX else satCenterX - attachOffsetX
+                            val midX = (xStart + xEnd) * 0.5f
+                            val anchorHalfH = radiusPx * 0.94f
+                            val path = Path().apply {
+                                moveTo(xStart, radiusPx - anchorHalfH)
+                                quadraticTo(midX, radiusPx - waistHalfH, xEnd, radiusPx - anchorHalfH)
+                                lineTo(xEnd, radiusPx + anchorHalfH)
+                                quadraticTo(midX, radiusPx + waistHalfH, xStart, radiusPx + anchorHalfH)
+                                close()
+                            }
+                            drawPath(path = path, color = Color.Black)
+                        }
+
+                        if (animatedSatGlow > 0.01f) {
+                            val glowAngle = (shaderTime * 190f) % 360f
+                            withTransform({
+                                rotate(degrees = glowAngle, pivot = Offset(satCenterX, radiusPx))
+                            }) {
+                                drawCircle(
+                                    brush = Brush.sweepGradient(
+                                        0.0f to primaryColor.copy(alpha = 0.95f * animatedSatGlow),
+                                        0.35f to tertiaryColor.copy(alpha = 0.88f * animatedSatGlow),
+                                        0.70f to Color.White.copy(alpha = 0.92f * animatedSatGlow),
+                                        1.0f to primaryColor.copy(alpha = 0.95f * animatedSatGlow),
+                                        center = Offset(satCenterX, radiusPx),
+                                    ),
+                                    radius = (radiusPx - 1.1.dp.toPx()).coerceAtLeast(4f),
                                     center = Offset(satCenterX, radiusPx),
-                                ),
-                                radius = (radiusPx - 1.1.dp.toPx()).coerceAtLeast(4f),
-                                center = Offset(satCenterX, radiusPx),
-                                style = Stroke(width = 2.2.dp.toPx()),
-                            )
+                                    style = Stroke(width = 2.2.dp.toPx()),
+                                )
+                            }
                         }
-                    }
 
-                    // Ultra-small border dot indicators centered at bottom of left satellite circle (only when >1 state)
-                    val dotFade = ((sepFrac - 0.55f) / 0.45f).coerceIn(0f, 1f)
-                    if (dotFade > 0.02f && activeSatellite.totalCount > 1) {
-                        val totalDots = activeSatellite.totalCount
-                        val activeDotIdx = activeSatellite.activeIndex.coerceIn(0, totalDots - 1)
-                        val stepDeg = if (totalDots <= 4) 22f else (240f / totalDots).coerceIn(18f, 42f)
-                        val startDeg = 90f - stepDeg * (totalDots - 1) * 0.5f
-                        val dotOrbitRadiusPx = (radiusPx - 1.55.dp.toPx()).coerceAtLeast(4f)
-                        for (i in 0 until totalDots) {
-                            val angleRad = Math.toRadians((startDeg + i * stepDeg).toDouble())
-                            val dotX = satCenterX + (cos(angleRad) * dotOrbitRadiusPx).toFloat()
-                            val dotY = radiusPx + (sin(angleRad) * dotOrbitRadiusPx).toFloat()
-                            val isCurrentDot = i == activeDotIdx
-                            val dotR = (if (isCurrentDot) 1.45.dp else 1.05.dp).toPx()
-                            val haloR = (if (isCurrentDot) 2.15.dp else 1.65.dp).toPx()
-                            drawCircle(
-                                color = Color.Black.copy(alpha = 0.86f * dotFade),
-                                radius = haloR,
-                                center = Offset(dotX, dotY),
-                            )
-                            drawCircle(
-                                color = if (isCurrentDot) {
-                                    primaryColor.copy(alpha = dotFade)
-                                } else {
-                                    Color.White.copy(alpha = 0.46f * dotFade)
-                                },
-                                radius = dotR,
-                                center = Offset(dotX, dotY),
-                            )
+                        // Ultra-small border dot indicators centered at bottom of left satellite circle (only when >1 state)
+                        val dotFade = ((sepFrac - 0.55f) / 0.45f).coerceIn(0f, 1f)
+                        if (dotFade > 0.02f && activeSatellite.totalCount > 1) {
+                            val totalDots = activeSatellite.totalCount
+                            val activeDotIdx = activeSatellite.activeIndex.coerceIn(0, totalDots - 1)
+                            val stepDeg = if (totalDots <= 4) 22f else (240f / totalDots).coerceIn(18f, 42f)
+                            val startDeg = 90f - stepDeg * (totalDots - 1) * 0.5f
+                            val dotOrbitRadiusPx = (radiusPx - 1.55.dp.toPx()).coerceAtLeast(4f)
+                            (0 until totalDots).forEach { i ->
+                                val angleRad = Math.toRadians((startDeg + i * stepDeg).toDouble())
+                                val dotX = satCenterX + (cos(angleRad) * dotOrbitRadiusPx).toFloat()
+                                val dotY = radiusPx + (sin(angleRad) * dotOrbitRadiusPx).toFloat()
+                                val isCurrentDot = i == activeDotIdx
+                                val dotR = (if (isCurrentDot) 1.45.dp else 1.05.dp).toPx()
+                                val haloR = (if (isCurrentDot) 2.15.dp else 1.65.dp).toPx()
+                                drawCircle(
+                                    color = Color.Black.copy(alpha = 0.86f * dotFade),
+                                    radius = haloR,
+                                    center = Offset(dotX, dotY),
+                                )
+                                drawCircle(
+                                    color = if (isCurrentDot) {
+                                        primaryColor.copy(alpha = dotFade)
+                                    } else {
+                                        Color.White.copy(alpha = 0.46f * dotFade)
+                                    },
+                                    radius = dotR,
+                                    center = Offset(dotX, dotY),
+                                )
+                            }
                         }
                     }
                 }
             }
 
             // Single permanent mainCapsuleBox so pointerInput never unmounts/cancels when satellite appears or hides
+            val mainBoxAlignment = when {
+                isSatVertical && satOnTop -> Alignment.BottomCenter
+                isSatVertical -> Alignment.TopCenter
+                satOnLeft -> Alignment.TopEnd
+                else -> Alignment.TopStart
+            }
             mainCapsuleBox(
                 Modifier
-                    .align(if (satOnLeft) Alignment.TopEnd else Alignment.TopStart)
+                    .align(mainBoxAlignment)
                     .graphicsLayer {
                         if (!isExpandedCard) {
                             transformOrigin = safeReactionOrigin
@@ -1511,30 +1856,48 @@ fun IslandCapsule(
                             scaleY = safeReactionScaleY
                         }
                     }
-                    .size(width = mainBoxWidthDp.dp, height = totalHeightDp.dp),
+                    .size(width = mainBoxWidthDp.dp, height = mainBoxHeightDp.dp),
             )
 
             if (showMetaball) {
-                val satHeightDp = totalHeightDp.coerceAtMost(circleDp + 4f)
+                val satDimDp = if (isSatVertical) {
+                    totalWidthDp.coerceAtMost(circleDp + 4f)
+                } else {
+                    totalHeightDp.coerceAtMost(circleDp + 4f)
+                }
                 val outerPadDp = SATELLITE_OUTER_PAD_DP * sepFrac
                 val iconProgress = ((sepFrac - 0.25f) / 0.75f).coerceIn(0f, 1f)
-                val satInteractAlign = if (satOnLeft) Alignment.TopStart else Alignment.TopEnd
+                val satInteractAlign = when {
+                    isSatVertical && satOnTop -> Alignment.TopCenter
+                    isSatVertical -> Alignment.BottomCenter
+                    satOnLeft -> Alignment.TopStart
+                    else -> Alignment.TopEnd
+                }
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
                         .align(satInteractAlign)
                         .padding(
-                            start = if (satOnLeft) outerPadDp.dp else 0.dp,
-                            end = if (!satOnLeft) outerPadDp.dp else 0.dp,
+                            start = if (!isSatVertical && satOnLeft) outerPadDp.dp else 0.dp,
+                            end = if (!isSatVertical && !satOnLeft) outerPadDp.dp else 0.dp,
+                            top = if (isSatVertical && satOnTop) outerPadDp.dp else 0.dp,
+                            bottom = if (isSatVertical && !satOnTop) outerPadDp.dp else 0.dp,
                         )
-                        .offset { IntOffset((satJiggleOffsetDp.value * density.density).roundToInt(), 0) }
-                        .size(width = circleDp.dp, height = satHeightDp.dp)
+                        .offset {
+                            val px = (satJiggleOffsetDp.value * density.density).roundToInt()
+                            if (isSatVertical) IntOffset(0, px) else IntOffset(px, 0)
+                        }
+                        .size(
+                            width = if (isSatVertical) satDimDp.dp else circleDp.dp,
+                            height = if (isSatVertical) circleDp.dp else satDimDp.dp,
+                        )
                         .clip(CircleShape)
                         .pointerInput(Unit) {
                             awaitEachGesture {
                                 val down = awaitFirstDown(requireUnconsumed = false)
                                 if (!latestInteractionsEnabled || latestUiState.isQsRingOnlyActive) return@awaitEachGesture
                                 down.consume()
+                                val isVerticalSwipe = latestUiState.isLandscape
                                 var swiped = false
                                 var holdTriggered = false
                                 var totalDx = 0f
@@ -1557,12 +1920,14 @@ fun IslandCapsule(
                                         }
                                         totalDx = change.position.x - down.position.x
                                         totalDy = change.position.y - down.position.y
-                                        if (!swiped && abs(totalDx) > 26f && abs(totalDx) > abs(totalDy) * 1.15f) {
+                                        val primaryAxis = if (isVerticalSwipe) totalDy else totalDx
+                                        val crossAxis = if (isVerticalSwipe) totalDx else totalDy
+                                        if (!swiped && abs(primaryAxis) > 26f && abs(primaryAxis) > abs(crossAxis) * 1.15f) {
                                             swiped = true
                                             holdJob.cancel()
                                             change.consume()
-                                            composeHaptics.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick)
-                                            onCycleSatellite(if (totalDx < 0f) 1 else -1)
+                                            composeHaptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                                            latestCycleSatellite(if (primaryAxis < 0f) 1 else -1)
                                         }
                                     }
                                 } while (event.changes.any { it.pressed })
@@ -1596,73 +1961,92 @@ fun IslandCapsule(
             }
         }
     }
+    }
 }
 
-private suspend fun AwaitPointerEventScope.trackVerticalScrub(
+private suspend fun AwaitPointerEventScope.trackExpandCollapseScrub(
     startFraction: Float,
     travelPx: Float,
-    engageScreenY: Float,
+    engageCoord: Float,
+    axisHorizontal: Boolean,
+    expandSign: Float,
     initiallyFromExpanded: Boolean,
     rootView: View,
     screenLoc: IntArray,
+    coroutineScope: CoroutineScope,
     onProgress: (Float) -> Unit,
     onInteractionPulse: () -> Unit,
-    onHapticTick: () -> Unit = {},
-    onComplete: (commitExpanded: Boolean, velocityYPxPerSec: Float, isFastDirectSwipe: Boolean) -> Unit,
+    onSlideMove: () -> Unit = {},
+    onSlideStop: () -> Unit = {},
+    onComplete: (commitExpanded: Boolean, velocityPxPerSec: Float, isFastDirectSwipe: Boolean) -> Unit,
 ) {
     val scrubStartedAtMs = SystemClock.uptimeMillis()
     var currentFraction = startFraction
-    var lastSampleY = engageScreenY
+    var lastMovedFraction = startFraction
+    var lastSampleCoord = engageCoord
     var lastSampleTimeMs = scrubStartedAtMs
-    var smoothedVy = 0f
+    var smoothedV = 0f
     var lastPulseTimeMs = lastSampleTimeMs
-    var lastHapticBucket = (startFraction * 20f).roundToInt()
+    var slideIdleJob: Job? = null
 
-    do {
-        val event = awaitPointerEvent()
-        val change = event.changes.firstOrNull()
-        if (change != null) {
-            change.consume()
-            rootView.getLocationOnScreen(screenLoc)
-            val currentScreenY = screenLoc[1] + change.position.y
-            val effectiveDy = currentScreenY - engageScreenY
-            val raw = startFraction + effectiveDy / travelPx
-            currentFraction = applyScrubRubberBand(raw)
-            val bucket = (currentFraction * 20f).roundToInt()
-            if (bucket != lastHapticBucket) {
-                lastHapticBucket = bucket
-                onHapticTick()
-            }
-            onProgress(currentFraction)
+    try {
+        do {
+            val event = awaitPointerEvent()
+            val change = event.changes.firstOrNull()
+            if (change != null) {
+                change.consume()
+                rootView.getLocationOnScreen(screenLoc)
+                val currentCoord = if (axisHorizontal) {
+                    screenLoc[0] + change.position.x
+                } else {
+                    screenLoc[1] + change.position.y
+                }
+                val effectiveDelta = (currentCoord - engageCoord) * expandSign
+                val raw = startFraction + effectiveDelta / travelPx
+                currentFraction = applyScrubRubberBand(raw)
+                if (abs(currentFraction - lastMovedFraction) > 0.004f) {
+                    lastMovedFraction = currentFraction
+                    onSlideMove()
+                    slideIdleJob?.cancel()
+                    slideIdleJob = coroutineScope.launch {
+                        delay(85.milliseconds)
+                        onSlideStop()
+                    }
+                }
+                onProgress(currentFraction)
 
-            val dtMs = change.uptimeMillis - lastSampleTimeMs
-            if (dtMs in 4L..120L) {
-                val instantVy = (currentScreenY - lastSampleY) / (dtMs / 1000f)
-                smoothedVy = if (smoothedVy == 0f) instantVy else smoothedVy * 0.55f + instantVy * 0.45f
-                lastSampleY = currentScreenY
-                lastSampleTimeMs = change.uptimeMillis
-            } else if (dtMs > 120L) {
-                smoothedVy = 0f
-                lastSampleY = currentScreenY
-                lastSampleTimeMs = change.uptimeMillis
-            }
+                val dtMs = change.uptimeMillis - lastSampleTimeMs
+                if (dtMs in 4L..120L) {
+                    val instantV = ((currentCoord - lastSampleCoord) * expandSign) / (dtMs / 1000f)
+                    smoothedV = if (smoothedV == 0f) instantV else smoothedV * 0.55f + instantV * 0.45f
+                    lastSampleCoord = currentCoord
+                    lastSampleTimeMs = change.uptimeMillis
+                } else if (dtMs > 120L) {
+                    smoothedV = 0f
+                    lastSampleCoord = currentCoord
+                    lastSampleTimeMs = change.uptimeMillis
+                }
 
-            if (change.uptimeMillis - lastPulseTimeMs >= 350L) {
-                lastPulseTimeMs = change.uptimeMillis
-                onInteractionPulse()
+                if (change.uptimeMillis - lastPulseTimeMs >= 350L) {
+                    lastPulseTimeMs = change.uptimeMillis
+                    onInteractionPulse()
+                }
             }
-        }
-    } while (event.changes.any { it.pressed })
+        } while (event.changes.any { it.pressed })
+    } finally {
+        slideIdleJob?.cancel()
+        onSlideStop()
+    }
 
     val gestureDurationMs = SystemClock.uptimeMillis() - scrubStartedAtMs
-    val isFastDirectSwipe = (abs(smoothedVy) >= 560f && gestureDurationMs <= 340L) ||
-        (gestureDurationMs <= 180L && abs(smoothedVy) >= 340f)
+    val isFastDirectSwipe = (abs(smoothedV) >= 560f && gestureDurationMs <= 340L) ||
+        (gestureDurationMs <= 180L && abs(smoothedV) >= 340f)
     val commitExpanded = if (initiallyFromExpanded) {
-        (currentFraction >= 0.75f && smoothedVy > -600f) || smoothedVy > 380f
+        (currentFraction >= 0.75f && smoothedV > -600f) || smoothedV > 380f
     } else {
-        (currentFraction >= 0.25f && smoothedVy >= -350f) || smoothedVy > 620f
+        (currentFraction >= 0.25f && smoothedV >= -350f) || smoothedV > 620f
     }
-    onComplete(commitExpanded, smoothedVy, isFastDirectSwipe)
+    onComplete(commitExpanded, smoothedV, isFastDirectSwipe)
 }
 
 private fun applyScrubRubberBand(raw: Float): Float = when {
@@ -1675,4 +2059,13 @@ private fun applyScrubRubberBand(raw: Float): Float = when {
         -(under / (1f + under * 4f)) * 0.04f
     }
     else -> raw
+}
+
+private fun isSatelliteCardContent(content: CapsuleContent): Boolean = when (content) {
+    is CapsuleContent.Torch,
+    is CapsuleContent.Hotspot,
+    is CapsuleContent.LiveActivity,
+    is CapsuleContent.SystemStatus,
+    -> true
+    else -> false
 }

@@ -37,6 +37,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -56,6 +57,7 @@ fun SystemStatusExpandedContent(
     modifier: Modifier = Modifier,
     status: CapsuleContent.SystemStatus,
     topClearanceDp: Float,
+    isLandscape: Boolean = false,
     contentPaddingDp: Float = 18f,
     interactionsEnabled: Boolean = true,
     sharedTransitionScope: SharedTransitionScope,
@@ -71,20 +73,18 @@ fun SystemStatusExpandedContent(
     val activeDetail = status.detailLabel.ifBlank { stringResource(R.string.label_status_active) }
 
     with(sharedTransitionScope) {
-        Column(
-            verticalArrangement = Arrangement.SpaceBetween,
-            modifier = modifier
-                .fillMaxSize()
-                .padding(
-                    start = contentPaddingDp.dp,
-                    end = contentPaddingDp.dp,
-                    top = topClearanceDp.dp,
-                    bottom = (contentPaddingDp * 0.85f).coerceAtLeast(12f).dp,
-                ),
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth(),
+        if (isLandscape) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+                modifier = modifier
+                    .fillMaxSize()
+                    .padding(
+                        start = contentPaddingDp.dp,
+                        end = contentPaddingDp.dp,
+                        top = topClearanceDp.dp,
+                        bottom = contentPaddingDp.coerceAtLeast(16f).dp,
+                    ),
             ) {
                 Box(
                     contentAlignment = Alignment.Center,
@@ -94,7 +94,7 @@ fun SystemStatusExpandedContent(
                             animatedVisibilityScope = animatedVisibilityScope,
                             boundsTransform = { _, _ -> spring(dampingRatio = 0.82f, stiffness = 410f) },
                         )
-                        .size(42.dp)
+                        .size(68.dp)
                         .clip(CircleShape)
                         .background(primary.copy(alpha = 0.22f)),
                 ) {
@@ -102,31 +102,166 @@ fun SystemStatusExpandedContent(
                         imageVector = icon,
                         contentDescription = title,
                         tint = primary,
-                        modifier = Modifier.size(22.dp),
+                        modifier = Modifier.size(34.dp),
                     )
                 }
-
-                Spacer(modifier = Modifier.width(12.dp))
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = title,
-                        color = Color.White,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = activeDetail,
-                        color = primary,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = title,
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = activeDetail,
+                    color = primary,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(modifier = Modifier.height(22.dp))
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth(0.86f),
+                ) {
+                    if (status.kind == SystemStatusKind.RINGER_MUTED) {
+                        CapsuleExpressiveSurface(
+                            enabled = interactionsEnabled,
+                            onClick = {
+                                haptics.click()
+                                onUserInteraction()
+                                onSetRingerMode(RingerModeState.NORMAL)
+                            },
+                            restCornerDp = 22f,
+                            pressedCornerDp = 10f,
+                            backgroundColor = primary.copy(alpha = 0.24f),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(42.dp),
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center,
+                                modifier = Modifier.fillMaxSize(),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.NotificationsActive,
+                                    contentDescription = null,
+                                    tint = primary,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = stringResource(R.string.action_restore_ring),
+                                    color = Color.White,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                )
+                            }
+                        }
+                    }
+                    CapsuleExpressiveSurface(
+                        enabled = interactionsEnabled,
+                        onClick = {
+                            haptics.click()
+                            onUserInteraction()
+                            onOpenSystemStatusSettings(status.kind)
+                        },
+                        restCornerDp = 22f,
+                        pressedCornerDp = 10f,
+                        backgroundColor = Color.White.copy(alpha = 0.14f),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(42.dp),
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center,
+                            modifier = Modifier.fillMaxSize(),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Settings,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = stringResource(R.string.action_open_settings),
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                            )
+                        }
+                    }
                 }
             }
+        } else {
+            Column(
+                verticalArrangement = Arrangement.SpaceBetween,
+                modifier = modifier
+                    .fillMaxSize()
+                    .padding(
+                        start = contentPaddingDp.dp,
+                        end = contentPaddingDp.dp,
+                        top = topClearanceDp.dp,
+                        bottom = (contentPaddingDp * 0.85f).coerceAtLeast(12f).dp,
+                    ),
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .sharedElement(
+                                sharedContentState = rememberSharedContentState(key = "capsule_icon"),
+                                animatedVisibilityScope = animatedVisibilityScope,
+                                boundsTransform = { _, _ -> spring(dampingRatio = 0.82f, stiffness = 410f) },
+                            )
+                            .size(42.dp)
+                            .clip(CircleShape)
+                            .background(primary.copy(alpha = 0.22f)),
+                    ) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = title,
+                            tint = primary,
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(12.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = title,
+                            color = Color.White,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = activeDetail,
+                            color = primary,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
 
                 Spacer(modifier = Modifier.height(10.dp))
 
@@ -210,6 +345,7 @@ fun SystemStatusExpandedContent(
                         }
                     }
                 }
+            }
         }
     }
 }

@@ -8,7 +8,6 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,6 +42,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -102,6 +102,7 @@ fun LiveActivityExpandedContent(
     modifier: Modifier = Modifier,
     liveActivity: CapsuleContent.LiveActivity,
     topClearanceDp: Float,
+    isLandscape: Boolean = false,
     contentPaddingDp: Float = 18f,
     interactionsEnabled: Boolean = true,
     sharedTransitionScope: SharedTransitionScope,
@@ -131,7 +132,8 @@ fun LiveActivityExpandedContent(
 
     with(sharedTransitionScope) {
         Column(
-            verticalArrangement = Arrangement.SpaceBetween,
+            horizontalAlignment = if (isLandscape) Alignment.CenterHorizontally else Alignment.Start,
+            verticalArrangement = if (isLandscape) Arrangement.Center else Arrangement.SpaceBetween,
             modifier = modifier
                 .fillMaxSize()
                 .padding(
@@ -141,131 +143,215 @@ fun LiveActivityExpandedContent(
                     bottom = (contentPaddingDp * 0.85f).coerceAtLeast(14f).dp,
                 ),
         ) {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
-                    .clickable(enabled = interactionsEnabled) {
-                        haptics.click()
-                        onUserInteraction()
-                        onOpenLiveActivityApp()
-                    },
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
+            if (isLandscape) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.weight(1f),
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .sharedElement(
+                                sharedContentState = rememberSharedContentState(key = "capsule_icon"),
+                                animatedVisibilityScope = animatedVisibilityScope,
+                                boundsTransform = { _, _ -> spring(dampingRatio = 0.86f, stiffness = 420f) },
+                            )
+                            .size(64.dp)
+                            .clip(CircleShape)
+                            .background(primary.copy(alpha = 0.22f)),
                     ) {
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .sharedElement(
-                                    sharedContentState = rememberSharedContentState(key = "capsule_icon"),
-                                    animatedVisibilityScope = animatedVisibilityScope,
-                                    boundsTransform = { _, _ -> spring(dampingRatio = 0.86f, stiffness = 420f) },
-                                )
-                                .size(42.dp)
-                                .clip(CircleShape)
-                                .background(primary.copy(alpha = 0.22f)),
-                        ) {
-                            if (iconBitmap != null) {
-                                Image(
-                                    bitmap = iconBitmap,
-                                    contentDescription = liveActivity.title,
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize(),
-                                )
-                            } else {
-                                Icon(
-                                    imageVector = Icons.Rounded.Timer,
-                                    contentDescription = liveActivity.title,
-                                    tint = primary,
-                                    modifier = Modifier.size(22.dp),
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.width(12.dp))
-
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = stringResource(R.string.label_live_activity),
-                                color = primary,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
+                        if (iconBitmap != null) {
+                            Image(
+                                bitmap = iconBitmap,
+                                contentDescription = liveActivity.title,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize(),
                             )
-                            Text(
-                                text = liveActivity.title,
-                                color = Color.White,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.sharedElement(
-                                    sharedContentState = rememberSharedContentState(key = "capsule_title"),
-                                    animatedVisibilityScope = animatedVisibilityScope,
-                                    boundsTransform = { _, _ -> spring(dampingRatio = 0.86f, stiffness = 420f) },
-                                ),
+                        } else {
+                            Icon(
+                                imageVector = Icons.Rounded.Timer,
+                                contentDescription = liveActivity.title,
+                                tint = primary,
+                                modifier = Modifier.size(32.dp),
                             )
-                            if (liveActivity.subtitle.isNotBlank()) {
-                                Text(
-                                    text = liveActivity.subtitle,
-                                    color = Color.White.copy(alpha = 0.76f),
-                                    fontSize = 12.sp,
-                                    lineHeight = 16.sp,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
                         }
                     }
 
-                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = liveActivity.title,
+                        color = Color.White,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.sharedElement(
+                            sharedContentState = rememberSharedContentState(key = "capsule_title"),
+                            animatedVisibilityScope = animatedVisibilityScope,
+                            boundsTransform = { _, _ -> spring(dampingRatio = 0.86f, stiffness = 420f) },
+                        ),
+                    )
+
+                    if (liveActivity.subtitle.isNotBlank()) {
+                        Text(
+                            text = liveActivity.subtitle,
+                            color = Color.White.copy(alpha = 0.76f),
+                            fontSize = 13.sp,
+                            lineHeight = 17.sp,
+                            textAlign = TextAlign.Center,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
 
                     Box(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier
                             .clip(RoundedCornerShape(14.dp))
-                            .background(primary.copy(alpha = 0.2f))
-                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                            .background(primary.copy(alpha = 0.22f))
+                            .padding(horizontal = 14.dp, vertical = 6.dp),
                     ) {
                         Text(
                             text = liveStatusText,
                             color = Color.White,
-                            fontSize = 15.sp,
+                            fontSize = 16.sp,
                             fontWeight = FontWeight.Bold,
                             maxLines = 1,
                         )
                     }
-                }
 
-                if (hasProgress) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(5.dp)
-                            .clip(CircleShape)
-                            .background(Color.White.copy(alpha = 0.14f)),
-                    ) {
+                    if (hasProgress) {
                         Box(
                             modifier = Modifier
-                                .fillMaxWidth(animatedProgress.coerceAtLeast(0.02f))
-                                .fillMaxHeight()
+                                .fillMaxWidth(0.9f)
+                                .height(6.dp)
                                 .clip(CircleShape)
-                                .background(primary),
-                        )
+                                .background(Color.White.copy(alpha = 0.14f)),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(animatedProgress.coerceAtLeast(0.02f))
+                                    .fillMaxHeight()
+                                    .clip(CircleShape)
+                                    .background(primary),
+                            )
+                        }
                     }
                 }
-            }
+                Spacer(modifier = Modifier.height(20.dp))
+            } else {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .sharedElement(
+                                        sharedContentState = rememberSharedContentState(key = "capsule_icon"),
+                                        animatedVisibilityScope = animatedVisibilityScope,
+                                        boundsTransform = { _, _ -> spring(dampingRatio = 0.86f, stiffness = 420f) },
+                                    )
+                                    .size(42.dp)
+                                    .clip(CircleShape)
+                                    .background(primary.copy(alpha = 0.22f)),
+                            ) {
+                                if (iconBitmap != null) {
+                                    Image(
+                                        bitmap = iconBitmap,
+                                        contentDescription = liveActivity.title,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Timer,
+                                        contentDescription = liveActivity.title,
+                                        tint = primary,
+                                        modifier = Modifier.size(22.dp),
+                                    )
+                                }
+                            }
 
-            Spacer(modifier = Modifier.height(10.dp))
+                            Spacer(modifier = Modifier.width(12.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = liveActivity.title,
+                                    color = Color.White,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.sharedElement(
+                                        sharedContentState = rememberSharedContentState(key = "capsule_title"),
+                                        animatedVisibilityScope = animatedVisibilityScope,
+                                        boundsTransform = { _, _ -> spring(dampingRatio = 0.86f, stiffness = 420f) },
+                                    ),
+                                )
+                                if (liveActivity.subtitle.isNotBlank()) {
+                                    Text(
+                                        text = liveActivity.subtitle,
+                                        color = Color.White.copy(alpha = 0.76f),
+                                        fontSize = 12.sp,
+                                        lineHeight = 16.sp,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(10.dp))
+
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(primary.copy(alpha = 0.2f))
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                        ) {
+                            Text(
+                                text = liveStatusText,
+                                color = Color.White,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                            )
+                        }
+                    }
+
+                    if (hasProgress) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(5.dp)
+                                .clip(CircleShape)
+                                .background(Color.White.copy(alpha = 0.14f)),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(animatedProgress.coerceAtLeast(0.02f))
+                                    .fillMaxHeight()
+                                    .clip(CircleShape)
+                                    .background(primary),
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+            }
 
             if (liveActivity.actions.isNotEmpty()) {
                 Row(

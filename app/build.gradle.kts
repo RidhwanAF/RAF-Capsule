@@ -27,8 +27,8 @@ android {
         applicationId = "com.raf.capsuleos"
         minSdk = 33
         targetSdk = 37
-        versionCode = 6
-        versionName = "1.2.3"
+        versionCode = 7
+        versionName = "1.3.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -90,6 +90,7 @@ dependencies {
     implementation(libs.bundles.compose)
 
     implementation(libs.dagger.hilt.android)
+    implementation(libs.shizuku.provider)
     ksp(libs.dagger.hilt.android.compiler)
     ksp(libs.androidx.hilt.compiler)
 

@@ -81,6 +81,19 @@ fun CapsuleBehaviorCard(
                 )
 
                 BehaviorSwitchRow(
+                    label = stringResource(R.string.label_enable_landscape_mode),
+                    checked = preferences.enableLandscapeMode,
+                    enabled = true,
+                    onCheckedChange = { checked ->
+                        haptics.performHapticFeedback(
+                            if (checked) HapticFeedbackType.ToggleOn else HapticFeedbackType.ToggleOff,
+                        )
+                        onUpdatePreferences { it.copy(enableLandscapeMode = checked) }
+                    },
+                    modifier = itemMod,
+                )
+
+                BehaviorSwitchRow(
                     label = stringResource(R.string.label_below_status_bar),
                     checked = preferences.belowStatusBar,
                     enabled = true,

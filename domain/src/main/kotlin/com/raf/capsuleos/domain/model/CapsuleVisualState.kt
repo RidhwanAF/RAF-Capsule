@@ -4,7 +4,7 @@ package com.raf.capsuleos.domain.model
  * Discrete visual states for the dynamic cutout capsule.
  */
 enum class CapsuleVisualState {
-    /** Hidden completely while in landscape orientation, AOD/Doze, screen off, or paused. */
+    /** Hidden completely while on AOD/Doze, screen off, or paused. */
     HIDDEN_SYSTEM,
 
     /** Minimal 1:1 camera-cutout ring showing battery level (and color-coded charge progress). */

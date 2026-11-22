@@ -24,57 +24,61 @@ class CapsuleAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        overlayController.attachAccessibilityHost(
-            serviceContext = this,
-            onLockScreen = { performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN) },
-            onOpenNotificationShade = { performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS) },
-        )
-        val km = getSystemService(KeyguardManager::class.java)
-        overlayController.setKeyguardLocked(km.isKeyguardLocked)
-        overlayController.setQuickSettingsOpen(detectQuickSettingsOpen(event = null))
+        runCatching {
+            overlayController.attachAccessibilityHost(
+                serviceContext = this,
+                onLockScreen = { performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN) },
+                onOpenNotificationShade = { performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS) },
+            )
+            val km = getSystemService(KeyguardManager::class.java)
+            overlayController.setKeyguardLocked(km?.isKeyguardLocked == true)
+            overlayController.setQuickSettingsOpen(detectQuickSettingsOpen(event = null))
+        }
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        overlayController.onConfigurationChanged(this, newConfig)
+        runCatching { overlayController.onConfigurationChanged(this, newConfig) }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        val type = event?.eventType
-        if (type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-            val pkg = event.packageName?.toString().orEmpty()
-            val cls = event.className?.toString()?.lowercase(Locale.US).orEmpty()
-            val textBlob = buildString {
-                event.text.forEach { append(it).append(' ') }
-                event.contentDescription?.let { append(it) }
-            }.lowercase(Locale.US)
+        runCatching {
+            val type = event?.eventType
+            if (type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+                val pkg = event.packageName?.toString().orEmpty()
+                val cls = event.className?.toString()?.lowercase(Locale.US).orEmpty()
+                val textBlob = buildString {
+                    event.text.forEach { append(it).append(' ') }
+                    event.contentDescription?.let { append(it) }
+                }.lowercase(Locale.US)
 
-            if (pkg == SYSTEM_UI_PACKAGE) {
-                val isShadeEvent = textBlob.contains("notification") ||
-                    textBlob.contains("quick settings") ||
-                    textBlob.contains("shade") ||
-                    textBlob.contains("setelan cepat") ||
-                    textBlob.contains("notifikasi") ||
-                    textBlob.contains("クイック設定") ||
-                    textBlob.contains("通知") ||
-                    cls.contains("shade") ||
-                    cls.contains("quicksettings") ||
-                    cls.contains("qspanel") ||
-                    cls.contains("statusbarwindow")
-                if (isShadeEvent) {
-                    lastEventShadeOpen = true
+                if (pkg == SYSTEM_UI_PACKAGE) {
+                    val isShadeEvent = textBlob.contains("notification") ||
+                        textBlob.contains("quick settings") ||
+                        textBlob.contains("shade") ||
+                        textBlob.contains("setelan cepat") ||
+                        textBlob.contains("notifikasi") ||
+                        textBlob.contains("クイック設定") ||
+                        textBlob.contains("通知") ||
+                        cls.contains("shade") ||
+                        cls.contains("quicksettings") ||
+                        cls.contains("qspanel") ||
+                        cls.contains("statusbarwindow")
+                    if (isShadeEvent) {
+                        lastEventShadeOpen = true
+                    }
+                } else if (pkg.isNotEmpty() && pkg != packageName) {
+                    lastEventShadeOpen = false
                 }
-            } else if (pkg.isNotEmpty() && pkg != packageName) {
-                lastEventShadeOpen = false
             }
-        }
-        if (type == AccessibilityEvent.TYPE_WINDOWS_CHANGED ||
-            type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
-            event == null
-        ) {
-            val km = getSystemService(KeyguardManager::class.java)
-            overlayController.setKeyguardLocked(km.isKeyguardLocked)
-            overlayController.setQuickSettingsOpen(detectQuickSettingsOpen(event))
+            if (type == AccessibilityEvent.TYPE_WINDOWS_CHANGED ||
+                type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
+                event == null
+            ) {
+                val km = getSystemService(KeyguardManager::class.java)
+                overlayController.setKeyguardLocked(km?.isKeyguardLocked == true)
+                overlayController.setQuickSettingsOpen(detectQuickSettingsOpen(event))
+            }
         }
     }
 
@@ -88,12 +92,12 @@ class CapsuleAccessibilityService : AccessibilityService() {
     }
 
     private fun detectQuickSettingsOpen(event: AccessibilityEvent?): Boolean {
-        val km = getSystemService(KeyguardManager::class.java)
+        val km = getSystemService(KeyguardManager::class.java) ?: return false
         val dm = resources.displayMetrics
         val minWidePx = (dm.widthPixels * 0.85f).roundToInt()
         val minTallPx = (dm.heightPixels * 0.40f).roundToInt()
         val bounds = Rect()
-        val winList = windows.orEmpty()
+        val winList = runCatching { windows.orEmpty() }.getOrDefault(emptyList())
         if (winList.isNotEmpty()) {
             val shadeVisibleInWindows = winList.any { win ->
                 if (win.type != AccessibilityWindowInfo.TYPE_SYSTEM) return@any false

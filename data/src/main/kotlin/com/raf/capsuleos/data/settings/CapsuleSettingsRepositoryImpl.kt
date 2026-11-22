@@ -50,12 +50,14 @@ class CapsuleSettingsRepositoryImpl @Inject constructor(
             prefs[KEY_TOP_ADJUST_DP] = updated.topOffsetAdjustDp
             prefs[KEY_HORIZONTAL_OFFSET_DP] = updated.horizontalOffsetDp
             prefs[KEY_EXPANDED_CONTENT_PADDING_DP] = updated.expandedContentPaddingDp
+            prefs[KEY_EXPANDED_CORNER_RADIUS_DP] = updated.expandedCornerRadiusDp
             prefs[KEY_CAMERA_AUTO_DETECTED] = updated.hasAutoDetectedCamera
             prefs[KEY_HORIZONTAL_AUTO_COLLAPSE_MS] = updated.horizontalAutoCollapseDelayMs
             prefs[KEY_AUTO_COLLAPSE_MS] = updated.autoCollapseDelayMs
             prefs[KEY_MEDIA_FOLLOW_GLOBAL_AUTO_COLLAPSE] = updated.mediaFollowGlobalAutoCollapse
             prefs[KEY_MEDIA_AUTO_COLLAPSE_MS] = updated.mediaAutoCollapseDelayMs
             prefs[KEY_SHOW_ON_LOCK_SCREEN] = updated.showOnLockScreen
+            prefs[KEY_ENABLE_LANDSCAPE_MODE] = updated.enableLandscapeMode
             prefs[KEY_HIDE_ON_QS_OPEN] = updated.hideOnQsOpen
             prefs[KEY_SUPPRESS_HEADS_UP] = updated.suppressSystemHeadsUp
             prefs[KEY_ENABLE_NEURON_GLOW] = updated.enableNeuronGlow
@@ -102,6 +104,8 @@ class CapsuleSettingsRepositoryImpl @Inject constructor(
         horizontalOffsetDp = prefs[KEY_HORIZONTAL_OFFSET_DP] ?: DEFAULT_PREFS.horizontalOffsetDp,
         expandedContentPaddingDp = prefs[KEY_EXPANDED_CONTENT_PADDING_DP]
             ?: DEFAULT_PREFS.expandedContentPaddingDp,
+        expandedCornerRadiusDp = prefs[KEY_EXPANDED_CORNER_RADIUS_DP]
+            ?: DEFAULT_PREFS.expandedCornerRadiusDp,
         hasAutoDetectedCamera = prefs[KEY_CAMERA_AUTO_DETECTED] ?: DEFAULT_PREFS.hasAutoDetectedCamera,
         horizontalAutoCollapseDelayMs = prefs[KEY_HORIZONTAL_AUTO_COLLAPSE_MS]
             ?: DEFAULT_PREFS.horizontalAutoCollapseDelayMs,
@@ -111,6 +115,7 @@ class CapsuleSettingsRepositoryImpl @Inject constructor(
         mediaAutoCollapseDelayMs = (prefs[KEY_MEDIA_AUTO_COLLAPSE_MS]
             ?: DEFAULT_PREFS.mediaAutoCollapseDelayMs).coerceIn(10_000L, 60_000L),
         showOnLockScreen = prefs[KEY_SHOW_ON_LOCK_SCREEN] ?: DEFAULT_PREFS.showOnLockScreen,
+        enableLandscapeMode = prefs[KEY_ENABLE_LANDSCAPE_MODE] ?: DEFAULT_PREFS.enableLandscapeMode,
         hideOnQsOpen = prefs[KEY_HIDE_ON_QS_OPEN] ?: DEFAULT_PREFS.hideOnQsOpen,
         suppressSystemHeadsUp = prefs[KEY_SUPPRESS_HEADS_UP] ?: DEFAULT_PREFS.suppressSystemHeadsUp,
         enableNeuronGlow = prefs[KEY_ENABLE_NEURON_GLOW] ?: DEFAULT_PREFS.enableNeuronGlow,
@@ -213,12 +218,14 @@ class CapsuleSettingsRepositoryImpl @Inject constructor(
         val KEY_TOP_ADJUST_DP = floatPreferencesKey("v4_cutout_top_adjust_dp")
         val KEY_HORIZONTAL_OFFSET_DP = floatPreferencesKey("v4_cutout_horizontal_offset_dp")
         val KEY_EXPANDED_CONTENT_PADDING_DP = floatPreferencesKey("v4_expanded_content_padding_dp")
+        val KEY_EXPANDED_CORNER_RADIUS_DP = floatPreferencesKey("v18_expanded_corner_radius_dp")
         val KEY_CAMERA_AUTO_DETECTED = booleanPreferencesKey("v4_camera_auto_detected")
         val KEY_HORIZONTAL_AUTO_COLLAPSE_MS = longPreferencesKey("v10_horizontal_auto_collapse_ms")
         val KEY_AUTO_COLLAPSE_MS = longPreferencesKey("v4_auto_collapse_ms")
         val KEY_MEDIA_FOLLOW_GLOBAL_AUTO_COLLAPSE = booleanPreferencesKey("v11_media_follow_global_auto_collapse")
         val KEY_MEDIA_AUTO_COLLAPSE_MS = longPreferencesKey("v11_media_auto_collapse_ms")
         val KEY_SHOW_ON_LOCK_SCREEN = booleanPreferencesKey("v13_show_on_lock_screen")
+        val KEY_ENABLE_LANDSCAPE_MODE = booleanPreferencesKey("v17_enable_landscape_mode")
         val KEY_HIDE_ON_QS_OPEN = booleanPreferencesKey("v9_hide_on_qs_open")
         val KEY_SUPPRESS_HEADS_UP = booleanPreferencesKey("v4_suppress_system_heads_up")
         val KEY_ENABLE_NEURON_GLOW = booleanPreferencesKey("v5_enable_neuron_glow")

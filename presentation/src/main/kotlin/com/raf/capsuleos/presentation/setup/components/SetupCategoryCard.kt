@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ContentCopy
@@ -30,6 +31,7 @@ import androidx.compose.material.icons.rounded.RadioButtonUnchecked
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -75,6 +77,7 @@ fun SetupCategoryCard(
     onCopyAdbCommand: () -> Unit,
     onToggleStartPause: () -> Unit,
     onOpenSimulation: () -> Unit,
+    onOpenPermissions: () -> Unit = {},
 ) {
     val haptics = LocalHapticFeedback.current
     var expanded by rememberSaveable { mutableStateOf(true) }
@@ -132,29 +135,70 @@ fun SetupCategoryCard(
         modifier = modifier,
     ) {
 
+            val remainingPermissionCount = listOf(
+                !uiState.hasAccessibilityOverlay,
+                !uiState.hasNotificationListener,
+                !uiState.hasWriteSettings,
+                !uiState.hasDndPolicyAccess,
+                !uiState.hasBluetoothPermission,
+                !uiState.hasLocationPermission,
+                !uiState.hasWriteSecureSettings,
+            ).count { it }
+
+            val sharedPermsModifier = if (sharedTransitionScope != null && animatedVisibilityScope != null) {
+                with(sharedTransitionScope) {
+                    Modifier.sharedBounds(
+                        sharedContentState = rememberSharedContentState(key = "nav_permissions_container"),
+                        animatedVisibilityScope = animatedVisibilityScope,
+                        boundsTransform = { _, _ -> spring(dampingRatio = 0.84f, stiffness = 360f) },
+                    )
+                }
+            } else {
+                Modifier
+            }
+
             AnimatedVisibility(
                 visible = !uiState.areAllPermissionsGranted,
                 enter = fadeIn(tween(220)) + expandVertically(tween(240)),
                 exit = fadeOut(tween(180)) + shrinkVertically(tween(240)),
             ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = stringResource(R.string.label_setup_required_missing),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    val remainingPermissionCount = listOf(
-                        !uiState.hasAccessibilityOverlay,
-                        !uiState.hasNotificationListener,
-                        !uiState.hasWriteSettings,
-                        !uiState.hasDndPolicyAccess,
-                        !uiState.hasBluetoothPermission,
-                        !uiState.hasLocationPermission,
-                        !uiState.hasWriteSecureSettings,
-                    ).count { it }
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    FilledTonalButton(
+                        onClick = {
+                            haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                            onOpenPermissions()
+                        },
+                        shapes = capsuleExpressiveButtonShapes(restRadius = 20.dp, pressedRadius = 10.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .then(sharedPermsModifier),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Security,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = stringResource(R.string.action_setup_permissions_remaining, remainingPermissionCount),
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .weight(1f)
+                                .basicMarquee(),
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
 
                     AdaptiveSubItemFlowRow(
                         minItemWidth = 340.dp,
@@ -241,7 +285,22 @@ fun SetupCategoryCard(
                         text = stringResource(R.string.label_setup_ready),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
                     )
+                    OutlinedButton(
+                        onClick = {
+                            haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                            onOpenPermissions()
+                        },
+                        shapes = capsuleExpressiveButtonShapes(restRadius = 16.dp, pressedRadius = 8.dp),
+                        modifier = sharedPermsModifier,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.action_manage_permissions),
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1,
+                        )
+                    }
                 }
             }
 
