@@ -16,7 +16,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-v1.3.0-1976D2" alt="Version v1.3.0" />
+  <img src="https://img.shields.io/badge/Version-v1.3.1-1976D2" alt="Version v1.3.1" />
   <img src="https://img.shields.io/badge/Min%20SDK-33%20(Android%2013)-3DDC84?logo=android&logoColor=white" alt="Min SDK 33" />
   <img src="https://img.shields.io/badge/Target%20SDK-37%20(Android%2017)-0078D7?logo=android&logoColor=white" alt="Target SDK 37" />
   <img src="https://img.shields.io/badge/Languages-14%20言語-9C27B0" alt="14 Languages" />

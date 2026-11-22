@@ -146,8 +146,19 @@ internal fun computeSidePillGeometry(
     anchorPosition: CameraAnchorPosition = CameraAnchorPosition.CENTER,
     circleDiameterDp: Float = cutout.holeWidthDp + 12f,
     isLandscape: Boolean = false,
+    isMinimalIconOnly: Boolean = false,
 ): SidePillGeometry {
     val effectiveAnchor = if (isLandscape) CameraAnchorPosition.CENTER else anchorPosition
+    if (isMinimalIconOnly) {
+        return SidePillGeometry(
+            anchorPosition = effectiveAnchor,
+            leftWingDp = 38f,
+            cutoutGapDp = circleDiameterDp,
+            rightWingDp = 0f,
+            circleDiameterDp = circleDiameterDp,
+            isWideRight = false,
+        )
+    }
     val estimatedRightDp = estimateWrappedRightWingDp(content)
     val cutoutGap = when {
         isLandscape -> 10f
@@ -233,6 +244,7 @@ fun State2HorizontalPill(
     anchorPosition: CameraAnchorPosition = CameraAnchorPosition.CENTER,
     circleDiameterDp: Float = cutout.holeWidthDp + 12f,
     isLandscape: Boolean = false,
+    isMinimalIconOnly: Boolean = false,
     horizontalMediaGlowStyle: HorizontalMediaGlowStyle = HorizontalMediaGlowStyle.OFF,
     mediaAnimationColorMode: MediaAnimationColorMode = MediaAnimationColorMode.ALBUM_COLOR,
     swipeDirection: Int,
@@ -250,6 +262,7 @@ fun State2HorizontalPill(
         anchorPosition = anchorPosition,
         circleDiameterDp = circleDiameterDp,
         isLandscape = isLandscape,
+        isMinimalIconOnly = isMinimalIconOnly,
     )
     val animatedGapDp by animateFloatAsState(
         targetValue = targetGeom.cutoutGapDp,
@@ -307,6 +320,7 @@ fun State2HorizontalPill(
             SymmetricSingleIconPillRow(
                 content = active.content,
                 geom = active.geom,
+                isMinimalIconOnly = isMinimalIconOnly,
                 primaryColor = primaryColor,
                 tertiaryColor = tertiaryColor,
                 horizontalMediaGlowStyle = horizontalMediaGlowStyle,
@@ -330,6 +344,7 @@ private fun SymmetricSingleIconPillRow(
     modifier: Modifier = Modifier,
     content: CapsuleContent,
     geom: SidePillGeometry,
+    isMinimalIconOnly: Boolean = false,
     primaryColor: Color,
     tertiaryColor: Color,
     horizontalMediaGlowStyle: HorizontalMediaGlowStyle,
@@ -346,6 +361,7 @@ private fun SymmetricSingleIconPillRow(
         val iconBox: @Composable () -> Unit = {
             Box(
                 contentAlignment = when {
+                    isMinimalIconOnly -> Alignment.Center
                     isLeftAnchor -> Alignment.CenterStart
                     isRightAnchor -> Alignment.CenterEnd
                     else -> Alignment.CenterStart
@@ -354,8 +370,16 @@ private fun SymmetricSingleIconPillRow(
                     .width(geom.leftWingDp.dp)
                     .fillMaxHeight()
                     .padding(
-                        start = if (isLeftAnchor) 2.dp else 14.dp,
-                        end = if (isRightAnchor) 2.dp else 6.dp,
+                        start = when {
+                            isMinimalIconOnly -> 6.dp
+                            isLeftAnchor -> 2.dp
+                            else -> 14.dp
+                        },
+                        end = when {
+                            isMinimalIconOnly -> 2.dp
+                            isRightAnchor -> 2.dp
+                            else -> 6.dp
+                        },
                     ),
             ) {
                 AnimatedContent(
@@ -452,26 +476,41 @@ private fun SymmetricSingleIconPillRow(
             verticalAlignment = Alignment.CenterVertically,
             modifier = modifier.fillMaxSize(),
         ) {
-            when (geom.anchorPosition) {
-                CameraAnchorPosition.LEFT -> {
-                    cameraCutoutSlot(geom.cutoutGapDp)
-                    iconBox()
-                    infoBox(Modifier.weight(1f))
-                }
-                CameraAnchorPosition.CENTER -> {
-                    iconBox()
-                    val centerGapDp = if (isNotification) {
-                        (geom.cutoutGapDp - 6f).coerceAtLeast(0f)
-                    } else {
-                        geom.cutoutGapDp
+            if (isMinimalIconOnly) {
+                when (geom.anchorPosition) {
+                    CameraAnchorPosition.LEFT -> {
+                        cameraCutoutSlot(geom.cutoutGapDp)
+                        iconBox()
                     }
-                    cameraCutoutSlot(centerGapDp)
-                    infoBox(Modifier.weight(1f))
+                    CameraAnchorPosition.CENTER,
+                    CameraAnchorPosition.RIGHT,
+                    -> {
+                        iconBox()
+                        cameraCutoutSlot(geom.cutoutGapDp)
+                    }
                 }
-                CameraAnchorPosition.RIGHT -> {
-                    infoBox(Modifier.weight(1f))
-                    iconBox()
-                    cameraCutoutSlot(geom.cutoutGapDp)
+            } else {
+                when (geom.anchorPosition) {
+                    CameraAnchorPosition.LEFT -> {
+                        cameraCutoutSlot(geom.cutoutGapDp)
+                        iconBox()
+                        infoBox(Modifier.weight(1f))
+                    }
+                    CameraAnchorPosition.CENTER -> {
+                        iconBox()
+                        val centerGapDp = if (isNotification) {
+                            (geom.cutoutGapDp - 6f).coerceAtLeast(0f)
+                        } else {
+                            geom.cutoutGapDp
+                        }
+                        cameraCutoutSlot(centerGapDp)
+                        infoBox(Modifier.weight(1f))
+                    }
+                    CameraAnchorPosition.RIGHT -> {
+                        infoBox(Modifier.weight(1f))
+                        iconBox()
+                        cameraCutoutSlot(geom.cutoutGapDp)
+                    }
                 }
             }
         }

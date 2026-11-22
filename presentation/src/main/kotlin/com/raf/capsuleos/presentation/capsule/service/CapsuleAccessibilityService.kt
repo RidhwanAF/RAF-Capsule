@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityService
 import android.app.KeyguardManager
 import android.content.res.Configuration
 import android.graphics.Rect
+import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityWindowInfo
 import dagger.hilt.android.AndroidEntryPoint
@@ -31,14 +32,21 @@ class CapsuleAccessibilityService : AccessibilityService() {
                 onOpenNotificationShade = { performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS) },
             )
             val km = getSystemService(KeyguardManager::class.java)
+            val qsOpen = detectQuickSettingsOpen(event = null)
             overlayController.setKeyguardLocked(km?.isKeyguardLocked == true)
-            overlayController.setQuickSettingsOpen(detectQuickSettingsOpen(event = null))
+            overlayController.setQuickSettingsOpen(qsOpen)
+            overlayController.setFullscreenMode(detectImmersiveFullscreen(qsOpen))
         }
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        runCatching { overlayController.onConfigurationChanged(this, newConfig) }
+        runCatching {
+            overlayController.onConfigurationChanged(this, newConfig)
+            val qsOpen = detectQuickSettingsOpen(event = null)
+            overlayController.setQuickSettingsOpen(qsOpen)
+            overlayController.setFullscreenMode(detectImmersiveFullscreen(qsOpen))
+        }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -76,8 +84,10 @@ class CapsuleAccessibilityService : AccessibilityService() {
                 event == null
             ) {
                 val km = getSystemService(KeyguardManager::class.java)
+                val qsOpen = detectQuickSettingsOpen(event)
                 overlayController.setKeyguardLocked(km?.isKeyguardLocked == true)
-                overlayController.setQuickSettingsOpen(detectQuickSettingsOpen(event))
+                overlayController.setQuickSettingsOpen(qsOpen)
+                overlayController.setFullscreenMode(detectImmersiveFullscreen(qsOpen))
             }
         }
     }
@@ -87,6 +97,7 @@ class CapsuleAccessibilityService : AccessibilityService() {
     override fun onDestroy() {
         lastEventShadeOpen = false
         overlayController.setQuickSettingsOpen(false)
+        overlayController.setFullscreenMode(false)
         overlayController.detachAccessibilityHost()
         super.onDestroy()
     }
@@ -135,6 +146,75 @@ class CapsuleAccessibilityService : AccessibilityService() {
         val cls = event?.className?.toString()?.lowercase(Locale.US).orEmpty()
         return event?.packageName == SYSTEM_UI_PACKAGE &&
             (cls.contains("quicksettings") || cls.contains("qspanel"))
+    }
+
+    /**
+     * Detects immersive fullscreen apps (gaming, video playback, fullscreen readers) across both
+     * Portrait and Landscape orientations by verifying a full-display application window is active
+     * while the system StatusBar window is hidden.
+     */
+    private fun detectImmersiveFullscreen(isQsOpen: Boolean): Boolean {
+        if (isQsOpen) return false
+        val km = getSystemService(KeyguardManager::class.java) ?: return false
+        if (km.isKeyguardLocked) return false
+
+        val winList = runCatching { windows.orEmpty() }.getOrDefault(emptyList())
+        if (winList.isEmpty()) return false
+
+        val wmBounds = getSystemService(WindowManager::class.java)?.currentWindowMetrics?.bounds
+        val dm = resources.displayMetrics
+        val screenW = wmBounds?.width()?.takeIf { it > 0 } ?: dm.widthPixels
+        val screenH = wmBounds?.height()?.takeIf { it > 0 } ?: dm.heightPixels
+        val maxStatusBarHeightPx = (72f * dm.density.coerceAtLeast(1f)).roundToInt()
+        val bounds = Rect()
+
+        var hasStatusBarWindow = false
+        var hasFullscreenAppWindow = false
+
+        winList.forEach { win ->
+            win.getBoundsInScreen(bounds)
+            when (win.type) {
+                AccessibilityWindowInfo.TYPE_SYSTEM -> {
+                    val title = win.title?.toString()?.trim()?.lowercase(Locale.US).orEmpty()
+                    val isExcluded = title.contains("navigation") ||
+                        title.contains("volume") ||
+                        title.contains("screendecor") ||
+                        title.contains("shade") ||
+                        title.contains("notification") ||
+                        title.contains("quick")
+                    if (!isExcluded) {
+                        val isNamedStatusBar = title == "statusbar" ||
+                            title == "status bar" ||
+                            title.contains("status bar") ||
+                            title.contains("status_bar")
+                        val isTopBarGeometry = bounds.top <= 4 &&
+                            bounds.height() in 1..maxStatusBarHeightPx &&
+                            bounds.width() >= (screenW * 0.75f).roundToInt()
+                        if (isNamedStatusBar || isTopBarGeometry) {
+                            hasStatusBarWindow = true
+                        }
+                    }
+                }
+                AccessibilityWindowInfo.TYPE_APPLICATION -> {
+                    val coversDisplay = bounds.top <= 8 &&
+                        bounds.left <= 8 &&
+                        bounds.right >= screenW - 8 &&
+                        bounds.bottom >= screenH - 8
+                    if (coversDisplay) {
+                        val pkg = runCatching { win.root?.packageName?.toString().orEmpty() }.getOrDefault("")
+                        val isExcludedPkg = pkg == packageName ||
+                            pkg == SYSTEM_UI_PACKAGE ||
+                            pkg.contains("launcher", ignoreCase = true) ||
+                            pkg == "com.miui.home"
+                        if (!isExcludedPkg) {
+                            hasFullscreenAppWindow = true
+                        }
+                    }
+                }
+            }
+        }
+
+        return hasFullscreenAppWindow && !hasStatusBarWindow
     }
 
     private companion object {

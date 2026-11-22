@@ -89,6 +89,7 @@ class IslandStateCoordinator(
     private var isScreenInactive: Boolean = false
     private var isKeyguardLocked: Boolean = false
     private var isQsOpen: Boolean = false
+    private var isFullscreen: Boolean = false
 
     private data class StackEntry(
         val stackId: String,
@@ -200,6 +201,13 @@ class IslandStateCoordinator(
                     isQsOpen = event.isQsOpen
                     _uiState.update { current -> current.copy(isQsOpen = isQsOpen) }
                     syncQuickSettingsVisibility()
+                }
+            }
+            is CapsuleEvent.FullscreenChanged -> {
+                if (isFullscreen != event.isFullscreen) {
+                    isFullscreen = event.isFullscreen
+                    _uiState.update { current -> current.copy(isFullscreen = isFullscreen) }
+                    syncFullscreenMode()
                 }
             }
             is CapsuleEvent.BatteryUpdated -> handleBatteryUpdated(event.percent, event.isCharging)
@@ -324,6 +332,30 @@ class IslandStateCoordinator(
     private val isRestrictedToRingByQs: Boolean
         get() = (isQsOpen && _uiState.value.preferences.hideOnQsOpen) ||
             (isKeyguardLocked && !_uiState.value.preferences.showOnLockScreen)
+
+    private fun isAllowedInFullscreen(content: CapsuleContent): Boolean =
+        content is CapsuleContent.CallAlert || content is CapsuleContent.NotificationAlert
+
+    private fun syncFullscreenMode() {
+        if (isHiddenByEnvironment || isRestrictedToRingByQs) return
+        refreshLeftSatellite()
+        if (isFullscreen) {
+            isHoldFromRingActive = false
+            clearManualOverride()
+            viewStack.removeAll { it.stackId == STACK_CHARGING_PEEK || it.stackId == STACK_BATTERY_PEEK }
+            collapseToBaseState(dismissShownTransient = false)
+            _uiState.update { current ->
+                current.copy(
+                    isNeuralPulseActive = false,
+                    isCollapseWaveActive = false,
+                    isRingGlowActive = false,
+                    isSatelliteGlowActive = false,
+                )
+            }
+        } else {
+            evaluateViewStack(allowPulse = false)
+        }
+    }
 
     private fun handleBatteryUpdated(percent: Int, charging: Boolean) {
         val wasCharging = isCharging
@@ -451,7 +483,7 @@ class IslandStateCoordinator(
                         isReplyingInCard ||
                         hasInteractedNotificationInCard ||
                         manualOverrideStackId == "notif:${shown.key}"
-                    if (!userPinnedThisNotification) {
+                    if (!userPinnedThisNotification && !isFullscreen) {
                         enterState3Expanded(notification)
                     }
                 }
@@ -672,6 +704,7 @@ class IslandStateCoordinator(
             (hasInteractedInCurrentState3 || isReplyingInCard)
         if (currentState.preferences.enableCallAutoExpand &&
             !isRestrictedToRingByQs &&
+            !isFullscreen &&
             isNewCall &&
             !isBlockedByUserInteraction
         ) {
@@ -810,7 +843,7 @@ class IslandStateCoordinator(
 
     private fun canShowNotifSummaryPeekNow(): Boolean {
         val count = activeNotificationCount ?: 0
-        if (count <= 0 || isHiddenByEnvironment || isRestrictedToRingByQs) return false
+        if (count <= 0 || isHiddenByEnvironment || isRestrictedToRingByQs || isFullscreen) return false
         if (_uiState.value.visualState != CapsuleVisualState.STATE1_CUTOUT_ANCHOR) return false
         return viewStack.none { it.stackId != STACK_NOTIF_SUMMARY }
     }
@@ -857,7 +890,7 @@ class IslandStateCoordinator(
     }
 
     private fun handleHoldPeekStarted() {
-        if (isHiddenByEnvironment || isRestrictedToRingByQs) return
+        if (isHiddenByEnvironment || isRestrictedToRingByQs || isFullscreen) return
         if (_uiState.value.visualState != CapsuleVisualState.STATE1_CUTOUT_ANCHOR) return
 
         isHoldFromRingActive = true
@@ -940,13 +973,14 @@ class IslandStateCoordinator(
         } else {
             null
         }
-        val candidate = overrideCandidate ?: viewStack
+        val candidate = overrideCandidate?.takeIf { !isFullscreen || isAllowedInFullscreen(it.content) } ?: viewStack
             .asSequence()
             .filterNot { entry ->
                 (entry.stackId == STACK_CHARGING_PEEK && !isCharging) ||
                     entry.stackId == STACK_BATTERY_PEEK ||
                     entry.stackId == dismissedId ||
-                    (entry.isTransient && entry.expiresAtMs <= now)
+                    (entry.isTransient && entry.expiresAtMs <= now) ||
+                    (isFullscreen && !isAllowedInFullscreen(entry.content))
             }
             .maxWithOrNull(stackPriorityComparator(now))
         return if (candidate != null) {
@@ -995,7 +1029,12 @@ class IslandStateCoordinator(
         val now = clockMillis()
         pruneExpired(now)
 
-        val carousel = buildCarouselEntries(now)
+        val rawCarousel = buildCarouselEntries(now)
+        val carousel = if (isFullscreen) {
+            rawCarousel.filter { isAllowedInFullscreen(it.content) }
+        } else {
+            rawCarousel
+        }
         if (carousel.isEmpty()) return
 
         val activeId = currentStackId ?: findMatchingStackId(_uiState.value.content)
@@ -1043,6 +1082,10 @@ class IslandStateCoordinator(
         when (currentState.visualState) {
             CapsuleVisualState.HIDDEN_SYSTEM -> Unit
             CapsuleVisualState.STATE1_CUTOUT_ANCHOR -> {
+                if (isFullscreen) {
+                    enterState3Expanded(buildNowBrief())
+                    return
+                }
                 val (stackId, peekContent) = if (isCharging) {
                     STACK_CHARGING_PEEK to CapsuleContent.Charging(batteryPercent = batteryPercent)
                 } else {
@@ -1087,12 +1130,10 @@ class IslandStateCoordinator(
             }
             CapsuleVisualState.STATE3_FULL_EXPANDED -> {
                 when (val content = currentState.content) {
-                    // Notification & Call actions live cleanly inside the expanded card
-                    is CapsuleContent.NotificationAlert -> handleCardInteraction()
-                    is CapsuleContent.CallAlert -> {
-                        _effects.tryEmit(CapsuleEffect.LaunchApp(packageName = content.packageName, notificationKey = content.key))
-                        handleCardInteraction()
-                    }
+                    // Notification & Call actions live cleanly inside the expanded card (explicit Open button)
+                    is CapsuleContent.NotificationAlert,
+                    is CapsuleContent.CallAlert,
+                    -> handleCardInteraction()
                     is CapsuleContent.Media -> {
                         _effects.tryEmit(CapsuleEffect.LaunchApp(packageName = content.packageName))
                         collapseToBaseState()
@@ -1352,7 +1393,7 @@ class IslandStateCoordinator(
     }
 
     private fun refreshLeftSatellite() {
-        val nextSatellite = if (isHiddenByEnvironment || isRestrictedToRingByQs) {
+        val nextSatellite = if (isHiddenByEnvironment || isRestrictedToRingByQs || isFullscreen) {
             null
         } else {
             computeLeftSatellite(_uiState.value.preferences)
@@ -1575,7 +1616,7 @@ class IslandStateCoordinator(
         val pinnedOverride = activeOverrideId?.let { id ->
             viewStack.firstOrNull { it.stackId == id }
                 ?: buildCarouselEntries(now).firstOrNull { it.stackId == id }
-        }
+        }?.takeIf { !isFullscreen || isAllowedInFullscreen(it.content) }
         val top = pinnedOverride ?: selectTopCandidate(now)
         if (top != null) {
             forceShowStackEntry(top.stackId, top.content, withPulse = false)
@@ -1719,8 +1760,9 @@ class IslandStateCoordinator(
 
         val overrideId = manualOverrideStackId
         if (overrideId != null && now < manualOverrideExpiresAtMs) {
-            val pinned = viewStack.firstOrNull { it.stackId == overrideId }
-                ?: buildCarouselEntries(now).firstOrNull { it.stackId == overrideId }
+            val pinned = (viewStack.firstOrNull { it.stackId == overrideId }
+                ?: buildCarouselEntries(now).firstOrNull { it.stackId == overrideId })
+                ?.takeIf { !isFullscreen || isAllowedInFullscreen(it.content) }
             if (pinned != null) {
                 applyState2Update(pinned.content, withPulse = null)
                 scheduleNextStackTick()
@@ -1769,8 +1811,9 @@ class IslandStateCoordinator(
         val now = clockMillis()
         currentStackId = stackId
         currentStackShownAtMs = now
-        applyState2Update(content, withPulse = withPulse)
-        if (withPulse) {
+        val effectivePulse = withPulse && !isFullscreen
+        applyState2Update(content, withPulse = effectivePulse)
+        if (effectivePulse) {
             triggerNeuralPulseCooldown()
         }
         scheduleNextStackTick()
@@ -1922,8 +1965,14 @@ class IslandStateCoordinator(
         else -> null
     }
 
-    private fun selectTopCandidate(now: Long): StackEntry? =
-        viewStack.maxWithOrNull(stackPriorityComparator(now))
+    private fun selectTopCandidate(now: Long): StackEntry? {
+        val candidates = if (isFullscreen) {
+            viewStack.filter { isAllowedInFullscreen(it.content) }
+        } else {
+            viewStack
+        }
+        return candidates.maxWithOrNull(stackPriorityComparator(now))
+    }
 
     private fun stackPriorityComparator(now: Long): Comparator<StackEntry> =
         compareBy<StackEntry> { effectivePriority(it, now) }.thenBy { it.updatedAtMs }
