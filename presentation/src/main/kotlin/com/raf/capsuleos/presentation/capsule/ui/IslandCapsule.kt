@@ -1169,6 +1169,7 @@ fun IslandCapsule(
                                         cutout = uiState.cutout,
                                         anchorPosition = prefs.cameraPosition,
                                         circleDiameterDp = uiState.circleDiameterDp,
+                                        isMinimalIconOnly = uiState.isFullscreen,
                                     )
                                     val pillModifier = if (scrubPresentation != null) {
                                         Modifier.scrubContainer(
@@ -1186,6 +1187,7 @@ fun IslandCapsule(
                                             cutout = uiState.cutout,
                                             anchorPosition = prefs.cameraPosition,
                                             circleDiameterDp = uiState.circleDiameterDp,
+                                            isMinimalIconOnly = uiState.isFullscreen,
                                             horizontalMediaGlowStyle = prefs.horizontalMediaGlowStyle,
                                             mediaAnimationColorMode = prefs.mediaAnimationColorMode,
                                             swipeDirection = uiState.swipeDirection,
@@ -1201,6 +1203,7 @@ fun IslandCapsule(
                                         anchorPosition = prefs.cameraPosition,
                                         circleDiameterDp = uiState.circleDiameterDp,
                                         isLandscape = false,
+                                        isMinimalIconOnly = uiState.isFullscreen,
                                     )
                                     val pillModifier = if (scrubPresentation != null) {
                                         Modifier.scrubContainer(
@@ -1219,6 +1222,7 @@ fun IslandCapsule(
                                             anchorPosition = prefs.cameraPosition,
                                             circleDiameterDp = uiState.circleDiameterDp,
                                             isLandscape = false,
+                                            isMinimalIconOnly = uiState.isFullscreen,
                                             horizontalMediaGlowStyle = prefs.horizontalMediaGlowStyle,
                                             mediaAnimationColorMode = prefs.mediaAnimationColorMode,
                                             swipeDirection = uiState.swipeDirection,
@@ -1316,6 +1320,7 @@ fun IslandCapsule(
                             cutout = uiState.cutout,
                             anchorPosition = prefs.cameraPosition,
                             circleDiameterDp = uiState.circleDiameterDp,
+                            isMinimalIconOnly = uiState.isFullscreen,
                         )
                         Box(
                             modifier = Modifier.scrubContainer(
@@ -1330,6 +1335,7 @@ fun IslandCapsule(
                                 cutout = uiState.cutout,
                                 anchorPosition = prefs.cameraPosition,
                                 circleDiameterDp = uiState.circleDiameterDp,
+                                isMinimalIconOnly = uiState.isFullscreen,
                                 horizontalMediaGlowStyle = prefs.horizontalMediaGlowStyle,
                                 mediaAnimationColorMode = prefs.mediaAnimationColorMode,
                                 swipeDirection = uiState.swipeDirection,
@@ -1345,6 +1351,7 @@ fun IslandCapsule(
                             anchorPosition = prefs.cameraPosition,
                             circleDiameterDp = uiState.circleDiameterDp,
                             isLandscape = false,
+                            isMinimalIconOnly = uiState.isFullscreen,
                         )
                         Box(
                             modifier = Modifier.scrubContainer(
@@ -1362,6 +1369,7 @@ fun IslandCapsule(
                                         anchorPosition = prefs.cameraPosition,
                                         circleDiameterDp = uiState.circleDiameterDp,
                                         isLandscape = false,
+                                        isMinimalIconOnly = uiState.isFullscreen,
                                         horizontalMediaGlowStyle = prefs.horizontalMediaGlowStyle,
                                         mediaAnimationColorMode = prefs.mediaAnimationColorMode,
                                         swipeDirection = uiState.swipeDirection,

@@ -207,6 +207,7 @@ data class CapsuleUiState(
     val isQsOpen: Boolean = false,
     val isKeyguardLocked: Boolean = false,
     val isLandscape: Boolean = false,
+    val isFullscreen: Boolean = false,
     val swipeDirection: Int = 1,
     val cutout: CutoutGeometry = CutoutGeometry(),
     val preferences: CapsulePreferences = CapsulePreferences(),

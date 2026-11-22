@@ -103,6 +103,9 @@ sealed interface CapsuleEvent {
     /** System Quick Settings / notification shade open state changed. */
     data class QuickSettingsChanged(val isQsOpen: Boolean) : CapsuleEvent
 
+    /** Immersive fullscreen app state (gaming, video playback) changed across any orientation. */
+    data class FullscreenChanged(val isFullscreen: Boolean) : CapsuleEvent
+
     /** Screen brightness level or adaptive mode changed in system settings. */
     data class BrightnessChanged(val brightness: BrightnessInfo) : CapsuleEvent
 

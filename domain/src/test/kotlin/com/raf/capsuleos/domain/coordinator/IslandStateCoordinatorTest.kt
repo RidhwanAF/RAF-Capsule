@@ -1777,6 +1777,110 @@ class IslandStateCoordinatorTest {
             assertTrue(coordinator.uiState.value.content is CapsuleContent.Hotspot)
         }
 
+    @Test
+    fun `given fullscreen mode in portrait or landscape, then hides satellite and keeps battery ring only`() =
+        testScope.runTest {
+            val coordinator = createCoordinator()
+            coordinator.onEvent(CapsuleEvent.MediaUpdated(sampleMedia()))
+            coordinator.onEvent(
+                CapsuleEvent.TorchUpdated(
+                    CapsuleContent.Torch(isEnabled = true, strengthLevel = 2, maxStrengthLevel = 5),
+                ),
+            )
+            coordinator.onEvent(CapsuleEvent.BatteryUpdated(percent = 70, isCharging = true))
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE2_HORIZONTAL_PILL, coordinator.uiState.value.visualState)
+            assertTrue(coordinator.uiState.value.leftSatellite != null)
+
+            // Enter fullscreen (portrait) -> drops to battery camera ring only, hides separated satellite
+            coordinator.onEvent(CapsuleEvent.FullscreenChanged(isFullscreen = true))
+            runCurrent()
+            assertTrue(coordinator.uiState.value.isFullscreen)
+            assertEquals(CapsuleVisualState.STATE1_CUTOUT_ANCHOR, coordinator.uiState.value.visualState)
+            assertEquals(CapsuleContent.Idle, coordinator.uiState.value.content)
+            assertEquals(null, coordinator.uiState.value.leftSatellite)
+
+            // Rotate to landscape while fullscreen -> still minimal battery camera ring only
+            coordinator.onEvent(CapsuleEvent.OrientationChanged(isLandscape = true))
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE1_CUTOUT_ANCHOR, coordinator.uiState.value.visualState)
+            assertEquals(null, coordinator.uiState.value.leftSatellite)
+
+            // Exit fullscreen -> restores Media pill and separated satellite
+            coordinator.onEvent(CapsuleEvent.FullscreenChanged(isFullscreen = false))
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE2_HORIZONTAL_PILL, coordinator.uiState.value.visualState)
+            assertTrue(coordinator.uiState.value.leftSatellite != null)
+        }
+
+    @Test
+    fun `given fullscreen mode with incoming call, then shows minimal state2 pill without auto expand and expands only on tap`() =
+        testScope.runTest {
+            val coordinator = createCoordinator()
+            coordinator.updatePreferences(CapsulePreferences(enableCallAutoExpand = true))
+            coordinator.onEvent(CapsuleEvent.FullscreenChanged(isFullscreen = true))
+            runCurrent()
+
+            val call = CapsuleContent.CallAlert(
+                key = "call_fs_1",
+                callerName = "Alice",
+                callStatus = "Incoming call",
+                packageName = "com.google.android.dialer",
+                appName = "Phone",
+                isIncoming = true,
+            )
+            coordinator.onEvent(CapsuleEvent.CallUpdated(call))
+            runCurrent()
+
+            // Must NOT auto-expand to State 3 in fullscreen
+            assertEquals(CapsuleVisualState.STATE2_HORIZONTAL_PILL, coordinator.uiState.value.visualState)
+            assertEquals(call, coordinator.uiState.value.content)
+            assertEquals(null, coordinator.uiState.value.leftSatellite)
+
+            // Expands to State 3 only when user explicitly taps it
+            coordinator.onEvent(CapsuleEvent.TapCapsule)
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE3_FULL_EXPANDED, coordinator.uiState.value.visualState)
+            assertEquals(call, coordinator.uiState.value.content)
+        }
+
+    @Test
+    fun `given fullscreen mode with notification, then shows minimal state2 pill and expands only on tap`() =
+        testScope.runTest {
+            val coordinator = createCoordinator()
+            coordinator.onEvent(CapsuleEvent.MediaUpdated(sampleMedia()))
+            coordinator.onEvent(CapsuleEvent.FullscreenChanged(isFullscreen = true))
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE1_CUTOUT_ANCHOR, coordinator.uiState.value.visualState)
+
+            val notif = CapsuleContent.NotificationAlert(
+                key = "notif_fs_1",
+                packageName = "com.whatsapp",
+                appName = "WhatsApp",
+                title = "Bob",
+                text = "Ready to game?",
+                iconBytes = null,
+                timestampMs = 1_000L,
+            )
+            coordinator.onEvent(CapsuleEvent.NotificationPosted(notif))
+            runCurrent()
+
+            assertEquals(CapsuleVisualState.STATE2_HORIZONTAL_PILL, coordinator.uiState.value.visualState)
+            assertEquals(notif, coordinator.uiState.value.content)
+
+            // Tapping expands notification card
+            coordinator.onEvent(CapsuleEvent.TapCapsule)
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE3_FULL_EXPANDED, coordinator.uiState.value.visualState)
+            assertEquals(notif, coordinator.uiState.value.content)
+
+            // Collapsing returns cleanly to minimal Battery Camera Ring (not Media pill)
+            coordinator.onEvent(CapsuleEvent.CollapseCapsule)
+            runCurrent()
+            assertEquals(CapsuleVisualState.STATE1_CUTOUT_ANCHOR, coordinator.uiState.value.visualState)
+            assertEquals(CapsuleContent.Idle, coordinator.uiState.value.content)
+        }
+
     private fun sampleMedia(): CapsuleContent.Media =
         CapsuleContent.Media(
             packageName = "com.spotify.music",

@@ -339,6 +339,11 @@ class CapsuleOverlayController @Inject constructor(
         coordinator.onEvent(CapsuleEvent.QuickSettingsChanged(isOpen))
     }
 
+    /** Dispatches immersive fullscreen app state (gaming, video playback) across any orientation. */
+    fun setFullscreenMode(isFullscreen: Boolean) {
+        coordinator.onEvent(CapsuleEvent.FullscreenChanged(isFullscreen))
+    }
+
     /** Toggles temporary pause/resume of the active capsule without unbinding Accessibility. */
     fun toggleUserPause() {
         _isUserPaused.value = !_isUserPaused.value

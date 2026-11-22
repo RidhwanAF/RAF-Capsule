@@ -121,7 +121,29 @@ internal fun computeLandscapeVerticalPillGeometry(
     cutout: CutoutGeometry,
     anchorPosition: CameraAnchorPosition = CameraAnchorPosition.CENTER,
     circleDiameterDp: Float,
+    isMinimalIconOnly: Boolean = false,
 ): LandscapeVerticalPillGeometry {
+    if (isMinimalIconOnly) {
+        val iconWing = 38f
+        return when (anchorPosition) {
+            CameraAnchorPosition.RIGHT -> LandscapeVerticalPillGeometry(
+                anchorPosition = anchorPosition,
+                topWingDp = 0f,
+                cutoutGapDp = circleDiameterDp,
+                bottomWingDp = iconWing,
+                pillWidthDp = circleDiameterDp,
+            )
+            CameraAnchorPosition.CENTER,
+            CameraAnchorPosition.LEFT,
+            -> LandscapeVerticalPillGeometry(
+                anchorPosition = anchorPosition,
+                topWingDp = iconWing,
+                cutoutGapDp = circleDiameterDp,
+                bottomWingDp = 0f,
+                pillWidthDp = circleDiameterDp,
+            )
+        }
+    }
     val gap = if (anchorPosition == CameraAnchorPosition.CENTER) {
         (cutout.holeHeightDp + 8f).coerceIn(32f, 60f)
     } else {
@@ -160,6 +182,7 @@ fun State2LandscapeVerticalPill(
     cutout: CutoutGeometry,
     anchorPosition: CameraAnchorPosition = CameraAnchorPosition.CENTER,
     circleDiameterDp: Float,
+    isMinimalIconOnly: Boolean = false,
     horizontalMediaGlowStyle: HorizontalMediaGlowStyle = HorizontalMediaGlowStyle.OFF,
     mediaAnimationColorMode: MediaAnimationColorMode = MediaAnimationColorMode.ALBUM_COLOR,
     swipeDirection: Int,
@@ -170,6 +193,7 @@ fun State2LandscapeVerticalPill(
         cutout = cutout,
         anchorPosition = anchorPosition,
         circleDiameterDp = circleDiameterDp,
+        isMinimalIconOnly = isMinimalIconOnly,
     )
     val primaryColor = MaterialTheme.colorScheme.primary
     val tertiaryColor = MaterialTheme.colorScheme.tertiary
@@ -208,97 +232,138 @@ fun State2LandscapeVerticalPill(
                 verticalArrangement = Arrangement.Center,
                 modifier = Modifier.fillMaxSize(),
             ) {
-                when (geom.anchorPosition) {
-                    CameraAnchorPosition.CENTER -> {
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(geom.topWingDp.dp),
-                        ) {
-                            LandscapeTopWingIcon(
-                                content = active,
-                                primaryColor = primaryColor,
-                                tertiaryColor = tertiaryColor,
-                                horizontalMediaGlowStyle = horizontalMediaGlowStyle,
-                                mediaAnimationColorMode = mediaAnimationColorMode,
-                            )
+                if (isMinimalIconOnly) {
+                    when (geom.anchorPosition) {
+                        CameraAnchorPosition.RIGHT -> {
+                            Spacer(modifier = Modifier.height(geom.cutoutGapDp.dp))
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(geom.bottomWingDp.dp),
+                            ) {
+                                LandscapeTopWingIcon(
+                                    content = active,
+                                    primaryColor = primaryColor,
+                                    tertiaryColor = tertiaryColor,
+                                    horizontalMediaGlowStyle = horizontalMediaGlowStyle,
+                                    mediaAnimationColorMode = mediaAnimationColorMode,
+                                )
+                            }
                         }
-                        Spacer(modifier = Modifier.height(geom.cutoutGapDp.dp))
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(geom.bottomWingDp.dp)
-                                .padding(horizontal = 3.dp),
-                        ) {
-                            LandscapeBottomWingTelemetry(
-                                content = active,
-                                primaryColor = primaryColor,
-                                mediaAnimationColorMode = mediaAnimationColorMode,
-                            )
+                        CameraAnchorPosition.CENTER,
+                        CameraAnchorPosition.LEFT,
+                        -> {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(geom.topWingDp.dp),
+                            ) {
+                                LandscapeTopWingIcon(
+                                    content = active,
+                                    primaryColor = primaryColor,
+                                    tertiaryColor = tertiaryColor,
+                                    horizontalMediaGlowStyle = horizontalMediaGlowStyle,
+                                    mediaAnimationColorMode = mediaAnimationColorMode,
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(geom.cutoutGapDp.dp))
                         }
                     }
-                    // Portrait LEFT (Start) -> Landscape BOTTOM anchor; wings expand upward above the lens
-                    CameraAnchorPosition.LEFT -> {
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(geom.topWingDp.dp),
-                        ) {
-                            LandscapeTopWingIcon(
-                                content = active,
-                                primaryColor = primaryColor,
-                                tertiaryColor = tertiaryColor,
-                                horizontalMediaGlowStyle = horizontalMediaGlowStyle,
-                                mediaAnimationColorMode = mediaAnimationColorMode,
-                            )
+                } else {
+                    when (geom.anchorPosition) {
+                        CameraAnchorPosition.CENTER -> {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(geom.topWingDp.dp),
+                            ) {
+                                LandscapeTopWingIcon(
+                                    content = active,
+                                    primaryColor = primaryColor,
+                                    tertiaryColor = tertiaryColor,
+                                    horizontalMediaGlowStyle = horizontalMediaGlowStyle,
+                                    mediaAnimationColorMode = mediaAnimationColorMode,
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(geom.cutoutGapDp.dp))
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(geom.bottomWingDp.dp)
+                                    .padding(horizontal = 3.dp),
+                            ) {
+                                LandscapeBottomWingTelemetry(
+                                    content = active,
+                                    primaryColor = primaryColor,
+                                    mediaAnimationColorMode = mediaAnimationColorMode,
+                                )
+                            }
                         }
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(geom.bottomWingDp.dp)
-                                .padding(horizontal = 3.dp),
-                        ) {
-                            LandscapeBottomWingTelemetry(
-                                content = active,
-                                primaryColor = primaryColor,
-                                mediaAnimationColorMode = mediaAnimationColorMode,
-                            )
+                        // Portrait LEFT (Start) -> Landscape BOTTOM anchor; wings expand upward above the lens
+                        CameraAnchorPosition.LEFT -> {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(geom.topWingDp.dp),
+                            ) {
+                                LandscapeTopWingIcon(
+                                    content = active,
+                                    primaryColor = primaryColor,
+                                    tertiaryColor = tertiaryColor,
+                                    horizontalMediaGlowStyle = horizontalMediaGlowStyle,
+                                    mediaAnimationColorMode = mediaAnimationColorMode,
+                                )
+                            }
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(geom.bottomWingDp.dp)
+                                    .padding(horizontal = 3.dp),
+                            ) {
+                                LandscapeBottomWingTelemetry(
+                                    content = active,
+                                    primaryColor = primaryColor,
+                                    mediaAnimationColorMode = mediaAnimationColorMode,
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(geom.cutoutGapDp.dp))
                         }
-                        Spacer(modifier = Modifier.height(geom.cutoutGapDp.dp))
-                    }
-                    // Portrait RIGHT (End) -> Landscape TOP anchor; wings expand downward below the lens
-                    CameraAnchorPosition.RIGHT -> {
-                        Spacer(modifier = Modifier.height(geom.cutoutGapDp.dp))
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(geom.topWingDp.dp),
-                        ) {
-                            LandscapeTopWingIcon(
-                                content = active,
-                                primaryColor = primaryColor,
-                                tertiaryColor = tertiaryColor,
-                                horizontalMediaGlowStyle = horizontalMediaGlowStyle,
-                                mediaAnimationColorMode = mediaAnimationColorMode,
-                            )
-                        }
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(geom.bottomWingDp.dp)
-                                .padding(horizontal = 3.dp),
-                        ) {
-                            LandscapeBottomWingTelemetry(
-                                content = active,
-                                primaryColor = primaryColor,
-                                mediaAnimationColorMode = mediaAnimationColorMode,
-                            )
+                        // Portrait RIGHT (End) -> Landscape TOP anchor; wings expand downward below the lens
+                        CameraAnchorPosition.RIGHT -> {
+                            Spacer(modifier = Modifier.height(geom.cutoutGapDp.dp))
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(geom.topWingDp.dp),
+                            ) {
+                                LandscapeTopWingIcon(
+                                    content = active,
+                                    primaryColor = primaryColor,
+                                    tertiaryColor = tertiaryColor,
+                                    horizontalMediaGlowStyle = horizontalMediaGlowStyle,
+                                    mediaAnimationColorMode = mediaAnimationColorMode,
+                                )
+                            }
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(geom.bottomWingDp.dp)
+                                    .padding(horizontal = 3.dp),
+                            ) {
+                                LandscapeBottomWingTelemetry(
+                                    content = active,
+                                    primaryColor = primaryColor,
+                                    mediaAnimationColorMode = mediaAnimationColorMode,
+                                )
+                            }
                         }
                     }
                 }

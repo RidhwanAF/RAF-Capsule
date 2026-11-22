@@ -8,7 +8,6 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.CallEnd
 import androidx.compose.material3.Icon
@@ -91,7 +91,6 @@ fun CallExpandedContent(
         verticalArrangement = if (isLandscape) Arrangement.Center else Arrangement.SpaceBetween,
         modifier = modifier
             .fillMaxSize()
-            .clickable(enabled = interactionsEnabled, onClick = onOpenCallApp)
             .padding(
                 start = contentPaddingDp.dp,
                 end = contentPaddingDp.dp,
@@ -201,98 +200,206 @@ fun CallExpandedContent(
             Spacer(modifier = Modifier.height(10.dp))
         }
 
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            CapsuleExpressiveSurface(
-                enabled = interactionsEnabled,
-                onClick = onDeclineCall,
-                restCornerDp = 22f,
-                pressedCornerDp = 10f,
-                backgroundColor = declineRed,
-                modifier = Modifier
-                    .weight(1f)
-                    .height(44.dp),
+        val showAnswer = call.isIncoming || call.hasAnswerAction
+
+        if (isLandscape && showAnswer) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxWidth(),
             ) {
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Icon(
-                        imageVector = Icons.Rounded.CallEnd,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(18.dp),
+                    CallDeclineButton(
+                        isIncomingOrAnswerable = true,
+                        declineRed = declineRed,
+                        interactionsEnabled = interactionsEnabled,
+                        onClick = onDeclineCall,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp),
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = stringResource(
-                            if (call.isIncoming || call.hasAnswerAction) {
-                                R.string.action_decline_call
-                            } else {
-                                R.string.action_end_call
-                            },
-                        ),
-                        color = Color.White,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
+                    CallAnswerButton(
+                        answerGreen = answerGreen,
+                        interactionsEnabled = interactionsEnabled,
+                        onClick = onAnswerCall,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp),
                     )
                 }
-            }
-
-            if (call.isIncoming || call.hasAnswerAction) {
-                CapsuleExpressiveSurface(
-                    enabled = interactionsEnabled,
-                    onClick = onAnswerCall,
-                    restCornerDp = 22f,
-                    pressedCornerDp = 10f,
-                    backgroundColor = answerGreen,
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(44.dp),
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Call,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = stringResource(R.string.action_answer_call),
-                            color = Color.White,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                        )
-                    }
-                }
-            } else {
-                CapsuleExpressiveSurface(
-                    enabled = interactionsEnabled,
+                CallOpenButton(
+                    interactionsEnabled = interactionsEnabled,
                     onClick = onOpenCallApp,
-                    restCornerDp = 22f,
-                    pressedCornerDp = 10f,
-                    backgroundColor = Color.White.copy(alpha = 0.16f),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(42.dp),
+                )
+            }
+        } else {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                CallDeclineButton(
+                    isIncomingOrAnswerable = showAnswer,
+                    declineRed = declineRed,
+                    interactionsEnabled = interactionsEnabled,
+                    onClick = onDeclineCall,
                     modifier = Modifier
                         .weight(1f)
                         .height(44.dp),
-                ) {
-                    Text(
-                        text = stringResource(R.string.action_open),
-                        color = Color.White,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
+                )
+
+                if (showAnswer) {
+                    CallAnswerButton(
+                        answerGreen = answerGreen,
+                        interactionsEnabled = interactionsEnabled,
+                        onClick = onAnswerCall,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp),
                     )
                 }
+
+                CallOpenButton(
+                    interactionsEnabled = interactionsEnabled,
+                    onClick = onOpenCallApp,
+                    compact = showAnswer,
+                    modifier = if (showAnswer) {
+                        Modifier.height(44.dp)
+                    } else {
+                        Modifier
+                            .weight(1f)
+                            .height(44.dp)
+                    },
+                )
             }
+        }
+    }
+}
+
+@Composable
+private fun CallDeclineButton(
+    modifier: Modifier = Modifier,
+    isIncomingOrAnswerable: Boolean,
+    declineRed: Color,
+    interactionsEnabled: Boolean,
+    onClick: () -> Unit,
+) {
+    CapsuleExpressiveSurface(
+        enabled = interactionsEnabled,
+        onClick = onClick,
+        restCornerDp = 22f,
+        pressedCornerDp = 10f,
+        backgroundColor = declineRed,
+        modifier = modifier,
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+            modifier = Modifier.padding(horizontal = 8.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.CallEnd,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(modifier = Modifier.width(5.dp))
+            Text(
+                text = stringResource(
+                    if (isIncomingOrAnswerable) {
+                        R.string.action_decline_call
+                    } else {
+                        R.string.action_end_call
+                    },
+                ),
+                color = Color.White,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun CallAnswerButton(
+    modifier: Modifier = Modifier,
+    answerGreen: Color,
+    interactionsEnabled: Boolean,
+    onClick: () -> Unit,
+) {
+    CapsuleExpressiveSurface(
+        enabled = interactionsEnabled,
+        onClick = onClick,
+        restCornerDp = 22f,
+        pressedCornerDp = 10f,
+        backgroundColor = answerGreen,
+        modifier = modifier,
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+            modifier = Modifier.padding(horizontal = 8.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Call,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(modifier = Modifier.width(5.dp))
+            Text(
+                text = stringResource(R.string.action_answer_call),
+                color = Color.White,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun CallOpenButton(
+    modifier: Modifier = Modifier,
+    interactionsEnabled: Boolean,
+    onClick: () -> Unit,
+    compact: Boolean = false,
+) {
+    CapsuleExpressiveSurface(
+        enabled = interactionsEnabled,
+        onClick = onClick,
+        restCornerDp = 22f,
+        pressedCornerDp = 10f,
+        backgroundColor = Color.White.copy(alpha = 0.16f),
+        modifier = modifier,
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+            modifier = Modifier.padding(horizontal = if (compact) 12.dp else 14.dp),
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.OpenInNew,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(16.dp),
+            )
+            Spacer(modifier = Modifier.width(5.dp))
+            Text(
+                text = stringResource(R.string.action_open),
+                color = Color.White,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }

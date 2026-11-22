@@ -209,6 +209,7 @@ internal fun computeCapsuleLayoutDpSpec(
                     cutout = state.cutout,
                     anchorPosition = state.preferences.cameraPosition,
                     circleDiameterDp = circleDp,
+                    isMinimalIconOnly = state.isFullscreen,
                 )
                 val wDp = vGeom.pillWidthDp + holdBonusDp
                 val hDp = vGeom.totalHeightDp + holdBonusDp
@@ -228,6 +229,7 @@ internal fun computeCapsuleLayoutDpSpec(
                     anchorPosition = state.preferences.cameraPosition,
                     circleDiameterDp = circleDp,
                     isLandscape = false,
+                    isMinimalIconOnly = state.isFullscreen,
                 )
                 val hDp = circleDp + holdBonusDp
                 val rawW = geom.totalWidthDp + holdBonusDp
