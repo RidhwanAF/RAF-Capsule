@@ -197,6 +197,37 @@ class IslandStateCoordinatorTest {
         }
 
     @Test
+    fun `given notification alert with three or more actions, when expanded to state3, then preserves all actions`() =
+        testScope.runTest {
+            val coordinator = createCoordinator()
+            val actions = listOf(
+                CapsuleContent.NotificationActionItem(actionId = 0, label = "Reply", supportsInlineReply = true, replyHint = "Reply..."),
+                CapsuleContent.NotificationActionItem(actionId = 1, label = "Like", supportsInlineReply = false),
+                CapsuleContent.NotificationActionItem(actionId = 2, label = "Mark read", supportsInlineReply = false),
+                CapsuleContent.NotificationActionItem(actionId = 3, label = "Mute", supportsInlineReply = false),
+            )
+            val notif = CapsuleContent.NotificationAlert(
+                key = "0|com.whatsapp|9",
+                packageName = "com.whatsapp",
+                appName = "WhatsApp",
+                title = "Team Chat",
+                text = "Deploy ready?",
+                iconBytes = null,
+                timestampMs = 300L,
+                actions = actions,
+            )
+
+            coordinator.onEvent(CapsuleEvent.NotificationPosted(notif))
+            runCurrent()
+            coordinator.onEvent(CapsuleEvent.TapCapsule)
+            runCurrent()
+
+            assertEquals(CapsuleVisualState.STATE3_FULL_EXPANDED, coordinator.uiState.value.visualState)
+            val expandedAlert = coordinator.uiState.value.content as CapsuleContent.NotificationAlert
+            assertEquals(actions, expandedAlert.actions)
+        }
+
+    @Test
     fun `given live activity with satellite disabled, when tapped in state2, then expands live activity content card and launches app on tap`() =
         testScope.runTest {
             val coordinator = createCoordinator()
