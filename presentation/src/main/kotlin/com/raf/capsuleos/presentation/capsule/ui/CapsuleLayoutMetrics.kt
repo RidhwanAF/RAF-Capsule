@@ -403,7 +403,9 @@ private fun computeNotificationExpandedHeightDp(notification: CapsuleContent.Not
     val lines = estimateNotificationLineCount(notification.text)
     val textAreaDp = (lines.coerceIn(2, 10) * 18.5f).coerceIn(48f, 192f)
     val attachmentBonusDp = if (notification.attachmentImageBytes != null) 116f else 0f
-    return (176f + textAreaDp + attachmentBonusDp).coerceIn(232f, 396f)
+    val extraActionRowsDp = (notification.actions.size / 3) * 40f
+    return (176f + textAreaDp + attachmentBonusDp + extraActionRowsDp)
+        .coerceIn(232f, 396f + extraActionRowsDp.coerceAtMost(80f))
 }
 
 private fun estimateNotificationLineCount(text: String): Int {

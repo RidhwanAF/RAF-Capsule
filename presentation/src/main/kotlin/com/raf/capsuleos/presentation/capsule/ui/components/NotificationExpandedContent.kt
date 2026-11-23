@@ -14,8 +14,10 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -345,60 +347,27 @@ fun NotificationExpandedContent(
                     }
                 }
             } else {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    notification.actions.take(2).forEach { action ->
-                        NotificationActionChip(
-                            label = action.label,
-                            icon = if (action.supportsInlineReply) Icons.AutoMirrored.Rounded.Reply else null,
-                            tint = if (action.supportsInlineReply) primary else Color.White,
-                            containerColor = if (action.supportsInlineReply) {
-                                primary.copy(alpha = 0.22f)
-                            } else {
-                                Color.White.copy(alpha = 0.12f)
-                            },
-                            onClick = {
-                                haptics.click()
-                                onUserInteraction()
-                                if (action.supportsInlineReply) {
-                                    replyingAction = action
-                                } else {
-                                    onTriggerAction(action.actionId, null)
-                                }
-                            },
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-
-                    NotificationActionChip(
-                        label = stringResource(R.string.action_open),
-                        icon = Icons.AutoMirrored.Rounded.OpenInNew,
-                        tint = primary,
-                        containerColor = primary.copy(alpha = 0.18f),
-                        onClick = {
-                            haptics.click()
-                            onOpenNotification()
-                        },
-                        modifier = Modifier.weight(1f),
-                    )
-
-                    if (notification.actions.isEmpty()) {
-                        NotificationActionChip(
-                            label = stringResource(R.string.action_dismiss),
-                            icon = Icons.Rounded.Close,
-                            tint = Color.White,
-                            containerColor = Color.White.copy(alpha = 0.12f),
-                            onClick = {
-                                haptics.click()
-                                onDismissNotification()
-                            },
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-                }
+                NotificationActionsBar(
+                    actions = notification.actions,
+                    primaryColor = primary,
+                    onActionClick = { action ->
+                        haptics.click()
+                        onUserInteraction()
+                        if (action.supportsInlineReply) {
+                            replyingAction = action
+                        } else {
+                            onTriggerAction(action.actionId, null)
+                        }
+                    },
+                    onOpenNotification = {
+                        haptics.click()
+                        onOpenNotification()
+                    },
+                    onDismissNotification = {
+                        haptics.click()
+                        onDismissNotification()
+                    },
+                )
             }
         }
     }
@@ -475,6 +444,140 @@ private fun NotificationAttachmentPreview(
     }
 }
 
+/**
+ * Adaptive notification action layout:
+ * - 0 actions: `[Open, Dismiss]`
+ * - 1 action: `[Action 1, Open]`
+ * - 2 actions: `[Action 1, Action 2, Open (icon-only)]`
+ * - 3+ actions: full 3-column action rows, keeping `[Open]` either paired in the trailing partial row
+ *   (using `[Action, Open]` or `[Action, Action, Open(icon)]`) or on its own full-width bottom row.
+ */
+@Composable
+private fun NotificationActionsBar(
+    modifier: Modifier = Modifier,
+    actions: List<CapsuleContent.NotificationActionItem>,
+    primaryColor: Color,
+    onActionClick: (CapsuleContent.NotificationActionItem) -> Unit,
+    onOpenNotification: () -> Unit,
+    onDismissNotification: () -> Unit,
+) {
+    val openLabel = stringResource(R.string.action_open)
+    if (actions.isEmpty()) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = modifier
+                .fillMaxWidth()
+                .height(IntrinsicSize.Min),
+        ) {
+            NotificationActionChip(
+                label = openLabel,
+                icon = Icons.AutoMirrored.Rounded.OpenInNew,
+                tint = primaryColor,
+                containerColor = primaryColor.copy(alpha = 0.18f),
+                onClick = onOpenNotification,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight(),
+            )
+            NotificationActionChip(
+                label = stringResource(R.string.action_dismiss),
+                icon = Icons.Rounded.Close,
+                tint = Color.White,
+                containerColor = Color.White.copy(alpha = 0.12f),
+                onClick = onDismissNotification,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight(),
+            )
+        }
+        return
+    }
+
+    val actionRows = actions.chunked(3)
+    Column(
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        actionRows.forEachIndexed { rowIndex, rowActions ->
+            val isLastRow = rowIndex == actionRows.lastIndex
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(IntrinsicSize.Min),
+            ) {
+                rowActions.forEach { action ->
+                    NotificationActionItemChip(
+                        action = action,
+                        primaryColor = primaryColor,
+                        onClick = { onActionClick(action) },
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight(),
+                    )
+                }
+
+                if (isLastRow && rowActions.size == 1) {
+                    NotificationActionChip(
+                        label = openLabel,
+                        icon = Icons.AutoMirrored.Rounded.OpenInNew,
+                        tint = primaryColor,
+                        containerColor = primaryColor.copy(alpha = 0.18f),
+                        onClick = onOpenNotification,
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight(),
+                    )
+                } else if (isLastRow && rowActions.size == 2) {
+                    NotificationOpenIconChip(
+                        contentDescription = openLabel,
+                        tint = primaryColor,
+                        containerColor = primaryColor.copy(alpha = 0.18f),
+                        onClick = onOpenNotification,
+                        modifier = Modifier
+                            .width(40.dp)
+                            .fillMaxHeight(),
+                    )
+                }
+            }
+        }
+
+        if (actions.size % 3 == 0) {
+            NotificationActionChip(
+                label = openLabel,
+                icon = Icons.AutoMirrored.Rounded.OpenInNew,
+                tint = primaryColor,
+                containerColor = primaryColor.copy(alpha = 0.18f),
+                onClick = onOpenNotification,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+}
+
+@Composable
+private fun NotificationActionItemChip(
+    modifier: Modifier = Modifier,
+    action: CapsuleContent.NotificationActionItem,
+    primaryColor: Color,
+    onClick: () -> Unit,
+) {
+    NotificationActionChip(
+        label = action.label,
+        icon = if (action.supportsInlineReply) Icons.AutoMirrored.Rounded.Reply else null,
+        tint = if (action.supportsInlineReply) primaryColor else Color.White,
+        containerColor = if (action.supportsInlineReply) {
+            primaryColor.copy(alpha = 0.22f)
+        } else {
+            Color.White.copy(alpha = 0.12f)
+        },
+        onClick = onClick,
+        modifier = modifier,
+    )
+}
+
 @Composable
 private fun NotificationActionChip(
     modifier: Modifier = Modifier,
@@ -489,14 +592,14 @@ private fun NotificationActionChip(
         restCornerDp = 16f,
         pressedCornerDp = 8f,
         backgroundColor = containerColor,
-        modifier = modifier,
+        modifier = modifier.heightIn(min = 34.dp),
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 7.dp),
+                .padding(horizontal = 8.dp, vertical = 7.dp),
         ) {
             if (icon != null) {
                 Icon(
@@ -514,6 +617,35 @@ private fun NotificationActionChip(
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun NotificationOpenIconChip(
+    modifier: Modifier = Modifier,
+    contentDescription: String,
+    tint: Color,
+    containerColor: Color,
+    onClick: () -> Unit,
+) {
+    CapsuleExpressiveSurface(
+        onClick = onClick,
+        restCornerDp = 16f,
+        pressedCornerDp = 8f,
+        backgroundColor = containerColor,
+        modifier = modifier.heightIn(min = 34.dp),
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier.padding(vertical = 7.dp),
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.OpenInNew,
+                contentDescription = contentDescription,
+                tint = tint,
+                modifier = Modifier.size(16.dp),
             )
         }
     }

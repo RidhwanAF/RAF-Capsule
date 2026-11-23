@@ -213,7 +213,9 @@ class CapsuleNotificationListenerService : NotificationListenerService() {
         val (attachmentBytes, attachmentMime) = extractNotificationAttachment(extras)
         if (title.isBlank() && text.isBlank() && attachmentBytes == null) return
 
-        val signature = "$title|$text|${attachmentBytes?.contentHashCode() ?: 0}|$attachmentMime"
+        val rawActions = notif.actions?.toList().orEmpty()
+        val actionSig = rawActions.joinToString(",") { it.title?.toString()?.trim().orEmpty() }
+        val signature = "$title|$text|${attachmentBytes?.contentHashCode() ?: 0}|$attachmentMime|$actionSig"
         val prevSignature = seenSignatures.put(sbn.key, signature)
         if (prevSignature == signature) {
             return
@@ -223,7 +225,6 @@ class CapsuleNotificationListenerService : NotificationListenerService() {
             pendingIntents[sbn.key] = pi
         }
 
-        val rawActions = notif.actions?.toList().orEmpty()
         if (rawActions.isNotEmpty()) {
             cachedActions[sbn.key] = rawActions
         } else {
@@ -239,7 +240,7 @@ class CapsuleNotificationListenerService : NotificationListenerService() {
                 supportsInlineReply = firstRemoteInput != null,
                 replyHint = firstRemoteInput?.label?.toString()?.trim()?.takeIf { it.isNotEmpty() },
             )
-        }.take(3)
+        }
 
         val alert = CapsuleContent.NotificationAlert(
             key = sbn.key,
