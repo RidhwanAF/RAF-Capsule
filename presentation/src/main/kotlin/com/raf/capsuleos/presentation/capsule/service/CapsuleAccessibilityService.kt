@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityService
 import android.app.KeyguardManager
 import android.content.res.Configuration
 import android.graphics.Rect
+import android.view.WindowInsets
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityWindowInfo
@@ -149,9 +150,14 @@ class CapsuleAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Detects immersive fullscreen apps (gaming, video playback, fullscreen readers) across both
-     * Portrait and Landscape orientations by verifying a full-display application window is active
-     * while the system StatusBar window is hidden.
+     * Detects true immersive fullscreen apps (gaming, video playback, fullscreen readers) across
+     * both Portrait and Landscape orientations by verifying a full-display application window is
+     * active while both the system StatusBar and NavigationBar windows are hidden.
+     *
+     * Uses real [WindowInsets.Type.statusBars], [WindowInsets.Type.displayCutout], and
+     * [WindowInsets.Type.navigationBars] metrics instead of fixed dp caps so tall camera-cutout
+     * status bars (e.g., 204px on Pixel 9 Pro with custom DPI scaling) are never misclassified as
+     * hidden in portrait apps.
      */
     private fun detectImmersiveFullscreen(isQsOpen: Boolean): Boolean {
         if (isQsOpen) return false
@@ -161,14 +167,40 @@ class CapsuleAccessibilityService : AccessibilityService() {
         val winList = runCatching { windows.orEmpty() }.getOrDefault(emptyList())
         if (winList.isEmpty()) return false
 
-        val wmBounds = getSystemService(WindowManager::class.java)?.currentWindowMetrics?.bounds
+        val metrics = getSystemService(WindowManager::class.java)?.currentWindowMetrics
+        val wmBounds = metrics?.bounds
         val dm = resources.displayMetrics
+        val density = dm.density.coerceAtLeast(1f)
         val screenW = wmBounds?.width()?.takeIf { it > 0 } ?: dm.widthPixels
         val screenH = wmBounds?.height()?.takeIf { it > 0 } ?: dm.heightPixels
-        val maxStatusBarHeightPx = (72f * dm.density.coerceAtLeast(1f)).roundToInt()
+        val insets = metrics?.windowInsets
+        val statusBarInsetTop = insets
+            ?.getInsetsIgnoringVisibility(WindowInsets.Type.statusBars())
+            ?.top
+            ?: 0
+        val cutoutInsetTop = insets
+            ?.getInsetsIgnoringVisibility(WindowInsets.Type.displayCutout())
+            ?.top
+            ?: 0
+        val navBarInsets = insets?.getInsetsIgnoringVisibility(WindowInsets.Type.navigationBars())
+        val navBarInsetThickness = maxOf(
+            navBarInsets?.bottom ?: 0,
+            navBarInsets?.left ?: 0,
+            navBarInsets?.right ?: 0,
+        )
+        val maxStatusBarHeightPx = maxOf(
+            statusBarInsetTop,
+            cutoutInsetTop,
+            (84f * density).roundToInt(),
+        ) + (32f * density).roundToInt()
+        val maxNavBarThicknessPx = maxOf(
+            navBarInsetThickness,
+            (64f * density).roundToInt(),
+        ) + (24f * density).roundToInt()
         val bounds = Rect()
 
         var hasStatusBarWindow = false
+        var hasNavBarWindow = false
         var hasFullscreenAppWindow = false
 
         winList.forEach { win ->
@@ -176,22 +208,36 @@ class CapsuleAccessibilityService : AccessibilityService() {
             when (win.type) {
                 AccessibilityWindowInfo.TYPE_SYSTEM -> {
                     val title = win.title?.toString()?.trim()?.lowercase(Locale.US).orEmpty()
-                    val isExcluded = title.contains("navigation") ||
-                        title.contains("volume") ||
+                    val isOverlayChrome = title.contains("volume") ||
                         title.contains("screendecor") ||
                         title.contains("shade") ||
                         title.contains("notification") ||
-                        title.contains("quick")
-                    if (!isExcluded) {
+                        title.contains("quick") ||
+                        title.contains("edge")
+                    if (!isOverlayChrome) {
                         val isNamedStatusBar = title == "statusbar" ||
                             title == "status bar" ||
                             title.contains("status bar") ||
                             title.contains("status_bar")
-                        val isTopBarGeometry = bounds.top <= 4 &&
+                        val isTopBarGeometry = !title.contains("navigation") &&
+                            bounds.top <= 8 &&
                             bounds.height() in 1..maxStatusBarHeightPx &&
                             bounds.width() >= (screenW * 0.75f).roundToInt()
                         if (isNamedStatusBar || isTopBarGeometry) {
                             hasStatusBarWindow = true
+                        }
+
+                        val isBottomNavGeometry = bounds.bottom >= screenH - 8 &&
+                            bounds.height() in 1..maxNavBarThicknessPx &&
+                            bounds.width() >= (screenW * 0.5f).roundToInt()
+                        val isSideNavGeometry = (bounds.left <= 8 || bounds.right >= screenW - 8) &&
+                            bounds.width() in 1..maxNavBarThicknessPx &&
+                            bounds.height() >= (screenH * 0.5f).roundToInt()
+                        val isNamedNavBar = title == "navigation bar" ||
+                            title == "navigationbar" ||
+                            title == "taskbar"
+                        if (isNamedNavBar || isBottomNavGeometry || isSideNavGeometry) {
+                            hasNavBarWindow = true
                         }
                     }
                 }
@@ -214,7 +260,7 @@ class CapsuleAccessibilityService : AccessibilityService() {
             }
         }
 
-        return hasFullscreenAppWindow && !hasStatusBarWindow
+        return hasFullscreenAppWindow && !hasStatusBarWindow && !hasNavBarWindow
     }
 
     private companion object {
