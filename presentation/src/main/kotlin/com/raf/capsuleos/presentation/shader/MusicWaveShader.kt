@@ -59,7 +59,7 @@ object MusicWaveShader {
     ) {
         shader.setFloatUniform("uResolution", widthPx.coerceAtLeast(1f), heightPx.coerceAtLeast(1f))
         shader.setFloatUniform("uTime", timeSeconds)
-        shader.setFloatUniform("uPlaying", waveActivity.coerceIn(0f, 1f))
+        shader.setFloatUniform("uPlaying", waveActivity.coerceIn(0f, 1.5f))
         shader.setFloatUniform(
             "uPrimaryColor",
             primaryColor.red,

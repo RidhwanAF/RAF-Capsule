@@ -17,6 +17,7 @@ data class SetupUiState(
     val hasDndPolicyAccess: Boolean = false,
     val hasBluetoothPermission: Boolean = false,
     val hasLocationPermission: Boolean = false,
+    val hasAudioVisualizerPermission: Boolean = false,
     val isUserPaused: Boolean = false,
     val cutoutGeometry: CutoutGeometry = CutoutGeometry(),
     val detectedPosition: CameraAnchorPosition = CameraAnchorPosition.CENTER,
@@ -35,5 +36,6 @@ data class SetupUiState(
             hasDndPolicyAccess &&
             hasBluetoothPermission &&
             hasLocationPermission &&
+            hasAudioVisualizerPermission &&
             hasWriteSecureSettings
 }

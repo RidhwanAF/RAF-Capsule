@@ -277,4 +277,6 @@
     <string name="msg_xiaomi_battery_desc">MIUIのバッテリー制限からCapsule OSを除外します。</string>
     <string name="label_xiaomi_popup_bg">バックグラウンドでのポップアップ表示</string>
     <string name="msg_xiaomi_popup_bg_desc">その他の権限で「バックグラウンドで実行中にポップアップウィンドウを表示」を有効にします。</string>
+    <string name="label_audio_visualizer_permission">ビート連動メディアビジュアライザー (音声)</string>
+    <string name="msg_audio_visualizer_permission_desc">Android Visualizer で出力音声の FFT を取得し、展開メディアのアニメーションをビートに連動させます。</string>
 </resources>

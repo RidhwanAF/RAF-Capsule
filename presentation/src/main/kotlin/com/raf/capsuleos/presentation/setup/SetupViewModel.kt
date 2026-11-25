@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.raf.capsuleos.domain.model.CameraAnchorPosition
 import com.raf.capsuleos.domain.model.CapsulePreferences
+import com.raf.capsuleos.domain.repository.AudioVisualizerRepository
 import com.raf.capsuleos.domain.repository.BluetoothRepository
 import com.raf.capsuleos.domain.repository.BrightnessRepository
 import com.raf.capsuleos.domain.repository.CapsuleSettingsRepository
@@ -53,6 +54,7 @@ class SetupViewModel @Inject constructor(
     private val volumeRepository: VolumeRepository,
     private val bluetoothRepository: BluetoothRepository,
     private val systemEventsRepository: SystemEventsRepository,
+    private val audioVisualizerRepository: AudioVisualizerRepository,
     private val overlayController: CapsuleOverlayController,
 ) : ViewModel() {
 
@@ -92,6 +94,7 @@ class SetupViewModel @Inject constructor(
             hasDndPolicyAccess = volumeRepository.canChangeSilentMode(),
             hasBluetoothPermission = bluetoothRepository.hasBluetoothPermission(),
             hasLocationPermission = systemEventsRepository.hasLocationPermission(),
+            hasAudioVisualizerPermission = audioVisualizerRepository.hasAudioPermission(),
             isUserPaused = paused,
             cutoutGeometry = effectiveCutout,
             detectedPosition = initialDetect.detectedPosition,

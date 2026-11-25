@@ -166,6 +166,8 @@
     <string name="msg_bluetooth_permission_desc">Detects when headphones, speakers, or accessories connect and reads reported battery level.</string>
     <string name="label_location_permission">Weather Location (Optional)</string>
     <string name="msg_location_permission_desc">Uses coarse device location with Open-Meteo for accurate local weather in Now Brief.</string>
+    <string name="label_audio_visualizer_permission">Beat-Reactive Media Visualizer (Audio)</string>
+    <string name="msg_audio_visualizer_permission_desc">Reads global audio output FFT via Android Visualizer so expanded media animations pulse to the beat.</string>
     <string name="label_bluetooth_connected">Connected</string>
     <string name="label_bluetooth_battery">Battery %1$d%%</string>
     <string name="action_open_bluetooth_settings">Bluetooth Settings</string>

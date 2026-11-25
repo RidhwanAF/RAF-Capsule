@@ -68,16 +68,21 @@ object ShizukuPermissionHelper {
             Array<String>::class.java,
             String::class.java,
         ).apply { isAccessible = true }
-        val cmd = arrayOf(
-            "pm",
-            "grant",
-            context.packageName,
-            Manifest.permission.WRITE_SECURE_SETTINGS,
+        val pkg = context.packageName
+        val commands = listOf(
+            arrayOf("pm", "grant", pkg, Manifest.permission.WRITE_SECURE_SETTINGS),
+            arrayOf("pm", "grant", pkg, Manifest.permission.RECORD_AUDIO),
+            arrayOf("appops", "set", pkg, "RECORD_AUDIO", "allow"),
+            arrayOf("appops", "set", pkg, "SYSTEM_ALERT_WINDOW", "allow"),
         )
-        val process = newProcessMethod.invoke(null, cmd, null, null) as? Process ?: return false
-        val exitCode = process.waitFor()
-        runCatching { process.destroy() }
-        exitCode == 0
+        var secureSettingsGranted = false
+        commands.forEachIndexed { idx, cmd ->
+            val process = newProcessMethod.invoke(null, cmd, null, null) as? Process ?: return@forEachIndexed
+            val exitCode = process.waitFor()
+            runCatching { process.destroy() }
+            if (idx == 0 && exitCode == 0) secureSettingsGranted = true
+        }
+        secureSettingsGranted
     }.getOrDefault(false)
 
     /** Opens the Shizuku app if installed, or opens the official Shizuku download page. */

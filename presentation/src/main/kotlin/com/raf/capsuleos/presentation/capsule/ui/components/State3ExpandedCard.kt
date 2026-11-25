@@ -18,6 +18,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.raf.capsuleos.domain.model.AudioBeatState
 import com.raf.capsuleos.domain.model.AudioStreamType
 import com.raf.capsuleos.domain.model.CameraAnchorPosition
 import com.raf.capsuleos.domain.model.CapsuleContent
@@ -56,6 +57,7 @@ fun State3ExpandedCard(
     isLandscape: Boolean = false,
     contentPaddingDp: Float = 18f,
     timeSeconds: Float,
+    audioBeatState: AudioBeatState = AudioBeatState.Silent,
     interactionsEnabled: Boolean = true,
     showMediaBackdrop: Boolean = true,
     enableAlbumSharedTransition: Boolean = true,
@@ -172,6 +174,7 @@ fun State3ExpandedCard(
                     isLandscape = isLandscape,
                     contentPaddingDp = contentPaddingDp,
                     timeSeconds = timeSeconds,
+                    audioBeatState = audioBeatState,
                     interactionsEnabled = interactionsEnabled,
                     showBackdrop = showMediaBackdrop,
                     enableAlbumSharedTransition = enableAlbumSharedTransition,

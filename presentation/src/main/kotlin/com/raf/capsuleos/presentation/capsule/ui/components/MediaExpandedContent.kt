@@ -8,7 +8,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -70,6 +69,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -86,6 +86,7 @@ import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -96,6 +97,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.raf.capsuleos.domain.model.AudioBeatState
 import com.raf.capsuleos.domain.model.CapsuleContent
 import com.raf.capsuleos.domain.model.ExpandedMediaGlowEffect
 import com.raf.capsuleos.domain.model.LrcLyricsParser
@@ -115,6 +117,8 @@ import com.raf.capsuleos.presentation.shader.MusicWaveShader
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import java.util.Locale
+import kotlin.math.PI
+import kotlin.math.sin
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
@@ -130,9 +134,27 @@ fun MediaBackdropLayer(
     mediaAnimationColorMode: MediaAnimationColorMode = MediaAnimationColorMode.ALBUM_COLOR,
     isVerticalParallax: Boolean = false,
     parallaxOffsetProvider: () -> Float = { 0f },
+    audioBeatState: AudioBeatState = AudioBeatState.Silent,
 ) {
     val themePrimary = MaterialTheme.colorScheme.primary
     val themeTertiary = MaterialTheme.colorScheme.tertiary
+    val liveBeatPulse by animateFloatAsState(
+        targetValue = if (media.isPlaying && audioBeatState.isLive) audioBeatState.beatPulse else 0f,
+        animationSpec = tween(durationMillis = 65),
+        label = "backdropBeatPulse",
+    )
+    val liveBass by animateFloatAsState(
+        targetValue = if (media.isPlaying && audioBeatState.isLive) audioBeatState.bass else 0f,
+        animationSpec = tween(durationMillis = 75),
+        label = "backdropBass",
+    )
+    val liveEnergy by animateFloatAsState(
+        targetValue = if (media.isPlaying && audioBeatState.isLive) audioBeatState.energy else 0f,
+        animationSpec = tween(durationMillis = 75),
+        label = "backdropEnergy",
+    )
+    val beatScaleBoost = liveBeatPulse * 0.085f + liveBass * 0.045f
+    val beatAlphaBoost = liveBeatPulse * 0.18f + liveEnergy * 0.08f
     Box(modifier = modifier.fillMaxSize()) {
         AnimatedContent(
             targetState = media,
@@ -160,9 +182,10 @@ fun MediaBackdropLayer(
                     modifier = Modifier
                         .fillMaxSize()
                         .graphicsLayer {
-                            alpha = 0.54f
-                            scaleX = 1.18f
-                            scaleY = 1.18f
+                            alpha = (0.54f + beatAlphaBoost).coerceAtMost(0.76f)
+                            val s = 1.18f + beatScaleBoost
+                            scaleX = s
+                            scaleY = s
                             val p = parallaxOffsetProvider()
                             if (isVerticalParallax) translationY = p else translationX = p
                         },
@@ -172,8 +195,9 @@ fun MediaBackdropLayer(
                     modifier = Modifier
                         .fillMaxSize()
                         .graphicsLayer {
-                            scaleX = 1.14f
-                            scaleY = 1.14f
+                            val s = 1.14f + beatScaleBoost
+                            scaleX = s
+                            scaleY = s
                             val p = parallaxOffsetProvider()
                             if (isVerticalParallax) translationY = p else translationX = p
                         }
@@ -181,8 +205,8 @@ fun MediaBackdropLayer(
                             brush = Brush.verticalGradient(
                                 colors = listOf(
                                     Color.Transparent,
-                                    targetPrimary.copy(alpha = 0.30f),
-                                    targetSecondary.copy(alpha = 0.40f),
+                                    targetPrimary.copy(alpha = (0.30f + beatAlphaBoost * 0.5f).coerceAtMost(0.55f)),
+                                    targetSecondary.copy(alpha = (0.40f + beatAlphaBoost * 0.6f).coerceAtMost(0.65f)),
                                 ),
                             ),
                         ),
@@ -194,6 +218,7 @@ fun MediaBackdropLayer(
             media = media,
             initialTimeSeconds = timeSeconds,
             mediaAnimationColorMode = mediaAnimationColorMode,
+            audioBeatState = audioBeatState,
             modifier = Modifier.fillMaxSize(),
         )
     }
@@ -205,6 +230,7 @@ private fun MediaWaveShimmerOverlay(
     media: CapsuleContent.Media,
     initialTimeSeconds: Float,
     mediaAnimationColorMode: MediaAnimationColorMode,
+    audioBeatState: AudioBeatState = AudioBeatState.Silent,
 ) {
     val (resolvedPrimary, resolvedSecondary) = resolveMediaAnimationColors(
         media = media,
@@ -228,10 +254,24 @@ private fun MediaWaveShimmerOverlay(
         label = "mediaBackdropWaveActivity",
     )
     val waveVelocity by animateFloatAsState(
-        targetValue = if (media.isPlaying) 2.8f else 0f,
-        animationSpec = tween(durationMillis = 520),
+        targetValue = if (media.isPlaying) {
+            if (audioBeatState.isLive) 0.75f else 2.8f
+        } else {
+            0f
+        },
+        animationSpec = tween(durationMillis = 420),
         label = "mediaBackdropWaveVel",
     )
+    val smoothWaveLevel by animateFloatAsState(
+        targetValue = if (audioBeatState.isLive) {
+            (0.06f + audioBeatState.energy * 0.85f + audioBeatState.beatPulse * 0.62f).coerceIn(0.04f, 1.50f)
+        } else {
+            1f
+        },
+        animationSpec = tween(durationMillis = 65),
+        label = "mediaBackdropWaveLevel",
+    )
+    val latestBeat by rememberUpdatedState(audioBeatState)
     val wavePhase = remember { mutableFloatStateOf(initialTimeSeconds) }
     val needWaveMotion = media.isPlaying || waveVelocity > 0.002f
     LaunchedEffect(needWaveMotion) {
@@ -242,12 +282,25 @@ private fun MediaWaveShimmerOverlay(
                 if (lastNanos != 0L) {
                     val dtSec = ((nowNanos - lastNanos) / 1_000_000_000f).coerceIn(0f, 0.05f)
                     if (waveVelocity > 0.001f) {
-                        wavePhase.floatValue += dtSec * waveVelocity
+                        val beat = latestBeat
+                        // Relaxing tracks drift slowly (~0.75..1.4); heavy beats surge up to ~7.5
+                        val speedBoost = if (beat.isLive) {
+                            1f + beat.energy * 4.2f + beat.beatPulse * 5.2f
+                        } else {
+                            1f
+                        }
+                        wavePhase.floatValue += dtSec * waveVelocity * speedBoost
                     }
                 }
                 lastNanos = nowNanos
             }
         }
+    }
+
+    val effectiveWaveActivity = if (audioBeatState.isLive) {
+        (waveActivity * smoothWaveLevel).coerceIn(0f, 1.50f)
+    } else {
+        waveActivity
     }
 
     val waveShader = remember { MusicWaveShader.create() }
@@ -267,7 +320,7 @@ private fun MediaWaveShimmerOverlay(
                     widthPx = size.width,
                     heightPx = size.height,
                     timeSeconds = wavePhase.floatValue,
-                    waveActivity = waveActivity,
+                    waveActivity = effectiveWaveActivity,
                     primaryColor = primaryColor,
                     secondaryColor = secondaryColor,
                 )
@@ -301,6 +354,7 @@ fun MediaExpandedContent(
     isLandscape: Boolean = false,
     contentPaddingDp: Float = 18f,
     timeSeconds: Float,
+    audioBeatState: AudioBeatState = AudioBeatState.Silent,
     interactionsEnabled: Boolean = true,
     showBackdrop: Boolean = true,
     enableAlbumSharedTransition: Boolean = true,
@@ -338,18 +392,27 @@ fun MediaExpandedContent(
 
     val activePageMedia = sessions.getOrNull(pagerState.currentPage) ?: media
     val cookieAngularSpeed by animateFloatAsState(
-        targetValue = if (activePageMedia.isPlaying) 26f else 0f,
-        animationSpec = tween(durationMillis = 480),
+        targetValue = if (activePageMedia.isPlaying) {
+            if (audioBeatState.isLive) 7f else 26f
+        } else {
+            0f
+        },
+        animationSpec = tween(durationMillis = 420),
         label = "mediaCookieSpinSpeed",
     )
     val albumGlowAngularSpeed by animateFloatAsState(
-        targetValue = if (activePageMedia.isPlaying) 84f else 0f,
-        animationSpec = tween(durationMillis = 480),
+        targetValue = if (activePageMedia.isPlaying) {
+            if (audioBeatState.isLive) 22f else 84f
+        } else {
+            0f
+        },
+        animationSpec = tween(durationMillis = 420),
         label = "mediaAlbumSpinSpeed",
     )
     val cookieRotationDeg = remember { mutableFloatStateOf(0f) }
     val albumGlowRotationDeg = remember { mutableFloatStateOf(0f) }
     val albumBeatPhase = remember { mutableFloatStateOf(0f) }
+    val latestBeat by rememberUpdatedState(audioBeatState)
 
     val isMotionNeeded = activePageMedia.isPlaying || cookieAngularSpeed > 0.02f || albumGlowAngularSpeed > 0.02f
     LaunchedEffect(isMotionNeeded) {
@@ -359,11 +422,17 @@ fun MediaExpandedContent(
             withFrameNanos { nowNanos ->
                 if (lastNanos != 0L) {
                     val dtSec = ((nowNanos - lastNanos) / 1_000_000_000f).coerceIn(0f, 0.05f)
+                    val beat = latestBeat
+                    // Quiet/relaxing music spins slowly; high energy & beats accelerate proportionally like an equalizer
+                    val cookieMultiplier = if (beat.isLive) 1f + beat.energy * 6.5f + beat.beatPulse * 8.5f else 1f
+                    val glowMultiplier = if (beat.isLive) 1f + beat.energy * 5.5f + beat.beatPulse * 7.0f else 1f
                     if (cookieAngularSpeed > 0.01f) {
-                        cookieRotationDeg.floatValue = (cookieRotationDeg.floatValue + dtSec * cookieAngularSpeed) % 360f
+                        cookieRotationDeg.floatValue =
+                            (cookieRotationDeg.floatValue + dtSec * cookieAngularSpeed * cookieMultiplier) % 360f
                     }
                     if (albumGlowAngularSpeed > 0.01f) {
-                        albumGlowRotationDeg.floatValue = (albumGlowRotationDeg.floatValue + dtSec * albumGlowAngularSpeed) % 360f
+                        albumGlowRotationDeg.floatValue =
+                            (albumGlowRotationDeg.floatValue + dtSec * albumGlowAngularSpeed * glowMultiplier) % 360f
                         albumBeatPhase.floatValue = (albumBeatPhase.floatValue + dtSec / 2.8f) % 1f
                     }
                 }
@@ -382,6 +451,7 @@ fun MediaExpandedContent(
                 mediaAnimationColorMode = mediaAnimationColorMode,
                 isVerticalParallax = isLandscape,
                 parallaxOffsetProvider = { -pagerState.currentPageOffsetFraction * maxParallaxPx },
+                audioBeatState = audioBeatState,
                 modifier = Modifier.fillMaxSize(),
             )
         }
@@ -400,6 +470,7 @@ fun MediaExpandedContent(
                 endClearanceDp = endClearanceDp,
                 bottomClearanceDp = (contentPaddingDp * 0.78f).coerceAtLeast(12f) + bottomDotsClearanceDp,
                 isLandscape = isLandscape,
+                audioBeatState = if (pageIndex == pagerState.currentPage) audioBeatState else AudioBeatState.Silent,
                 albumGlowRotationProvider = { albumGlowRotationDeg.floatValue },
                 albumBeatPhaseProvider = { albumBeatPhase.floatValue },
                 cookieRotationProvider = { cookieRotationDeg.floatValue },
@@ -455,6 +526,7 @@ private fun MediaPlayerPage(
     endClearanceDp: Float,
     bottomClearanceDp: Float,
     isLandscape: Boolean = false,
+    audioBeatState: AudioBeatState = AudioBeatState.Silent,
     albumGlowRotationProvider: () -> Float,
     albumBeatPhaseProvider: () -> Float,
     cookieRotationProvider: () -> Float,
@@ -576,87 +648,134 @@ private fun MediaPlayerPage(
             Modifier
         }
 
+        val smoothPageBeat by animateFloatAsState(
+            targetValue = if (media.isPlaying && audioBeatState.isLive) audioBeatState.beatPulse else 0f,
+            animationSpec = tween(durationMillis = 60),
+            label = "pageBeatPulse",
+        )
+        val smoothPageBass by animateFloatAsState(
+            targetValue = if (media.isPlaying && audioBeatState.isLive) audioBeatState.bass else 0f,
+            animationSpec = tween(durationMillis = 70),
+            label = "pageBass",
+        )
+        val smoothPageEnergy by animateFloatAsState(
+            targetValue = if (media.isPlaying && audioBeatState.isLive) audioBeatState.energy else 0f,
+            animationSpec = tween(durationMillis = 75),
+            label = "pageEnergy",
+        )
+        val artFrameInsetDp by animateDpAsState(
+            targetValue = if (showAlbumGlow) 3.dp else 0.dp,
+            animationSpec = tween(durationMillis = 260),
+            label = "albumFrameInset",
+        )
+        val innerArtCornerDp = (artCornerDp - artFrameInsetDp).coerceAtLeast(10.dp)
+        val cookieBeatScale = 1f + smoothPageBeat * 0.12f + smoothPageBass * 0.045f
+
+        // Contained studio-monitor album frame: zero negative offsets so it never overlaps adjacent UI
         val albumArtworkBox: @Composable () -> Unit = {
             Box(
+                contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .size(artSizeDp)
                     .drawBehind {
                         val glowAlpha = albumGlowAlphaState.value
                         if (glowAlpha > 0.02f) {
-                            val baseCornerPx = artCornerDp.toPx()
-                            val maxExpandPx = 11.dp.toPx()
+                            val drive = if (audioBeatState.isLive) {
+                                (smoothPageBeat * 0.62f + smoothPageBass * 0.48f + smoothPageEnergy * 0.18f)
+                                    .coerceIn(0f, 1f)
+                            } else {
+                                val breath = 0.5f + 0.5f * sin(albumBeatPhaseProvider() * 2f * PI.toFloat())
+                                0.25f + 0.35f * breath
+                            }
+                            val padAlpha = ((0.10f + drive * 0.26f) * glowAlpha).coerceIn(0f, 0.42f)
+                            val rimAlpha = ((0.30f + drive * 0.68f) * glowAlpha).coerceIn(0.18f, 0.98f)
+                            val strokePx = (1.25f + drive * 1.45f).dp.toPx()
+                            val halfStroke = strokePx * 0.5f
+                            val outerCornerPx = (artCornerDp.toPx() - halfStroke).coerceAtLeast(2f)
+
+                            drawRoundRect(
+                                color = primaryColor.copy(alpha = padAlpha),
+                                topLeft = Offset(halfStroke, halfStroke),
+                                size = Size(
+                                    (size.width - strokePx).coerceAtLeast(1f),
+                                    (size.height - strokePx).coerceAtLeast(1f),
+                                ),
+                                cornerRadius = CornerRadius(outerCornerPx, outerCornerPx),
+                            )
+
                             albumRotMatrix.reset()
                             albumRotMatrix.setRotate(albumGlowRotationProvider(), center.x, center.y)
-                            val rawWave = albumBeatPhaseProvider().coerceIn(0f, 1f)
-                            val eased = FastOutSlowInEasing.transform(rawWave)
-                            val expandPx = eased * maxExpandPx
-                            val inhale = (rawWave / 0.16f).coerceIn(0f, 1f)
-                            val exhale = (1f - eased).let { it * it }
-                            val fade = inhale * exhale * 0.68f * glowAlpha
-                            if (fade > 0.015f) {
-                                val beatStrokePx = (2.3f - 1.55f * eased).coerceAtLeast(0.65f).dp.toPx()
-                                val beatShader = SweepGradient(
-                                    center.x,
-                                    center.y,
-                                    intArrayOf(
-                                        primaryColor.copy(alpha = fade).toArgb(),
-                                        secondaryColor.copy(alpha = fade).toArgb(),
-                                        Color.White.copy(alpha = 0.85f * fade).toArgb(),
-                                        primaryColor.copy(alpha = fade).toArgb(),
-                                    ),
-                                    floatArrayOf(0.0f, 0.35f, 0.70f, 1.0f),
-                                ).apply {
-                                    setLocalMatrix(albumRotMatrix)
-                                }
-                                drawRoundRect(
-                                    brush = ShaderBrush(beatShader),
-                                    topLeft = Offset(-expandPx, -expandPx),
-                                    size = Size(size.width + expandPx * 2f, size.height + expandPx * 2f),
-                                    cornerRadius = CornerRadius(baseCornerPx + expandPx * 0.85f),
-                                    style = Stroke(width = beatStrokePx),
-                                )
+                            val highlight = lerp(primaryColor, Color.White, 0.44f)
+                            val rimShader = SweepGradient(
+                                center.x,
+                                center.y,
+                                intArrayOf(
+                                    primaryColor.copy(alpha = rimAlpha).toArgb(),
+                                    secondaryColor.copy(alpha = rimAlpha).toArgb(),
+                                    highlight.copy(alpha = rimAlpha).toArgb(),
+                                    secondaryColor.copy(alpha = rimAlpha).toArgb(),
+                                    primaryColor.copy(alpha = rimAlpha).toArgb(),
+                                ),
+                                floatArrayOf(0.0f, 0.28f, 0.52f, 0.76f, 1.0f),
+                            ).apply {
+                                setLocalMatrix(albumRotMatrix)
                             }
+                            drawRoundRect(
+                                brush = ShaderBrush(rimShader),
+                                topLeft = Offset(halfStroke, halfStroke),
+                                size = Size(
+                                    (size.width - strokePx).coerceAtLeast(1f),
+                                    (size.height - strokePx).coerceAtLeast(1f),
+                                ),
+                                cornerRadius = CornerRadius(outerCornerPx, outerCornerPx),
+                                style = Stroke(width = strokePx),
+                            )
                         }
                     }
+                    .clip(RoundedCornerShape(artCornerDp))
                     .clickable(enabled = interactionsEnabled) {
                         haptics.click()
                         onOpenMediaApp()
                     },
             ) {
+                val innerDrive = if (audioBeatState.isLive) {
+                    (smoothPageBeat * 0.65f + smoothPageBass * 0.42f).coerceIn(0f, 1f)
+                } else {
+                    0.3f
+                }
+                val innerArtScale = if (showAlbumGlow) {
+                    (0.95f + innerDrive * 0.05f).coerceIn(0.95f, 1.00f)
+                } else {
+                    1f
+                }
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = artBaseMod
                         .fillMaxSize()
-                        .clip(RoundedCornerShape(artCornerDp))
-                        .background(primaryColor.copy(alpha = 0.24f))
+                        .padding(artFrameInsetDp)
+                        .graphicsLayer {
+                            scaleX = innerArtScale
+                            scaleY = innerArtScale
+                        }
+                        .clip(RoundedCornerShape(innerArtCornerDp))
+                        .background(primaryColor.copy(alpha = 0.22f))
                         .drawWithContent {
                             drawContent()
                             val glowAlpha = albumGlowAlphaState.value
                             if (glowAlpha > 0.02f) {
-                                val strokePx = 2.5.dp.toPx()
-                                val halfStroke = strokePx * 0.5f
-                                val cornerPx = (artCornerDp.toPx() - halfStroke).coerceAtLeast(1f)
-                                albumRotMatrix.reset()
-                                albumRotMatrix.setRotate(albumGlowRotationProvider(), center.x, center.y)
-                                val sweepShader = SweepGradient(
-                                    center.x,
-                                    center.y,
-                                    intArrayOf(
-                                        primaryColor.copy(alpha = glowAlpha).toArgb(),
-                                        secondaryColor.copy(alpha = glowAlpha).toArgb(),
-                                        Color.White.copy(alpha = 0.88f * glowAlpha).toArgb(),
-                                        primaryColor.copy(alpha = glowAlpha).toArgb(),
-                                    ),
-                                    floatArrayOf(0.0f, 0.35f, 0.70f, 1.0f),
-                                ).apply {
-                                    setLocalMatrix(albumRotMatrix)
-                                }
+                                val sheenAlpha = ((0.10f + innerDrive * 0.22f) * glowAlpha).coerceIn(0f, 0.34f)
+                                val sheenStroke = 1.dp.toPx()
+                                val halfSheen = sheenStroke * 0.5f
+                                val sheenCorner = (innerArtCornerDp.toPx() - halfSheen).coerceAtLeast(1f)
                                 drawRoundRect(
-                                    brush = ShaderBrush(sweepShader),
-                                    topLeft = Offset(halfStroke, halfStroke),
-                                    size = Size(size.width - strokePx, size.height - strokePx),
-                                    cornerRadius = CornerRadius(cornerPx, cornerPx),
-                                    style = Stroke(width = strokePx),
+                                    color = Color.White.copy(alpha = sheenAlpha),
+                                    topLeft = Offset(halfSheen, halfSheen),
+                                    size = Size(
+                                        (size.width - sheenStroke).coerceAtLeast(1f),
+                                        (size.height - sheenStroke).coerceAtLeast(1f),
+                                    ),
+                                    cornerRadius = CornerRadius(sheenCorner, sheenCorner),
+                                    style = Stroke(width = sheenStroke),
                                 )
                             }
                         },
@@ -778,8 +897,9 @@ private fun MediaPlayerPage(
                             .matchParentSize()
                             .graphicsLayer {
                                 rotationZ = cookieRotationProvider()
-                                scaleX = cookiePressScale
-                                scaleY = cookiePressScale
+                                val combinedScale = cookiePressScale * cookieBeatScale
+                                scaleX = combinedScale
+                                scaleY = combinedScale
                             }
                             .clip(MorphingCookieShape(morph = cookieMorph, progress = cookieStateMorph))
                             .background(Color.White),
@@ -792,8 +912,9 @@ private fun MediaPlayerPage(
                         },
                         label = "mediaPlayPauseGlyph",
                         modifier = Modifier.graphicsLayer {
-                            scaleX = cookiePressScale
-                            scaleY = cookiePressScale
+                            val combinedScale = cookiePressScale * (1f + (cookieBeatScale - 1f) * 0.55f)
+                            scaleX = combinedScale
+                            scaleY = combinedScale
                         },
                     ) { playing ->
                         Icon(

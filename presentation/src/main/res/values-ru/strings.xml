@@ -283,4 +283,6 @@
     <string name="msg_xiaomi_battery_desc">Исключает Capsule OS из агрессивного энергосбережения MIUI.</string>
     <string name="label_xiaomi_popup_bg">Всплывающие окна в фоне</string>
     <string name="msg_xiaomi_popup_bg_desc">Включите Отображать всплывающие окна в фоновом режиме в Других разрешениях.</string>
+    <string name="label_audio_visualizer_permission">Визуализатор медиа в такт (Аудио)</string>
+    <string name="msg_audio_visualizer_permission_desc">Считывает общий спектр FFT через Android Visualizer, чтобы анимации плеера пульсировали в такт.</string>
 </resources>

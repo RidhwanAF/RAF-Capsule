@@ -27,8 +27,8 @@ android {
         applicationId = "com.raf.capsuleos"
         minSdk = 33
         targetSdk = 37
-        versionCode = 10
-        versionName = "1.3.3"
+        versionCode = 11
+        versionName = "1.4.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

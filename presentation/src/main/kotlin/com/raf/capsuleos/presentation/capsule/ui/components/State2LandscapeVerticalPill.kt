@@ -24,7 +24,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -57,7 +56,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -67,6 +71,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -74,6 +80,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.raf.capsuleos.domain.model.AudioBeatState
 import com.raf.capsuleos.domain.model.CameraAnchorPosition
 import com.raf.capsuleos.domain.model.CapsuleContent
 import com.raf.capsuleos.domain.model.CutoutGeometry
@@ -81,6 +88,7 @@ import com.raf.capsuleos.domain.model.HorizontalMediaGlowStyle
 import com.raf.capsuleos.domain.model.MediaAnimationColorMode
 import com.raf.capsuleos.domain.model.SystemStatusKind
 import com.raf.capsuleos.presentation.common.rememberCachedImageBitmap
+import kotlinx.coroutines.isActive
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.max
@@ -185,6 +193,7 @@ fun State2LandscapeVerticalPill(
     isMinimalIconOnly: Boolean = false,
     horizontalMediaGlowStyle: HorizontalMediaGlowStyle = HorizontalMediaGlowStyle.OFF,
     mediaAnimationColorMode: MediaAnimationColorMode = MediaAnimationColorMode.ALBUM_COLOR,
+    audioBeatState: AudioBeatState = AudioBeatState.Silent,
     swipeDirection: Int,
     manualSwipeSeq: Int,
     showWaterWave: Boolean = true,
@@ -226,7 +235,30 @@ fun State2LandscapeVerticalPill(
                     SizeTransform(clip = false)
             },
             label = "landscapeVerticalPillMorph",
-        ) { (_, active) ->
+        ) { (seq, active) ->
+            val liveActive = if (seq == manualSwipeSeq) content else active
+            val cutoutSlot: @Composable () -> Unit = {
+                val playingMedia = (liveActive as? CapsuleContent.Media)?.takeIf {
+                    it.isPlaying && horizontalMediaGlowStyle == HorizontalMediaGlowStyle.CAMERA_RING
+                }
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(geom.cutoutGapDp.dp),
+                ) {
+                    if (playingMedia != null) {
+                        CameraCutoutMediaGlowRing(
+                            media = playingMedia,
+                            ringDiameterDp = circleDiameterDp.coerceAtMost(geom.cutoutGapDp + 4f),
+                            primaryColor = primaryColor,
+                            tertiaryColor = tertiaryColor,
+                            mediaAnimationColorMode = mediaAnimationColorMode,
+                            audioBeatState = audioBeatState,
+                        )
+                    }
+                }
+            }
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
@@ -235,7 +267,7 @@ fun State2LandscapeVerticalPill(
                 if (isMinimalIconOnly) {
                     when (geom.anchorPosition) {
                         CameraAnchorPosition.RIGHT -> {
-                            Spacer(modifier = Modifier.height(geom.cutoutGapDp.dp))
+                            cutoutSlot()
                             Box(
                                 contentAlignment = Alignment.Center,
                                 modifier = Modifier
@@ -243,11 +275,12 @@ fun State2LandscapeVerticalPill(
                                     .height(geom.bottomWingDp.dp),
                             ) {
                                 LandscapeTopWingIcon(
-                                    content = active,
+                                    content = liveActive,
                                     primaryColor = primaryColor,
                                     tertiaryColor = tertiaryColor,
                                     horizontalMediaGlowStyle = horizontalMediaGlowStyle,
                                     mediaAnimationColorMode = mediaAnimationColorMode,
+                                    audioBeatState = audioBeatState,
                                 )
                             }
                         }
@@ -261,14 +294,15 @@ fun State2LandscapeVerticalPill(
                                     .height(geom.topWingDp.dp),
                             ) {
                                 LandscapeTopWingIcon(
-                                    content = active,
+                                    content = liveActive,
                                     primaryColor = primaryColor,
                                     tertiaryColor = tertiaryColor,
                                     horizontalMediaGlowStyle = horizontalMediaGlowStyle,
                                     mediaAnimationColorMode = mediaAnimationColorMode,
+                                    audioBeatState = audioBeatState,
                                 )
                             }
-                            Spacer(modifier = Modifier.height(geom.cutoutGapDp.dp))
+                            cutoutSlot()
                         }
                     }
                 } else {
@@ -281,14 +315,15 @@ fun State2LandscapeVerticalPill(
                                     .height(geom.topWingDp.dp),
                             ) {
                                 LandscapeTopWingIcon(
-                                    content = active,
+                                    content = liveActive,
                                     primaryColor = primaryColor,
                                     tertiaryColor = tertiaryColor,
                                     horizontalMediaGlowStyle = horizontalMediaGlowStyle,
                                     mediaAnimationColorMode = mediaAnimationColorMode,
+                                    audioBeatState = audioBeatState,
                                 )
                             }
-                            Spacer(modifier = Modifier.height(geom.cutoutGapDp.dp))
+                            cutoutSlot()
                             Box(
                                 contentAlignment = Alignment.Center,
                                 modifier = Modifier
@@ -297,9 +332,10 @@ fun State2LandscapeVerticalPill(
                                     .padding(horizontal = 3.dp),
                             ) {
                                 LandscapeBottomWingTelemetry(
-                                    content = active,
+                                    content = liveActive,
                                     primaryColor = primaryColor,
                                     mediaAnimationColorMode = mediaAnimationColorMode,
+                                    audioBeatState = audioBeatState,
                                 )
                             }
                         }
@@ -312,11 +348,12 @@ fun State2LandscapeVerticalPill(
                                     .height(geom.topWingDp.dp),
                             ) {
                                 LandscapeTopWingIcon(
-                                    content = active,
+                                    content = liveActive,
                                     primaryColor = primaryColor,
                                     tertiaryColor = tertiaryColor,
                                     horizontalMediaGlowStyle = horizontalMediaGlowStyle,
                                     mediaAnimationColorMode = mediaAnimationColorMode,
+                                    audioBeatState = audioBeatState,
                                 )
                             }
                             Box(
@@ -327,16 +364,17 @@ fun State2LandscapeVerticalPill(
                                     .padding(horizontal = 3.dp),
                             ) {
                                 LandscapeBottomWingTelemetry(
-                                    content = active,
+                                    content = liveActive,
                                     primaryColor = primaryColor,
                                     mediaAnimationColorMode = mediaAnimationColorMode,
+                                    audioBeatState = audioBeatState,
                                 )
                             }
-                            Spacer(modifier = Modifier.height(geom.cutoutGapDp.dp))
+                            cutoutSlot()
                         }
                         // Portrait RIGHT (End) -> Landscape TOP anchor; wings expand downward below the lens
                         CameraAnchorPosition.RIGHT -> {
-                            Spacer(modifier = Modifier.height(geom.cutoutGapDp.dp))
+                            cutoutSlot()
                             Box(
                                 contentAlignment = Alignment.Center,
                                 modifier = Modifier
@@ -344,11 +382,12 @@ fun State2LandscapeVerticalPill(
                                     .height(geom.topWingDp.dp),
                             ) {
                                 LandscapeTopWingIcon(
-                                    content = active,
+                                    content = liveActive,
                                     primaryColor = primaryColor,
                                     tertiaryColor = tertiaryColor,
                                     horizontalMediaGlowStyle = horizontalMediaGlowStyle,
                                     mediaAnimationColorMode = mediaAnimationColorMode,
+                                    audioBeatState = audioBeatState,
                                 )
                             }
                             Box(
@@ -359,9 +398,10 @@ fun State2LandscapeVerticalPill(
                                     .padding(horizontal = 3.dp),
                             ) {
                                 LandscapeBottomWingTelemetry(
-                                    content = active,
+                                    content = liveActive,
                                     primaryColor = primaryColor,
                                     mediaAnimationColorMode = mediaAnimationColorMode,
+                                    audioBeatState = audioBeatState,
                                 )
                             }
                         }
@@ -530,6 +570,7 @@ private fun LandscapeTopWingIcon(
     tertiaryColor: Color,
     horizontalMediaGlowStyle: HorizontalMediaGlowStyle,
     mediaAnimationColorMode: MediaAnimationColorMode,
+    audioBeatState: AudioBeatState = AudioBeatState.Silent,
 ) {
     when (content) {
         is CapsuleContent.Media -> {
@@ -539,23 +580,71 @@ private fun LandscapeTopWingIcon(
             } else {
                 primaryColor
             }
+            val secondaryAccent = if (mediaAnimationColorMode == MediaAnimationColorMode.ALBUM_COLOR && content.secondaryColorArgb != 0) {
+                Color(content.secondaryColorArgb)
+            } else {
+                tertiaryColor
+            }
             val showAlbumRing = horizontalMediaGlowStyle == HorizontalMediaGlowStyle.ALBUM_ART_RING && content.isPlaying
+            val smoothBeat by animateFloatAsState(
+                targetValue = if (showAlbumRing && audioBeatState.isLive) audioBeatState.beatPulse else 0f,
+                animationSpec = tween(durationMillis = 55),
+                label = "landscapeAlbumBeat",
+            )
+            val smoothBass by animateFloatAsState(
+                targetValue = if (showAlbumRing && audioBeatState.isLive) audioBeatState.bass else 0f,
+                animationSpec = tween(durationMillis = 65),
+                label = "landscapeAlbumBass",
+            )
+            val latestBeat by rememberUpdatedState(audioBeatState)
+            val angleDeg = remember { mutableFloatStateOf(0f) }
+            LaunchedEffect(showAlbumRing) {
+                if (!showAlbumRing) return@LaunchedEffect
+                var lastNanos = 0L
+                while (isActive) {
+                    withFrameNanos { nowNanos ->
+                        if (lastNanos != 0L) {
+                            val dtSec = ((nowNanos - lastNanos) / 1_000_000_000f).coerceIn(0f, 0.05f)
+                            val beat = latestBeat
+                            val speed = if (beat.isLive) 26f + beat.energy * 145f + beat.beatPulse * 195f else 90f
+                            angleDeg.floatValue = (angleDeg.floatValue + dtSec * speed) % 360f
+                        }
+                        lastNanos = nowNanos
+                    }
+                }
+            }
+            val albumScale = if (showAlbumRing && audioBeatState.isLive) {
+                0.94f + smoothBeat * 0.06f + smoothBass * 0.03f
+            } else {
+                1f
+            }
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier.size(32.dp),
             ) {
                 if (showAlbumRing) {
+                    val drive = if (audioBeatState.isLive) {
+                        (smoothBeat * 0.65f + smoothBass * 0.48f).coerceIn(0f, 1f)
+                    } else {
+                        0.55f
+                    }
+                    val rimAlpha = (0.36f + drive * 0.64f).coerceIn(0.28f, 1f)
+                    val highlight = lerp(accent, Color.White, 0.45f)
                     Canvas(modifier = Modifier.fillMaxSize()) {
-                        drawCircle(
-                            brush = Brush.sweepGradient(
-                                0f to accent.copy(alpha = 0.95f),
-                                0.5f to tertiaryColor.copy(alpha = 0.85f),
-                                1f to accent.copy(alpha = 0.95f),
-                                center = Offset(size.width * 0.5f, size.height * 0.5f),
-                            ),
-                            radius = (size.minDimension * 0.5f) - 1.dp.toPx(),
-                            style = Stroke(width = 1.8.dp.toPx()),
-                        )
+                        val strokePx = (1.35f + drive * 1.15f).dp.toPx()
+                        rotate(degrees = angleDeg.floatValue, pivot = center) {
+                            drawCircle(
+                                brush = Brush.sweepGradient(
+                                    0f to accent.copy(alpha = rimAlpha),
+                                    0.32f to secondaryAccent.copy(alpha = rimAlpha),
+                                    0.58f to highlight.copy(alpha = rimAlpha),
+                                    1f to accent.copy(alpha = rimAlpha),
+                                    center = center,
+                                ),
+                                radius = (size.minDimension * 0.5f) - strokePx * 0.5f,
+                                style = Stroke(width = strokePx),
+                            )
+                        }
                     }
                 }
                 if (bitmap != null) {
@@ -565,6 +654,10 @@ private fun LandscapeTopWingIcon(
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
                             .size(26.dp)
+                            .graphicsLayer {
+                                scaleX = albumScale
+                                scaleY = albumScale
+                            }
                             .clip(CircleShape),
                     )
                 } else {
@@ -697,6 +790,7 @@ private fun LandscapeBottomWingTelemetry(
     content: CapsuleContent,
     primaryColor: Color,
     mediaAnimationColorMode: MediaAnimationColorMode,
+    audioBeatState: AudioBeatState = AudioBeatState.Silent,
 ) {
     when (content) {
         is CapsuleContent.Media -> {
@@ -705,7 +799,11 @@ private fun LandscapeBottomWingTelemetry(
             } else {
                 primaryColor
             }
-            LandscapeCompactEqualizer(isPlaying = content.isPlaying, accent = accent)
+            LandscapeCompactEqualizer(
+                isPlaying = content.isPlaying,
+                accent = accent,
+                audioBeatState = audioBeatState,
+            )
         }
         is CapsuleContent.Charging -> CompactVerticalBadgeText(
             text = "${content.batteryPercent}%",
@@ -781,6 +879,7 @@ private fun CompactVerticalBadgeText(
 private fun LandscapeCompactEqualizer(
     isPlaying: Boolean,
     accent: Color,
+    audioBeatState: AudioBeatState = AudioBeatState.Silent,
 ) {
     val transition = rememberInfiniteTransition(label = "landscapeEq")
     val barA by transition.animateFloat(
@@ -801,12 +900,44 @@ private fun LandscapeCompactEqualizer(
         animationSpec = infiniteRepeatable(tween(380, easing = FastOutSlowInEasing), RepeatMode.Reverse),
         label = "eqC",
     )
+    val liveLow by animateFloatAsState(
+        targetValue = if (isPlaying && audioBeatState.isLive) {
+            (0.18f + audioBeatState.bass * 0.68f + audioBeatState.beatPulse * 0.24f).coerceIn(0.18f, 1f)
+        } else {
+            0.22f
+        },
+        animationSpec = tween(durationMillis = 55),
+        label = "landscapeEqLow",
+    )
+    val liveMid by animateFloatAsState(
+        targetValue = if (isPlaying && audioBeatState.isLive) {
+            (0.18f + audioBeatState.mid * 0.62f + audioBeatState.beatPulse * 0.34f).coerceIn(0.18f, 1f)
+        } else {
+            0.22f
+        },
+        animationSpec = tween(durationMillis = 55),
+        label = "landscapeEqMid",
+    )
+    val liveHigh by animateFloatAsState(
+        targetValue = if (isPlaying && audioBeatState.isLive) {
+            (0.18f + audioBeatState.high * 0.64f + audioBeatState.energy * 0.26f).coerceIn(0.18f, 1f)
+        } else {
+            0.22f
+        },
+        animationSpec = tween(durationMillis = 55),
+        label = "landscapeEqHigh",
+    )
+    val bars = when {
+        !isPlaying -> listOf(0.24f, 0.24f, 0.24f)
+        audioBeatState.isLive -> listOf(liveLow, liveMid, liveHigh)
+        else -> listOf(barA, barB, barC)
+    }
     Row(
         horizontalArrangement = Arrangement.spacedBy(2.5.dp),
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.height(16.dp),
     ) {
-        listOf(barA, barB, barC).forEach { level ->
+        bars.forEach { level ->
             Box(
                 modifier = Modifier
                     .width(3.dp)

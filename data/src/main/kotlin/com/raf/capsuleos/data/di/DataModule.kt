@@ -5,11 +5,13 @@ import com.raf.capsuleos.data.hardware.BrightnessRepositoryImpl
 import com.raf.capsuleos.domain.repository.BluetoothRepository
 import com.raf.capsuleos.data.hardware.TorchRepositoryImpl
 import com.raf.capsuleos.data.hardware.VolumeRepositoryImpl
+import com.raf.capsuleos.data.media.AudioVisualizerRepositoryImpl
 import com.raf.capsuleos.data.media.MediaSessionRepositoryImpl
 import com.raf.capsuleos.data.notification.NotificationRepositoryImpl
 import com.raf.capsuleos.data.settings.CapsuleSettingsRepositoryImpl
 import com.raf.capsuleos.data.statusbar.StatusBarIconControllerImpl
 import com.raf.capsuleos.data.system.SystemEventsRepositoryImpl
+import com.raf.capsuleos.domain.repository.AudioVisualizerRepository
 import com.raf.capsuleos.domain.repository.BrightnessRepository
 import com.raf.capsuleos.domain.repository.CapsuleSettingsRepository
 import com.raf.capsuleos.domain.repository.MediaSessionRepository
@@ -66,4 +68,8 @@ abstract class DataModule {
     @Binds
     @Singleton
     abstract fun bindBluetoothRepository(impl: BluetoothRepositoryImpl): BluetoothRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindAudioVisualizerRepository(impl: AudioVisualizerRepositoryImpl): AudioVisualizerRepository
 }

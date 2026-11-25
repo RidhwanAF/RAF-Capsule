@@ -58,9 +58,11 @@ import com.raf.capsuleos.domain.model.CapsuleEffect
 import com.raf.capsuleos.domain.model.CapsuleEvent
 import com.raf.capsuleos.domain.model.CapsuleUiState
 import com.raf.capsuleos.domain.model.CapsuleVisualState
+import com.raf.capsuleos.domain.model.HorizontalMediaGlowStyle
 import com.raf.capsuleos.domain.model.LandscapeCameraSide
 import com.raf.capsuleos.domain.model.RingerModeState
 import com.raf.capsuleos.domain.model.SystemStatusKind
+import com.raf.capsuleos.domain.repository.AudioVisualizerRepository
 import com.raf.capsuleos.domain.repository.BluetoothRepository
 import com.raf.capsuleos.domain.repository.BrightnessRepository
 import com.raf.capsuleos.domain.repository.CapsuleSettingsRepository
@@ -132,6 +134,7 @@ class CapsuleOverlayController @Inject constructor(
     private val systemEventsRepository: SystemEventsRepository,
     private val statusBarIconController: StatusBarIconController,
     private val settingsRepository: CapsuleSettingsRepository,
+    private val audioVisualizerRepository: AudioVisualizerRepository,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val displayManager = appContext.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
@@ -450,6 +453,7 @@ class CapsuleOverlayController @Inject constructor(
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
             setContent {
                 val state by coordinator.uiState.collectAsStateWithLifecycle()
+                val audioBeat by audioVisualizerRepository.beatState.collectAsStateWithLifecycle()
                 val blurSupported by _isBlurEnabled.collectAsStateWithLifecycle()
                 val forceCamera by forceCameraCircleStageState
                 val suppressSatellite by suppressSatelliteStageState
@@ -463,6 +467,7 @@ class CapsuleOverlayController @Inject constructor(
                         scrubPresentation = scrubPresentationState.value,
                         isForceCameraCircleStage = forceCamera,
                         isSatelliteDelayedStage = suppressSatellite,
+                        audioBeatState = audioBeat,
                         onHoldingStateChanged = { holding ->
                             if (isHoldingCapsuleState.value != holding) {
                                 isHoldingCapsuleState.value = holding
@@ -537,6 +542,7 @@ class CapsuleOverlayController @Inject constructor(
                         },
                         onSelectMediaSession = { index ->
                             coordinator.onEvent(CapsuleEvent.SelectMediaSession(index))
+                            audioVisualizerRepository.notifyMediaTransportHint()
                         },
                         onOpenAudioOutput = {
                             coordinator.onEvent(CapsuleEvent.CollapseCapsule)
@@ -554,18 +560,22 @@ class CapsuleOverlayController @Inject constructor(
                         onTogglePlayPause = { tokenKey ->
                             coordinator.onEvent(CapsuleEvent.UserInteractedInCard)
                             mediaSessionRepository.togglePlayPause(tokenKey.ifBlank { null })
+                            audioVisualizerRepository.notifyMediaTransportHint()
                         },
                         onSkipNext = { tokenKey ->
                             coordinator.onEvent(CapsuleEvent.UserInteractedInCard)
                             mediaSessionRepository.skipNext(tokenKey.ifBlank { null })
+                            audioVisualizerRepository.notifyMediaTransportHint()
                         },
                         onSkipPrevious = { tokenKey ->
                             coordinator.onEvent(CapsuleEvent.UserInteractedInCard)
                             mediaSessionRepository.skipPrevious(tokenKey.ifBlank { null })
+                            audioVisualizerRepository.notifyMediaTransportHint()
                         },
                         onSeekTo = { tokenKey, positionMs ->
                             coordinator.onEvent(CapsuleEvent.UserInteractedInCard)
                             mediaSessionRepository.seekTo(positionMs, tokenKey.ifBlank { null })
+                            audioVisualizerRepository.notifyMediaTransportHint()
                         },
                         onToggleTorch = { enabled ->
                             coordinator.onEvent(CapsuleEvent.UserInteractedInCard)
@@ -756,6 +766,7 @@ class CapsuleOverlayController @Inject constructor(
                 setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
                 setContent {
                     val auraState by coordinator.uiState.collectAsStateWithLifecycle()
+                    val audioBeat by audioVisualizerRepository.beatState.collectAsStateWithLifecycle()
                     MaterialTheme(colorScheme = OemCompatibilityHelper.safeDynamicDarkColorScheme(hostContext)) {
                         val (auraColorA, auraColorB) = resolveOuterExpansionAuraColors(
                             state = auraState,
@@ -783,6 +794,7 @@ class CapsuleOverlayController @Inject constructor(
                                     screenCornerRadiusDp = auraState.cutout.screenTopCornerRadiusDp.coerceIn(28f, 52f),
                                     spreadDp = 72f,
                                     edgeMode = edgeMode,
+                                    audioBeatState = audioBeat,
                                     modifier = Modifier
                                         .align(
                                             if (edgeMode == 2) Alignment.CenterEnd else Alignment.CenterStart,
@@ -801,6 +813,7 @@ class CapsuleOverlayController @Inject constructor(
                                     screenCornerRadiusDp = auraState.cutout.screenTopCornerRadiusDp.coerceIn(28f, 52f),
                                     spreadDp = 72f,
                                     edgeMode = 0,
+                                    audioBeatState = audioBeat,
                                     modifier = Modifier
                                         .align(Alignment.TopCenter)
                                         .fillMaxWidth()
@@ -916,6 +929,7 @@ class CapsuleOverlayController @Inject constructor(
         windowObserverJob = null
         statusBarIconController.restoreIcons()
         statusBarIconController.setSystemHeadsUpSuppressed(false)
+        audioVisualizerRepository.setCaptureSession(shouldAttach = false, isPlaying = false)
         runCatching { activeDialog?.dismiss() }
         activeDialog = null
         runCatching { activeAuraDialog?.dismiss() }
@@ -1019,6 +1033,23 @@ class CapsuleOverlayController @Inject constructor(
                     state.preferences.suppressSystemHeadsUp &&
                     !state.isQsRingOnlyActive
                 statusBarIconController.setSystemHeadsUpSuppressed(shouldSuppressHeadsUp)
+
+                val activeMedia = state.content as? CapsuleContent.Media
+                val anySessionPlaying = activeMedia?.isPlaying == true || state.mediaSessions.any { it.isPlaying }
+                val isMediaSurfaceVisible = !_isUserPaused.value &&
+                    !state.isQsRingOnlyActive &&
+                    when (state.visualState) {
+                        CapsuleVisualState.STATE3_FULL_EXPANDED -> activeMedia != null
+                        CapsuleVisualState.STATE2_HORIZONTAL_PILL -> activeMedia != null
+                        CapsuleVisualState.STATE1_CUTOUT_ANCHOR ->
+                            state.preferences.horizontalMediaGlowStyle == HorizontalMediaGlowStyle.CAMERA_RING &&
+                                (activeMedia != null || anySessionPlaying)
+                        CapsuleVisualState.HIDDEN_SYSTEM -> false
+                    }
+                audioVisualizerRepository.setCaptureSession(
+                    shouldAttach = isMediaSurfaceVisible,
+                    isPlaying = isMediaSurfaceVisible && anySessionPlaying,
+                )
 
                 val container = activeContainer ?: return@collect
                 val dialog = activeDialog ?: return@collect
@@ -1440,6 +1471,7 @@ class CapsuleOverlayController @Inject constructor(
             } else {
                 coordinator.onEvent(CapsuleEvent.UserInteractedInCard)
             }
+            audioVisualizerRepository.notifyMediaTransportHint()
         } else {
             skipNextCollapseStaging = true
             if (coordinator.uiState.value.visualState == CapsuleVisualState.STATE3_FULL_EXPANDED) {

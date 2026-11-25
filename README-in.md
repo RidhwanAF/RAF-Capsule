@@ -16,7 +16,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-v1.3.3-1976D2" alt="Versi v1.3.3" />
+  <img src="https://img.shields.io/badge/Version-v1.4.0-1976D2" alt="Versi v1.4.0" />
   <img src="https://img.shields.io/badge/Min%20SDK-33%20(Android%2013)-3DDC84?logo=android&logoColor=white" alt="Min SDK 33" />
   <img src="https://img.shields.io/badge/Target%20SDK-37%20(Android%2017)-0078D7?logo=android&logoColor=white" alt="Target SDK 37" />
   <img src="https://img.shields.io/badge/UI-Jetpack%20Compose%20M3%20Expressive-4285F4?logo=jetpackcompose&logoColor=white" alt="Jetpack Compose" />
@@ -111,6 +111,7 @@
 - **Mode Lanskap Penuh**: Mengikuti posisi kamera saat layar diputar dengan pil vertikal, gelembung status terpisah vertikal dengan indikator titik vertikal, kartu tinggi penuh (kecuali Senter), geser horizontal untuk buka/tutup, dan geser vertikal untuk ganti kartu.
 - **Bilah Samping Kamera**: Menampilkan ikon + nama aplikasi di satu sisi kamera dan jam aktif (dengan detik) + tanggal lengkap yang dapat diketuk untuk membuka aplikasi Kalender di sisi lainnya.
 - **Gelembung Status Terpisah**: Mendukung hingga 9 indikator sistem (Senter, Hotspot, Aktivitas Langsung, Mode Pesawat, Jangan Ganggu, Penghemat Baterai, VPN, Hening/Getar, Penghemat Data) dengan posisi yang dapat dikustomisasi.
+- **Visualizer Audio Reaktif Ketukan (Tanpa Library Pihak Ketiga)**: Menggunakan Android `Visualizer` (`audioSessionId = 0`) + pengukuran `MEASUREMENT_MODE_PEAK_RMS` 32-bit yang dikompensasi `AudioManager.getStreamVolumeDb` + analisis FFT 3-band Kotlin murni (`bass`, `mid`, `high`, `beatPulse`) bergaya equalizer — musik santai tetap lembut sementara ketukan keras memicu animasi pada **Kartu Pemutar Media Penuh** (ombak AGSL, border neuron, aura layar luar, bingkai album studio, ikon cookie berputar) dan **Tampilan Ringkas State 2 / State 1** (`Pil Horizontal`, `Cincin Kamera`, `Kartu Album`, serta bar EQ 3-band langsung).
 - **Pemutar Media, Lirik LRC & Desain Baru Mixer Volume**: Carousel multi-sesi, lirik sinkron, tombol pindah output audio, serta mixer volume M3 Expressive dengan tombol bisu cepat, persentase langsung, slider haptik super halus, dan bilah Dering/Getar/Hening.
 - **Pusat Izin Layar Penuh + Shizuku + Dukungan Xiaomi HyperOS**: Pemberian `WRITE_SECURE_SETTINGS` satu ketukan lewat **Shizuku** (tanpa PC), panduan **ADB** siap salin, serta perlindungan anti-crash & pintasan AutoStart/Baterai/Pop-up latar belakang khusus perangkat **Xiaomi / Redmi / POCO** (tanpa mengubah perilaku di Pixel).
 
@@ -121,10 +122,29 @@
 1. Unduh `app-release.apk` terbaru dari [GitHub Releases](https://github.com/RidhwanAF/RAF-Capsule/releases/latest) dan pasang via ADB (`adb install -r app-release.apk`) atau pengelola berkas.
 2. Buka **RAF Capsule OS → Buka Pengaturan Izin**.
 3. Aktifkan **Aksesibilitas** dan **Akses Notifikasi**.
-4. Untuk menyembunyikan pop-up notifikasi sistem ganda (`WRITE_SECURE_SETTINGS`):
+4. Untuk menyembunyikan pop-up notifikasi sistem ganda (`WRITE_SECURE_SETTINGS`) dan mengaktifkan visualizer ketukan audio (`RECORD_AUDIO`):
    - **Tanpa PC (Shizuku)**: Mulai [Shizuku](https://shizuku.rikka.app/) lewat Debugging Nirkabel, lalu ketuk **Berikan via Shizuku**.
    - **Dengan ADB**:
      ```bash
      adb shell pm grant com.raf.capsuleos android.permission.WRITE_SECURE_SETTINGS
+     adb shell pm grant com.raf.capsuleos android.permission.RECORD_AUDIO
+     adb shell appops set com.raf.capsuleos RECORD_AUDIO allow
+     adb shell appops set com.raf.capsuleos SYSTEM_ALERT_WINDOW allow
      ```
 5. *(Khusus Xiaomi / HyperOS)*: Aktifkan **AutoStart**, **Baterai: Tanpa Pembatasan**, dan **Jendela Pop-up Latar Belakang** melalui pintasan satu ketuk di layar Izin.
+
+---
+
+### Reset Pengaturan Android ke Default (Sebelum Menghapus Aplikasi)
+
+RAF Capsule OS dapat menyembunyikan pop-up notifikasi mengambang bawaan Android (`heads_up_notifications_enabled = 0`) saat aktif agar notifikasi tampil rapi di dalam kapsul. Sebelum menghapus aplikasi (atau jika pop-up notifikasi sistem tidak muncul kembali setelah aplikasi dihapus), kembalikan pengaturan default Android melalui ADB:
+
+```bash
+# Mengaktifkan kembali pop-up notifikasi heads-up bawaan sistem
+adb shell settings put global heads_up_notifications_enabled 1
+
+# (Opsional) Mengembalikan ikon bilah status default jika pernah diubah
+adb shell settings delete secure icon_blacklist
+```
+
+*(Tips: Mematikan opsi **Sembunyikan Heads-Up Sistem** atau menjeda/mematikan Layanan Aksesibilitas di dalam aplikasi sebelum mencopot pemasangan juga akan memulihkan pengaturan ini secara otomatis.)*

@@ -287,4 +287,6 @@
     <string name="msg_xiaomi_battery_desc">يستثني Capsule OS من قيود بطارية MIUI ليبقى مستجيباً دائماً.</string>
     <string name="label_xiaomi_popup_bg">النوافذ المنبثقة في الخلفية</string>
     <string name="msg_xiaomi_popup_bg_desc">فعّل عرض النوافذ المنبثقة أثناء التشغيل في الخلفية من الأذونات الأخرى.</string>
+    <string name="label_audio_visualizer_permission">مُصوّر الوسائط المتفاعل مع الإيقاع (الصوت)</string>
+    <string name="msg_audio_visualizer_permission_desc">يقرأ طيف FFT لصوت النظام عبر Android Visualizer لتنبض رسوم المشغّل الموسّع مع الإيقاع.</string>
 </resources>
