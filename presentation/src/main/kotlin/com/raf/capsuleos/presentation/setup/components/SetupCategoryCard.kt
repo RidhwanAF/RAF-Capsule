@@ -142,6 +142,7 @@ fun SetupCategoryCard(
                 !uiState.hasDndPolicyAccess,
                 !uiState.hasBluetoothPermission,
                 !uiState.hasLocationPermission,
+                !uiState.hasAudioVisualizerPermission,
                 !uiState.hasWriteSecureSettings,
             ).count { it }
 

@@ -42,6 +42,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -65,6 +67,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import com.raf.capsuleos.domain.model.AudioBeatState
 import com.raf.capsuleos.domain.model.AudioStreamType
 import com.raf.capsuleos.domain.model.CapsuleContent
 import com.raf.capsuleos.domain.model.CapsuleGestureAction
@@ -93,6 +96,7 @@ import com.raf.capsuleos.presentation.shader.NeuralBorderShader
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.math.PI
 import kotlin.math.abs
@@ -152,6 +156,7 @@ fun IslandCapsule(
     scrubPresentation: CapsuleScrubPresentation?,
     isForceCameraCircleStage: Boolean = false,
     isSatelliteDelayedStage: Boolean = false,
+    audioBeatState: AudioBeatState = AudioBeatState.Silent,
     onHoldingStateChanged: (Boolean) -> Unit,
     onHoldPeekStart: () -> Unit,
     onHoldPeekEnd: () -> Unit,
@@ -485,13 +490,77 @@ fun IslandCapsule(
         val shaderTime by rememberShaderTimeSeconds(isAnimating = isShaderClockActive)
         val neuralShader = remember { NeuralBorderShader.create() }
 
+        val isMediaSurfaceBeatLive = audioBeatState.isLive && isMediaPlaying && (
+            (isExpandedCard && isMediaContext) ||
+                pillMediaGlow ||
+                cameraRingMediaGlow
+            )
+        val latestAudioBeat by rememberUpdatedState(audioBeatState)
+        val smoothBorderBeat by animateFloatAsState(
+            targetValue = if (isMediaSurfaceBeatLive) audioBeatState.beatPulse else 0f,
+            animationSpec = tween(durationMillis = 60),
+            label = "borderBeatPulse",
+        )
+        val smoothBorderBass by animateFloatAsState(
+            targetValue = if (isMediaSurfaceBeatLive) audioBeatState.bass else 0f,
+            animationSpec = tween(durationMillis = 70),
+            label = "borderBass",
+        )
+        val smoothBorderEnergy by animateFloatAsState(
+            targetValue = if (isMediaSurfaceBeatLive) audioBeatState.energy else 0f,
+            animationSpec = tween(durationMillis = 70),
+            label = "borderEnergy",
+        )
+        val beatShaderTime = remember { mutableFloatStateOf(0f) }
+        LaunchedEffect(isMediaSurfaceBeatLive) {
+            if (!isMediaSurfaceBeatLive) return@LaunchedEffect
+            beatShaderTime.floatValue = shaderTime
+            var lastNanos = 0L
+            while (isActive) {
+                withFrameNanos { nowNanos ->
+                    if (lastNanos != 0L) {
+                        val dtSec = ((nowNanos - lastNanos) / 1_000_000_000f).coerceIn(0f, 0.05f)
+                        val beat = latestAudioBeat
+                        // Calm 0.35x drift during relaxing music; surges up to 3.4x on strong beats
+                        val speed = 0.35f + beat.energy * 1.45f + beat.beatPulse * 1.95f
+                        beatShaderTime.floatValue += dtSec * speed
+                    }
+                    lastNanos = nowNanos
+                }
+            }
+        }
+        val effectiveShaderTime = if (isMediaSurfaceBeatLive) beatShaderTime.floatValue else shaderTime
+        val effectiveBorderStrokeDp = if (isMediaSurfaceBeatLive) {
+            1.4f + smoothBorderBass * 1.3f + smoothBorderBeat * 2.0f
+        } else {
+            2.2f + 0.4f * effectiveRingMix
+        }
+        val effectiveBorderIntensity = if (isMediaSurfaceBeatLive && animatedIntensity > 0.01f) {
+            (animatedIntensity * (0.24f + smoothBorderEnergy * 0.46f + smoothBorderBeat * 0.50f))
+                .coerceIn(0.18f, 1f)
+        } else {
+            animatedIntensity
+        }
+        val effectiveBorderDotIntensity = if (isMediaSurfaceBeatLive && animatedDotIntensity > 0.01f) {
+            (animatedDotIntensity * (0.15f + smoothBorderEnergy * 0.55f + smoothBorderBeat * 0.65f))
+                .coerceIn(0.08f, 1f)
+        } else {
+            animatedDotIntensity
+        }
+        val effectiveRingGlow = if (cameraRingMediaGlow && audioBeatState.isLive && animatedRingGlow > 0.01f) {
+            (animatedRingGlow * (0.28f + smoothBorderEnergy * 0.44f + smoothBorderBeat * 0.50f))
+                .coerceIn(0.22f, 1f)
+        } else {
+            animatedRingGlow
+        }
+
         val capsuleShape = if (!isExpandedCard && scrubPresentation == null) {
             CircleShape
         } else {
             RoundedCornerShape(cornerRadiusDp.dp)
         }
         val cornerPx = with(density) { cornerRadiusDp.dp.toPx() }
-        val strokePx = with(density) { (2.2f + 0.4f * effectiveRingMix).dp.toPx() }
+        val strokePx = with(density) { effectiveBorderStrokeDp.dp.toPx() }
 
         val contentPaddingDp = prefs.expandedContentPaddingDp.coerceIn(8f, 32f)
         val targetTopClearanceDp = if (prefs.belowStatusBar || uiState.isLandscape) {
@@ -637,15 +706,15 @@ fun IslandCapsule(
                                 shader = neuralShader,
                                 widthPx = size.width,
                                 heightPx = size.height,
-                                timeSeconds = shaderTime,
+                                timeSeconds = effectiveShaderTime,
                                 cornerRadiusPx = cornerPx,
                                 strokeWidthPx = strokePx,
-                                intensity = animatedIntensity,
-                                dotIntensity = animatedDotIntensity,
+                                intensity = effectiveBorderIntensity,
+                                dotIntensity = effectiveBorderDotIntensity,
                                 neuralMode = animatedNeuralMode,
                                 ringMix = effectiveRingMix,
                                 ringProgress = animatedRingProgress,
-                                ringGlow = animatedRingGlow,
+                                ringGlow = effectiveRingGlow,
                                 colorA = activeShaderColorA,
                                 colorB = baseColorB,
                             )
@@ -1091,6 +1160,7 @@ fun IslandCapsule(
                         media = scrubMedia,
                         timeSeconds = shaderTime,
                         mediaAnimationColorMode = prefs.mediaAnimationColorMode,
+                        audioBeatState = audioBeatState,
                         modifier = Modifier
                             .fillMaxSize()
                             .graphicsLayer { alpha = expandedAlpha },
@@ -1190,6 +1260,7 @@ fun IslandCapsule(
                                             isMinimalIconOnly = uiState.isFullscreen,
                                             horizontalMediaGlowStyle = prefs.horizontalMediaGlowStyle,
                                             mediaAnimationColorMode = prefs.mediaAnimationColorMode,
+                                            audioBeatState = audioBeatState,
                                             swipeDirection = uiState.swipeDirection,
                                             manualSwipeSeq = uiState.manualSwipeSeq,
                                             showWaterWave = false,
@@ -1225,6 +1296,7 @@ fun IslandCapsule(
                                             isMinimalIconOnly = uiState.isFullscreen,
                                             horizontalMediaGlowStyle = prefs.horizontalMediaGlowStyle,
                                             mediaAnimationColorMode = prefs.mediaAnimationColorMode,
+                                            audioBeatState = audioBeatState,
                                             swipeDirection = uiState.swipeDirection,
                                             manualSwipeSeq = uiState.manualSwipeSeq,
                                             enableAlbumSharedTransition = enableAlbumSharedTransition,
@@ -1264,6 +1336,7 @@ fun IslandCapsule(
                                         isLandscape = uiState.isLandscape,
                                         contentPaddingDp = contentPaddingDp,
                                         timeSeconds = shaderTime,
+                                        audioBeatState = audioBeatState,
                                         interactionsEnabled = interactionsEnabled,
                                         showMediaBackdrop = !useScrubCroppedMediaBg,
                                         enableAlbumSharedTransition = enableAlbumSharedTransition,
@@ -1338,6 +1411,7 @@ fun IslandCapsule(
                                 isMinimalIconOnly = uiState.isFullscreen,
                                 horizontalMediaGlowStyle = prefs.horizontalMediaGlowStyle,
                                 mediaAnimationColorMode = prefs.mediaAnimationColorMode,
+                                audioBeatState = audioBeatState,
                                 swipeDirection = uiState.swipeDirection,
                                 manualSwipeSeq = uiState.manualSwipeSeq,
                                 showWaterWave = false,
@@ -1372,6 +1446,7 @@ fun IslandCapsule(
                                         isMinimalIconOnly = uiState.isFullscreen,
                                         horizontalMediaGlowStyle = prefs.horizontalMediaGlowStyle,
                                         mediaAnimationColorMode = prefs.mediaAnimationColorMode,
+                                        audioBeatState = audioBeatState,
                                         swipeDirection = uiState.swipeDirection,
                                         manualSwipeSeq = uiState.manualSwipeSeq,
                                         enableAlbumSharedTransition = false,
@@ -1414,6 +1489,7 @@ fun IslandCapsule(
                                     isLandscape = uiState.isLandscape,
                                     contentPaddingDp = contentPaddingDp,
                                     timeSeconds = shaderTime,
+                                    audioBeatState = audioBeatState,
                                     interactionsEnabled = false,
                                     showMediaBackdrop = !useScrubCroppedMediaBg,
                                     enableAlbumSharedTransition = false,

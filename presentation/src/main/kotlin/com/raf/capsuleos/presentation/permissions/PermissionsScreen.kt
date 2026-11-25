@@ -44,6 +44,7 @@ import androidx.compose.material.icons.rounded.Brightness6
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.DoNotDisturbOn
+import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.NotificationsActive
@@ -135,7 +136,12 @@ fun PermissionsScreen(
     }
 
     val adbCommand = remember(context.packageName) {
-        "adb shell pm grant ${context.packageName} android.permission.WRITE_SECURE_SETTINGS"
+        listOf(
+            "adb shell pm grant ${context.packageName} android.permission.WRITE_SECURE_SETTINGS",
+            "adb shell pm grant ${context.packageName} android.permission.RECORD_AUDIO",
+            "adb shell appops set ${context.packageName} RECORD_AUDIO allow",
+            "adb shell appops set ${context.packageName} SYSTEM_ALERT_WINDOW allow",
+        ).joinToString("\n")
     }
     val copiedMessage = stringResource(R.string.msg_adb_copied)
     val shizukuGrantedMessage = stringResource(R.string.msg_shizuku_grant_success)
@@ -147,6 +153,11 @@ fun PermissionsScreen(
         viewModel.refreshPermissions()
     }
     val locationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+    ) {
+        viewModel.refreshPermissions()
+    }
+    val audioPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
     ) {
         viewModel.refreshPermissions()
@@ -211,7 +222,7 @@ fun PermissionsScreen(
         }
     }
 
-    val totalCount = 7
+    val totalCount = 8
     val grantedCount = listOf(
         uiState.hasAccessibilityOverlay,
         uiState.hasNotificationListener,
@@ -219,6 +230,7 @@ fun PermissionsScreen(
         uiState.hasDndPolicyAccess,
         uiState.hasBluetoothPermission,
         uiState.hasLocationPermission,
+        uiState.hasAudioVisualizerPermission,
         uiState.hasWriteSecureSettings,
     ).count { it }
 
@@ -412,6 +424,16 @@ fun PermissionsScreen(
                     granted = uiState.hasLocationPermission,
                     onGrantClick = {
                         locationPermissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
+                    },
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                PermissionItemRow(
+                    icon = Icons.Rounded.GraphicEq,
+                    title = stringResource(R.string.label_audio_visualizer_permission),
+                    description = stringResource(R.string.msg_audio_visualizer_permission_desc),
+                    granted = uiState.hasAudioVisualizerPermission,
+                    onGrantClick = {
+                        audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                     },
                 )
             }

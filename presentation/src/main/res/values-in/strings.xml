@@ -277,4 +277,6 @@
     <string name="msg_xiaomi_battery_desc">Mengecualikan Capsule OS dari pembatasan baterai MIUI agar tetap responsif.</string>
     <string name="label_xiaomi_popup_bg">Jendela Pop-up Latar Belakang</string>
     <string name="msg_xiaomi_popup_bg_desc">Aktifkan Tampilkan jendela pop-up saat berjalan di latar belakang di Perizinan Lainnya.</string>
+    <string name="label_audio_visualizer_permission">Visualizer Media Mengikuti Beat (Audio)</string>
+    <string name="msg_audio_visualizer_permission_desc">Membaca FFT audio global via Android Visualizer agar animasi pemutar media berdenyut mengikuti beat.</string>
 </resources>

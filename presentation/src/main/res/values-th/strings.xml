@@ -277,4 +277,6 @@
     <string name="msg_xiaomi_battery_desc">ยกเว้น Capsule OS จากการปิดแอปประหยัดแบตของ MIUI</string>
     <string name="label_xiaomi_popup_bg">หน้าต่างป๊อปอัปขณะทำงานเบื้องหลัง</string>
     <string name="msg_xiaomi_popup_bg_desc">เปิดแสดงหน้าต่างป๊อปอัปขณะทำงานในพื้นหลังในสิทธิ์อื่นๆ</string>
+    <string name="label_audio_visualizer_permission">วิชวลไลเซอร์มีเดียตามจังหวะ (เสียง)</string>
+    <string name="msg_audio_visualizer_permission_desc">อ่านค่า FFT ของเสียงระบบผ่าน Android Visualizer เพื่อให้แอนิเมชันมีเดียเต้นตามจังหวะเพลง</string>
 </resources>

@@ -281,4 +281,6 @@
     <string name="msg_xiaomi_battery_desc">Exime a Capsule OS del cierre agresivo de batería de MIUI.</string>
     <string name="label_xiaomi_popup_bg">Ventanas emergentes en segundo plano</string>
     <string name="msg_xiaomi_popup_bg_desc">Activa Mostrar ventanas emergentes en segundo plano en Otros permisos.</string>
+    <string name="label_audio_visualizer_permission">Visualizador multimedia al ritmo (Audio)</string>
+    <string name="msg_audio_visualizer_permission_desc">Lee el espectro FFT de audio global con Android Visualizer para que las animaciones reaccionen al ritmo.</string>
 </resources>

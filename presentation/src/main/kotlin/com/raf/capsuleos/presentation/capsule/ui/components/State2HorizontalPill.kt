@@ -68,7 +68,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -95,6 +98,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.raf.capsuleos.domain.model.AudioBeatState
 import com.raf.capsuleos.domain.model.CameraAnchorPosition
 import com.raf.capsuleos.domain.model.CapsuleContent
 import com.raf.capsuleos.domain.model.CutoutGeometry
@@ -106,6 +110,7 @@ import com.raf.capsuleos.domain.model.UnlockMethod
 import com.raf.capsuleos.presentation.R
 import com.raf.capsuleos.presentation.common.rememberCachedImageBitmap
 import com.raf.capsuleos.presentation.shader.NeuralBorderShader
+import kotlinx.coroutines.isActive
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.max
@@ -247,6 +252,7 @@ fun State2HorizontalPill(
     isMinimalIconOnly: Boolean = false,
     horizontalMediaGlowStyle: HorizontalMediaGlowStyle = HorizontalMediaGlowStyle.OFF,
     mediaAnimationColorMode: MediaAnimationColorMode = MediaAnimationColorMode.ALBUM_COLOR,
+    audioBeatState: AudioBeatState = AudioBeatState.Silent,
     swipeDirection: Int,
     manualSwipeSeq: Int,
     enableAlbumSharedTransition: Boolean = true,
@@ -317,14 +323,16 @@ fun State2HorizontalPill(
             },
             label = "state2ManualSwipe",
         ) { active ->
+            val liveRowContent = if (active.swipeSeq == manualSwipeSeq) content else active.content
             SymmetricSingleIconPillRow(
-                content = active.content,
+                content = liveRowContent,
                 geom = active.geom,
                 isMinimalIconOnly = isMinimalIconOnly,
                 primaryColor = primaryColor,
                 tertiaryColor = tertiaryColor,
                 horizontalMediaGlowStyle = horizontalMediaGlowStyle,
                 mediaAnimationColorMode = mediaAnimationColorMode,
+                audioBeatState = audioBeatState,
                 enableAlbumSharedTransition = enableAlbumSharedTransition,
                 sharedTransitionScope = sharedTransitionScope,
                 animatedVisibilityScope = animatedVisibilityScope,
@@ -349,6 +357,7 @@ private fun SymmetricSingleIconPillRow(
     tertiaryColor: Color,
     horizontalMediaGlowStyle: HorizontalMediaGlowStyle,
     mediaAnimationColorMode: MediaAnimationColorMode,
+    audioBeatState: AudioBeatState,
     enableAlbumSharedTransition: Boolean,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
@@ -396,12 +405,14 @@ private fun SymmetricSingleIconPillRow(
                     },
                     label = "leftSingleIcon",
                 ) { active ->
+                    val liveLeft = if (contentCarouselKey(active) == contentCarouselKey(content)) content else active
                     PrimaryLeftIcon(
-                        active = active,
+                        active = liveLeft,
                         primaryColor = primaryColor,
                         tertiaryColor = tertiaryColor,
                         horizontalMediaGlowStyle = horizontalMediaGlowStyle,
                         mediaAnimationColorMode = mediaAnimationColorMode,
+                        audioBeatState = audioBeatState,
                         enableAlbumSharedTransition = enableAlbumSharedTransition,
                         sharedTransitionScope = this@with,
                         animatedVisibilityScope = animatedVisibilityScope,
@@ -439,10 +450,12 @@ private fun SymmetricSingleIconPillRow(
                     },
                     label = "rightWingInfo",
                 ) { activeRight ->
+                    val liveRight = if (contentCarouselKey(activeRight) == contentCarouselKey(content)) content else activeRight
                     RightWingContent(
-                        active = activeRight,
+                        active = liveRight,
                         primaryColor = primaryColor,
                         mediaAnimationColorMode = mediaAnimationColorMode,
+                        audioBeatState = audioBeatState,
                         sharedTransitionScope = this@with,
                         animatedVisibilityScope = animatedVisibilityScope,
                     )
@@ -467,6 +480,7 @@ private fun SymmetricSingleIconPillRow(
                         primaryColor = primaryColor,
                         tertiaryColor = tertiaryColor,
                         mediaAnimationColorMode = mediaAnimationColorMode,
+                        audioBeatState = audioBeatState,
                     )
                 }
             }
@@ -525,6 +539,7 @@ private fun PrimaryLeftIcon(
     tertiaryColor: Color,
     horizontalMediaGlowStyle: HorizontalMediaGlowStyle,
     mediaAnimationColorMode: MediaAnimationColorMode,
+    audioBeatState: AudioBeatState,
     enableAlbumSharedTransition: Boolean,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
@@ -544,26 +559,45 @@ private fun PrimaryLeftIcon(
             is CapsuleContent.Media -> {
                 val artBitmap = rememberDecodedBytes(active.artworkBytes)
                 val showAlbumRing = active.isPlaying && horizontalMediaGlowStyle == HorizontalMediaGlowStyle.ALBUM_ART_RING
+                val smoothBeat by animateFloatAsState(
+                    targetValue = if (showAlbumRing && audioBeatState.isLive) audioBeatState.beatPulse else 0f,
+                    animationSpec = tween(durationMillis = 55),
+                    label = "pillAlbumBeat",
+                )
+                val smoothBass by animateFloatAsState(
+                    targetValue = if (showAlbumRing && audioBeatState.isLive) audioBeatState.bass else 0f,
+                    animationSpec = tween(durationMillis = 65),
+                    label = "pillAlbumBass",
+                )
+                val smoothEnergy by animateFloatAsState(
+                    targetValue = if (showAlbumRing && audioBeatState.isLive) audioBeatState.energy else 0f,
+                    animationSpec = tween(durationMillis = 65),
+                    label = "pillAlbumEnergy",
+                )
+                val latestBeat by rememberUpdatedState(audioBeatState)
+                val angleDeg = remember { mutableFloatStateOf(0f) }
+                val fallbackPhase = remember { mutableFloatStateOf(0f) }
+                LaunchedEffect(showAlbumRing) {
+                    if (!showAlbumRing) return@LaunchedEffect
+                    var lastNanos = 0L
+                    while (isActive) {
+                        withFrameNanos { nowNanos ->
+                            if (lastNanos != 0L) {
+                                val dtSec = ((nowNanos - lastNanos) / 1_000_000_000f).coerceIn(0f, 0.05f)
+                                val beat = latestBeat
+                                val angularSpeed = if (beat.isLive) {
+                                    26f + beat.energy * 145f + beat.beatPulse * 195f
+                                } else {
+                                    95f
+                                }
+                                angleDeg.floatValue = (angleDeg.floatValue + dtSec * angularSpeed) % 360f
+                                fallbackPhase.floatValue = (fallbackPhase.floatValue + dtSec / 2.6f) % 1f
+                            }
+                            lastNanos = nowNanos
+                        }
+                    }
+                }
                 val glowModifier = if (showAlbumRing) {
-                    val inf = rememberInfiniteTransition(label = "pillAlbumGlow")
-                    val angleState = inf.animateFloat(
-                        initialValue = 0f,
-                        targetValue = 360f,
-                        animationSpec = infiniteRepeatable(
-                            animation = tween(durationMillis = 3600, easing = LinearEasing),
-                            repeatMode = RepeatMode.Restart,
-                        ),
-                        label = "pillAlbumAngle",
-                    )
-                    val beatPhaseState = inf.animateFloat(
-                        initialValue = 0f,
-                        targetValue = 1f,
-                        animationSpec = infiniteRepeatable(
-                            animation = tween(durationMillis = 2800, easing = LinearEasing),
-                            repeatMode = RepeatMode.Restart,
-                        ),
-                        label = "pillAlbumBeatPhase",
-                    )
                     val artA = if (mediaAnimationColorMode == MediaAnimationColorMode.PRIMARY_COLOR) {
                         primaryColor
                     } else {
@@ -574,60 +608,59 @@ private fun PrimaryLeftIcon(
                     } else {
                         Color(active.secondaryColorArgb)
                     }
+                    val highlight = lerp(artA, Color.White, 0.45f)
                     val rotMatrix = remember { Matrix() }
-                    Modifier.drawBehind {
-                        val baseRadius = size.minDimension * 0.5f
-                        rotMatrix.reset()
-                        rotMatrix.setRotate(angleState.value, center.x, center.y)
-                        val maxBeatExpandPx = 7.dp.toPx()
+                    val albumPulseScale = if (audioBeatState.isLive) {
+                        0.95f + (smoothBeat * 0.06f + smoothBass * 0.03f)
+                    } else {
+                        1f
+                    }
+                    Modifier
+                        .graphicsLayer {
+                            scaleX = albumPulseScale
+                            scaleY = albumPulseScale
+                        }
+                        .drawBehind {
+                            val baseRadius = size.minDimension * 0.5f
+                            rotMatrix.reset()
+                            rotMatrix.setRotate(angleDeg.floatValue, center.x, center.y)
+                            val drive = if (audioBeatState.isLive) {
+                                (smoothBeat * 0.65f + smoothBass * 0.45f + smoothEnergy * 0.18f).coerceIn(0f, 1f)
+                            } else {
+                                0.35f + 0.30f * sin(fallbackPhase.floatValue * 2f * PI.toFloat()).coerceAtLeast(0f)
+                            }
 
-                        // Calm breathing-paced outward beat ripple radiating from the album circle border
-                        val rawWave = beatPhaseState.value.coerceIn(0f, 1f)
-                        val eased = FastOutSlowInEasing.transform(rawWave)
-                        val inhale = (rawWave / 0.16f).coerceIn(0f, 1f)
-                        val exhale = (1f - eased).let { it * it }
-                        val fade = inhale * exhale * 0.72f
-                        if (fade > 0.015f) {
-                            val beatStrokePx = (1.9f - 1.3f * eased).coerceAtLeast(0.55f).dp.toPx()
-                            val beatShader = SweepGradient(
+                            val haloExpandPx = drive * 3.4.dp.toPx()
+                            val haloAlpha = (drive * 0.62f).coerceIn(0f, 0.65f)
+                            if (haloAlpha > 0.02f) {
+                                drawCircle(
+                                    color = artA.copy(alpha = haloAlpha * 0.45f),
+                                    radius = baseRadius + haloExpandPx * 0.65f,
+                                )
+                            }
+
+                            val rimAlpha = (0.34f + drive * 0.66f).coerceIn(0.24f, 1f)
+                            val rimStrokePx = (1.35f + drive * 1.25f).dp.toPx()
+                            val borderShader = SweepGradient(
                                 center.x,
                                 center.y,
                                 intArrayOf(
-                                    artA.copy(alpha = fade).toArgb(),
-                                    artB.copy(alpha = fade).toArgb(),
-                                    Color.White.copy(alpha = 0.85f * fade).toArgb(),
-                                    artA.copy(alpha = fade).toArgb(),
+                                    artA.copy(alpha = rimAlpha).toArgb(),
+                                    artB.copy(alpha = rimAlpha).toArgb(),
+                                    highlight.copy(alpha = rimAlpha).toArgb(),
+                                    artB.copy(alpha = rimAlpha).toArgb(),
+                                    artA.copy(alpha = rimAlpha).toArgb(),
                                 ),
-                                floatArrayOf(0.0f, 0.35f, 0.70f, 1.0f),
+                                floatArrayOf(0.0f, 0.28f, 0.52f, 0.76f, 1.0f),
                             ).apply {
                                 setLocalMatrix(rotMatrix)
                             }
                             drawCircle(
-                                brush = ShaderBrush(beatShader),
-                                radius = baseRadius + eased * maxBeatExpandPx,
-                                style = Stroke(width = beatStrokePx),
+                                brush = ShaderBrush(borderShader),
+                                radius = baseRadius + haloExpandPx * 0.30f,
+                                style = Stroke(width = rimStrokePx),
                             )
                         }
-
-                        val borderShader = SweepGradient(
-                            center.x,
-                            center.y,
-                            intArrayOf(
-                                artA.toArgb(),
-                                artB.toArgb(),
-                                Color.White.copy(alpha = 0.85f).toArgb(),
-                                artA.toArgb(),
-                            ),
-                            floatArrayOf(0.0f, 0.35f, 0.70f, 1.0f),
-                        ).apply {
-                            setLocalMatrix(rotMatrix)
-                        }
-                        drawCircle(
-                            brush = ShaderBrush(borderShader),
-                            radius = baseRadius,
-                            style = Stroke(width = 2.dp.toPx()),
-                        )
-                    }
                 } else {
                     Modifier
                 }
@@ -766,6 +799,7 @@ private fun RightWingContent(
     active: CapsuleContent,
     primaryColor: Color,
     mediaAnimationColorMode: MediaAnimationColorMode,
+    audioBeatState: AudioBeatState,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
 ) {
@@ -780,6 +814,7 @@ private fun RightWingContent(
                 MiniEqualizerBars(
                     isPlaying = active.isPlaying,
                     tint = eqTint,
+                    audioBeatState = audioBeatState,
                     modifier = modifier,
                 )
             }
@@ -1134,27 +1169,68 @@ internal fun ChargingWaterWaveFill(
 }
 
 @Composable
-private fun CameraCutoutMediaGlowRing(
+internal fun CameraCutoutMediaGlowRing(
     modifier: Modifier = Modifier,
     media: CapsuleContent.Media,
     ringDiameterDp: Float,
     primaryColor: Color,
     tertiaryColor: Color,
     mediaAnimationColorMode: MediaAnimationColorMode,
+    audioBeatState: AudioBeatState = AudioBeatState.Silent,
 ) {
     val density = LocalDensity.current
-    val strokePx = with(density) { 2.4.dp.toPx() }
     val shader = remember { NeuralBorderShader.create() }
-    val inf = rememberInfiniteTransition(label = "cameraRingMediaShaderClock")
-    val timeSec by inf.animateFloat(
-        initialValue = 0f,
-        targetValue = 60f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 60_000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "cameraRingMediaTime",
+    val smoothBeat by animateFloatAsState(
+        targetValue = if (audioBeatState.isLive) audioBeatState.beatPulse else 0f,
+        animationSpec = tween(durationMillis = 55),
+        label = "cameraRingBeat",
     )
+    val smoothBass by animateFloatAsState(
+        targetValue = if (audioBeatState.isLive) audioBeatState.bass else 0f,
+        animationSpec = tween(durationMillis = 65),
+        label = "cameraRingBass",
+    )
+    val smoothEnergy by animateFloatAsState(
+        targetValue = if (audioBeatState.isLive) audioBeatState.energy else 0f,
+        animationSpec = tween(durationMillis = 65),
+        label = "cameraRingEnergy",
+    )
+    val latestBeat by rememberUpdatedState(audioBeatState)
+    val shaderClockSec = remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(Unit) {
+        var lastNanos = 0L
+        while (isActive) {
+            withFrameNanos { nowNanos ->
+                if (lastNanos != 0L) {
+                    val dtSec = ((nowNanos - lastNanos) / 1_000_000_000f).coerceIn(0f, 0.05f)
+                    val beat = latestBeat
+                    val speed = if (beat.isLive) {
+                        0.38f + beat.energy * 1.45f + beat.beatPulse * 1.95f
+                    } else {
+                        1f
+                    }
+                    shaderClockSec.floatValue += dtSec * speed
+                }
+                lastNanos = nowNanos
+            }
+        }
+    }
+    val strokeDp = if (audioBeatState.isLive) {
+        1.5f + smoothBass * 0.9f + smoothBeat * 1.3f
+    } else {
+        2.4f
+    }
+    val strokePx = with(density) { strokeDp.dp.toPx() }
+    val effectiveIntensity = if (audioBeatState.isLive) {
+        (0.28f + smoothEnergy * 0.44f + smoothBeat * 0.50f).coerceIn(0.24f, 1f)
+    } else {
+        0.96f
+    }
+    val effectiveDotIntensity = if (audioBeatState.isLive) {
+        (0.16f + smoothEnergy * 0.46f + smoothBeat * 0.56f).coerceIn(0.12f, 0.92f)
+    } else {
+        0.72f
+    }
     val artA = if (mediaAnimationColorMode == MediaAnimationColorMode.PRIMARY_COLOR) {
         primaryColor
     } else {
@@ -1175,11 +1251,11 @@ private fun CameraCutoutMediaGlowRing(
                     shader = shader,
                     widthPx = size.width,
                     heightPx = size.height,
-                    timeSeconds = timeSec,
+                    timeSeconds = shaderClockSec.floatValue,
                     cornerRadiusPx = cornerPx,
                     strokeWidthPx = strokePx,
-                    intensity = 0.96f,
-                    dotIntensity = 0.72f,
+                    intensity = effectiveIntensity,
+                    dotIntensity = effectiveDotIntensity,
                     neuralMode = 1.0f,
                     ringMix = 0f,
                     ringProgress = 1f,
@@ -1379,9 +1455,10 @@ private fun MiniEqualizerBars(
     modifier: Modifier = Modifier,
     isPlaying: Boolean,
     tint: Color,
+    audioBeatState: AudioBeatState = AudioBeatState.Silent,
 ) {
     val transition = rememberInfiniteTransition(label = "miniEq")
-    val bar1 by transition.animateFloat(
+    val fallback1 by transition.animateFloat(
         initialValue = 0.28f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
@@ -1390,7 +1467,7 @@ private fun MiniEqualizerBars(
         ),
         label = "eq1",
     )
-    val bar2 by transition.animateFloat(
+    val fallback2 by transition.animateFloat(
         initialValue = 0.92f,
         targetValue = 0.3f,
         animationSpec = infiniteRepeatable(
@@ -1399,7 +1476,7 @@ private fun MiniEqualizerBars(
         ),
         label = "eq2",
     )
-    val bar3 by transition.animateFloat(
+    val fallback3 by transition.animateFloat(
         initialValue = 0.38f,
         targetValue = 0.95f,
         animationSpec = infiniteRepeatable(
@@ -1408,8 +1485,39 @@ private fun MiniEqualizerBars(
         ),
         label = "eq3",
     )
+    val liveLow by animateFloatAsState(
+        targetValue = if (isPlaying && audioBeatState.isLive) {
+            (0.18f + audioBeatState.bass * 0.68f + audioBeatState.beatPulse * 0.24f).coerceIn(0.18f, 1f)
+        } else {
+            0.22f
+        },
+        animationSpec = tween(durationMillis = 55),
+        label = "eqLiveLow",
+    )
+    val liveMid by animateFloatAsState(
+        targetValue = if (isPlaying && audioBeatState.isLive) {
+            (0.18f + audioBeatState.mid * 0.62f + audioBeatState.beatPulse * 0.34f).coerceIn(0.18f, 1f)
+        } else {
+            0.22f
+        },
+        animationSpec = tween(durationMillis = 55),
+        label = "eqLiveMid",
+    )
+    val liveHigh by animateFloatAsState(
+        targetValue = if (isPlaying && audioBeatState.isLive) {
+            (0.18f + audioBeatState.high * 0.64f + audioBeatState.energy * 0.26f).coerceIn(0.18f, 1f)
+        } else {
+            0.22f
+        },
+        animationSpec = tween(durationMillis = 55),
+        label = "eqLiveHigh",
+    )
 
-    val heights = if (isPlaying) listOf(bar1, bar2, bar3) else listOf(0.35f, 0.35f, 0.35f)
+    val heights = when {
+        !isPlaying -> listOf(0.24f, 0.24f, 0.24f)
+        audioBeatState.isLive -> listOf(liveLow, liveMid, liveHigh)
+        else -> listOf(fallback1, fallback2, fallback3)
+    }
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(2.5.dp),

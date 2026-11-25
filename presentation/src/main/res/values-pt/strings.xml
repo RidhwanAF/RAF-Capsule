@@ -281,4 +281,6 @@
     <string name="msg_xiaomi_battery_desc">Isenta o Capsule OS das restrições agressivas de bateria da MIUI.</string>
     <string name="label_xiaomi_popup_bg">Janelas pop-up em segundo plano</string>
     <string name="msg_xiaomi_popup_bg_desc">Ative Exibir janelas pop-up em segundo plano em Outras permissões.</string>
+    <string name="label_audio_visualizer_permission">Visualizador de mídia no ritmo (Áudio)</string>
+    <string name="msg_audio_visualizer_permission_desc">Lê o espectro FFT do áudio global via Android Visualizer para que as animações pulsem no ritmo.</string>
 </resources>

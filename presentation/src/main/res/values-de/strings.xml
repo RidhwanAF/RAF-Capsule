@@ -279,4 +279,6 @@
     <string name="msg_xiaomi_battery_desc">Nimmt Capsule OS vom MIUI-Akku-Killer aus.</string>
     <string name="label_xiaomi_popup_bg">Pop-up-Fenster im Hintergrund</string>
     <string name="msg_xiaomi_popup_bg_desc">Aktiviere Pop-up-Fenster im Hintergrund unter Weitere Berechtigungen.</string>
+    <string name="label_audio_visualizer_permission">Taktgesteuerter Medien-Visualizer (Audio)</string>
+    <string name="msg_audio_visualizer_permission_desc">Liest das globale Audio-FFT über Android Visualizer, damit erweiterte Medienanimationen im Takt pulsieren.</string>
 </resources>

@@ -16,7 +16,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-v1.3.3-1976D2" alt="Version v1.3.3" />
+  <img src="https://img.shields.io/badge/Version-v1.4.0-1976D2" alt="Version v1.4.0" />
   <img src="https://img.shields.io/badge/Min%20SDK-33%20(Android%2013)-3DDC84?logo=android&logoColor=white" alt="Min SDK 33" />
   <img src="https://img.shields.io/badge/Target%20SDK-37%20(Android%2017)-0078D7?logo=android&logoColor=white" alt="Target SDK 37" />
   <img src="https://img.shields.io/badge/UI-Jetpack%20Compose%20M3%20Expressive-4285F4?logo=jetpackcompose&logoColor=white" alt="Jetpack Compose" />
@@ -131,7 +131,8 @@
   - Flashlight, Mobile Hotspot, Live Activity / Timer, Airplane Mode, Do Not Disturb, Battery Saver, VPN, Silent / Vibrate, and Data Saver.
 - Swipe across the bubble (or swipe inside its expanded card) to cycle active indicators, or tap to smoothly merge and expand directly into its control card.
 
-### Media Player, Live Lyrics & Redesigned Volume Mixer
+### Media Player, Beat-Reactive Visualizer, Live Lyrics & Redesigned Volume Mixer
+- **Beat-Reactive Audio Visualizer (Zero Third-Party)**: Uses Android's first-party `Visualizer` (`audioSessionId = 0`) + 32-bit hardware `MEASUREMENT_MODE_PEAK_RMS` compensated via `AudioManager.getStreamVolumeDb` + pure Kotlin FFT 3-band analysis (`bass`, `mid`, `high`, `beatPulse`) with true equalizer-style proportionality — relaxing music stays gentle while punchy beats surge across the **State 3 Expanded Card** (AGSL wave backdrop, border neuron, outer screen aura, contained studio album frame, spinning M3 cookie) and **State 2 / State 1 Compact Surfaces** (`Horizontal Pill`, `Camera Ring`, `Album Card`, and live 3-band EQ bars).
 - **Multi-Session Media Carousel**: Horizontal pager in Portrait and edge-to-edge vertical pager in Landscape with album-art color extraction, animated waveform visualizer, centered landscape layout that smoothly glides upward when synced lyrics open, and Audio Output Switcher.
 - **Synced Lyrics (`LRC`)**: Toggleable line-by-line lyrics synced to playback position when supported by the active media session or fetched online via LRCLIB.
 - **Redesigned Volume Mixer**: Frosted M3 Expressive stream tiles (Media, Ring, Alarm, Call, Notification) with tap-to-mute icon badges, live percentage readouts, whisper-light continuous-haptic sliders, and a full-width segmented Ring / Vibrate / Silent control bar.
@@ -199,6 +200,7 @@ Open **RAF Capsule OS** and tap **Open Permission Setup** (or **Manage**) to ope
 | **Notification & Media Listener** (`CapsuleNotificationListenerService`) | Reads active `MediaSession` tracks, notifications, inline attachments & live activities | **Required** | In-app Permissions Hub or ADB |
 | **`WRITE_SECURE_SETTINGS`** | Suppresses duplicate system heads-up popup banners while notifications appear in the capsule | Optional (Recommended) | **Shizuku (1-Tap, No PC)** or **ADB** |
 | **`WRITE_SETTINGS`** | Enables Brightness slider & Adaptive Brightness toggle in Now Brief | Optional | In-app Permissions Hub or ADB |
+| **`RECORD_AUDIO`** | Powers the real-time Beat-Reactive Audio Visualizer on global output mix (`Visualizer(0)`) | Optional | In-app Permissions Hub or ADB |
 | **Do Not Disturb Policy** | Allows cycling into full Silent mode from Now Brief & Volume Mixer | Optional | In-app Permissions Hub or ADB |
 | **`BLUETOOTH_CONNECT`** | Detects connected Bluetooth headphones/accessories & battery level | Optional | In-app Permissions Hub or ADB |
 | **`ACCESS_COARSE_LOCATION`** | Uses coarse location with Open-Meteo for local weather in Now Brief | Optional | In-app Permissions Hub or ADB |
@@ -211,7 +213,26 @@ Open **RAF Capsule OS** and tap **Open Permission Setup** (or **Manage**) to ope
 #### Option 2: Grant via ADB Command
 ```bash
 adb shell pm grant com.raf.capsuleos android.permission.WRITE_SECURE_SETTINGS
+adb shell pm grant com.raf.capsuleos android.permission.RECORD_AUDIO
+adb shell appops set com.raf.capsuleos RECORD_AUDIO allow
+adb shell appops set com.raf.capsuleos SYSTEM_ALERT_WINDOW allow
 ```
+
+---
+
+### Reset Android Settings to Default (Before Uninstalling)
+
+RAF Capsule OS can suppress Android's native floating heads-up notification popups (`heads_up_notifications_enabled = 0`) while active so notifications appear cleanly inside the capsule. Before uninstalling the app (or if system notification popups do not appear after uninstalling), restore Android defaults via ADB:
+
+```bash
+# Re-enable system floating heads-up notification popups
+adb shell settings put global heads_up_notifications_enabled 1
+
+# (Optional) Restore default status bar icons if previously modified
+adb shell settings delete secure icon_blacklist
+```
+
+*(Tip: Turning off **Suppress System Heads-Up** or pausing/disabling the Accessibility Service inside the app before uninstalling also restores this setting automatically.)*
 
 ---
 

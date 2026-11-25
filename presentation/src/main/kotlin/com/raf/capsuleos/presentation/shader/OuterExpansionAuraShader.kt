@@ -4,20 +4,22 @@ import android.graphics.RuntimeShader
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.core.withInfiniteAnimationFrameMillis
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import com.raf.capsuleos.domain.model.AudioBeatState
 import com.raf.capsuleos.domain.model.CapsuleContent
 import com.raf.capsuleos.domain.model.CapsuleUiState
 import com.raf.capsuleos.domain.model.CapsuleVisualState
@@ -246,6 +248,7 @@ fun OuterScreenExpansionAura(
     screenCornerRadiusDp: Float = 36f,
     spreadDp: Float = 72f,
     edgeMode: Int = 0,
+    audioBeatState: AudioBeatState = AudioBeatState.Silent,
 ) {
     val animatedIntensity by animateFloatAsState(
         targetValue = if (visible) 1f else 0f,
@@ -262,22 +265,59 @@ fun OuterScreenExpansionAura(
         animationSpec = tween(durationMillis = 360),
         label = "outerAuraColorB",
     )
+    val latestBeat by rememberUpdatedState(audioBeatState)
+    val smoothBeat by animateFloatAsState(
+        targetValue = if (audioBeatState.isLive) audioBeatState.beatPulse else 0f,
+        animationSpec = tween(durationMillis = 65),
+        label = "outerAuraBeat",
+    )
+    val smoothBass by animateFloatAsState(
+        targetValue = if (audioBeatState.isLive) audioBeatState.bass else 0f,
+        animationSpec = tween(durationMillis = 75),
+        label = "outerAuraBass",
+    )
+    val smoothEnergy by animateFloatAsState(
+        targetValue = if (audioBeatState.isLive) audioBeatState.energy else 0f,
+        animationSpec = tween(durationMillis = 75),
+        label = "outerAuraEnergy",
+    )
     var timeSeconds by remember { mutableFloatStateOf(0f) }
     val shouldAnimateClock = visible || animatedIntensity > 0.005f
     LaunchedEffect(shouldAnimateClock) {
         if (!shouldAnimateClock) return@LaunchedEffect
-        var startMs = -1L
+        var lastNanos = 0L
         while (isActive) {
-            withInfiniteAnimationFrameMillis { frameMs ->
-                if (startMs < 0L) startMs = frameMs
-                timeSeconds = (frameMs - startMs) / 1000f
+            withFrameNanos { nowNanos ->
+                if (lastNanos != 0L) {
+                    val dtSec = ((nowNanos - lastNanos) / 1_000_000_000f).coerceIn(0f, 0.05f)
+                    val beat = latestBeat
+                    // Relaxing songs flow gently (0.4x); loud beats surge up to ~3.2x
+                    val speedMultiplier = if (beat.isLive) {
+                        0.40f + beat.energy * 1.40f + beat.beatPulse * 1.85f
+                    } else {
+                        1f
+                    }
+                    timeSeconds += dtSec * speedMultiplier
+                }
+                lastNanos = nowNanos
             }
         }
     }
 
     val density = LocalDensity.current
     val cornerPx = with(density) { screenCornerRadiusDp.dp.toPx() }
-    val spreadPx = with(density) { spreadDp.dp.toPx() }
+    val effectiveSpreadDp = if (audioBeatState.isLive) {
+        (spreadDp * 0.62f) + smoothBass * 28f + smoothBeat * 42f
+    } else {
+        spreadDp
+    }
+    val spreadPx = with(density) { effectiveSpreadDp.dp.toPx() }
+    val effectiveIntensity = if (audioBeatState.isLive) {
+        (animatedIntensity * (0.24f + smoothEnergy * 0.44f + smoothBeat * 0.54f))
+            .coerceIn(0.16f, 1f)
+    } else {
+        animatedIntensity
+    }
     val auraShader = remember { OuterExpansionAuraShader.create() }
 
     if (animatedIntensity > 0.005f) {
@@ -292,7 +332,7 @@ fun OuterScreenExpansionAura(
                         timeSeconds = timeSeconds,
                         cornerRadiusPx = cornerPx,
                         spreadPx = spreadPx,
-                        intensity = animatedIntensity,
+                        intensity = effectiveIntensity,
                         edgeMode = edgeMode,
                         colorA = animatedColorA,
                         colorB = animatedColorB,

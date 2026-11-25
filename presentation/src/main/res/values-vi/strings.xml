@@ -277,4 +277,6 @@
     <string name="msg_xiaomi_battery_desc">Loại trừ Capsule OS khỏi trình tiết kiệm pin MIUI.</string>
     <string name="label_xiaomi_popup_bg">Cửa sổ bật lên chạy nền</string>
     <string name="msg_xiaomi_popup_bg_desc">Bật Hiển thị cửa sổ bật lên khi chạy trong nền ở mục Quyền khác.</string>
+    <string name="label_audio_visualizer_permission">Trình trực quan media theo nhịp (Âm thanh)</string>
+    <string name="msg_audio_visualizer_permission_desc">Đọc phổ FFT âm thanh toàn hệ thống qua Android Visualizer để hoạt ảnh media nhấp nháy theo nhịp.</string>
 </resources>

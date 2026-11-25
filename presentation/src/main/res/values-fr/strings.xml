@@ -281,4 +281,6 @@
     <string name="msg_xiaomi_battery_desc">Exclut Capsule OS de la fermeture agressive MIUI.</string>
     <string name="label_xiaomi_popup_bg">Fenêtres pop-up en arrière-plan</string>
     <string name="msg_xiaomi_popup_bg_desc">Activez Afficher les fenêtres pop-up en arrière-plan dans Autres autorisations.</string>
+    <string name="label_audio_visualizer_permission">Visualiseur multimédia au rythme (Audio)</string>
+    <string name="msg_audio_visualizer_permission_desc">Lit le spectre FFT audio global via Android Visualizer afin que les animations suivent le rythme.</string>
 </resources>

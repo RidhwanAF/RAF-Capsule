@@ -277,4 +277,6 @@
     <string name="msg_xiaomi_battery_desc">将 Capsule OS 排除在系统后台清理之外。</string>
     <string name="label_xiaomi_popup_bg">后台弹出界面</string>
     <string name="msg_xiaomi_popup_bg_desc">在其他权限中允许“后台弹出界面”以保障悬浮窗稳定。</string>
+    <string name="label_audio_visualizer_permission">节拍响应媒体可视化（音频）</string>
+    <string name="msg_audio_visualizer_permission_desc">通过 Android Visualizer 读取全局音频 FFT，让展开后的媒体动画随节拍律动。</string>
 </resources>

@@ -65,7 +65,12 @@ fun SetupScreen(
     }
 
     val adbCommand = remember(context.packageName) {
-        "adb shell pm grant ${context.packageName} android.permission.WRITE_SECURE_SETTINGS"
+        listOf(
+            "adb shell pm grant ${context.packageName} android.permission.WRITE_SECURE_SETTINGS",
+            "adb shell pm grant ${context.packageName} android.permission.RECORD_AUDIO",
+            "adb shell appops set ${context.packageName} RECORD_AUDIO allow",
+            "adb shell appops set ${context.packageName} SYSTEM_ALERT_WINDOW allow",
+        ).joinToString("\n")
     }
     val copiedMessage = stringResource(R.string.msg_adb_copied)
 

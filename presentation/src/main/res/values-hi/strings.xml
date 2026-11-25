@@ -279,4 +279,6 @@
     <string name="msg_xiaomi_battery_desc">Capsule OS को MIUI बैटरी प्रतिबंध से बाहर रखता है।</string>
     <string name="label_xiaomi_popup_bg">बैकग्राउंड पॉप-अप विंडो</string>
     <string name="msg_xiaomi_popup_bg_desc">अन्य अनुमतियों में बैकग्राउंड में पॉप-अप विंडो दिखाना सक्षम करें।</string>
+    <string name="label_audio_visualizer_permission">बीट-रिएक्टिव मीडिया विज़ुअलाइज़र (ऑडियो)</string>
+    <string name="msg_audio_visualizer_permission_desc">Android Visualizer के ज़रिए ग्लोबल ऑडियो FFT पढ़ता है ताकि मीडिया एनिमेशन बीट के साथ चलें।</string>
 </resources>
